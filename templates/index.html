@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Homelab Galaxy</title>
+<style>
+/* ================================================================
+   DASHBOARD HUD — single-layer stylesheet (consolidated 2026-08)
+   ----------------------------------------------------------------
+   Read top to bottom:
+     1 tokens          6 right rail (#gpu #ops #flows #feeds)
+     2 backdrop        7 centre column (#stat #data #chat)
+     3 panel chrome    8 floaters (#tour #focuscard #tip)
+     4 rails           9 state overrides (inline-style neutralizers)
+     5 left rail      10 breakpoints (>=1600, >=2560, short)
+   TV SAFE AREA: the wall kiosk overscans ~5% per edge. --sx/--sy
+   inset every HUD element; the 3D canvas stays full-bleed.
+   RAILS are fixed flex columns: consistent 12px rhythm, #np and
+   #flows flex to soak up slack, #legend / #feeds anchor the bottom.
+   #alerts collapses via max-height keyed on body.has-alerts, which
+   the alert-flash script toggles - the reflow animates smoothly.
+   TYPE SCALE (base under 1600px / at 1600px+):
+     8px overlines · 8.5/9px headings · 9-10px meta ·
+     10/11px rows · 13px tile values · 14/17px identity ·
+     16/20px headline numerals (tabular)
+   INK RAMP (AA vs panel ground, incl. blurred starfield behind
+   the translucent panels - checked vs a star-lightened #131a26):
+     --ink1 #e8f0f9 values   --ink2 #9db3cc secondary rows
+     --ink3 #7e93ab labels + fine print (5.5:1 worst case)
+     --ink4 #6d84a0 decorative only (arrow glyphs, placeholder)
+   Colour is signal: accent cyan = identity/charts/interactive,
+   amber = degraded/WAN, red = alerts (the only thing that pulses).
+   JINJA WARNING: this file is a template. Never let a brace touch
+   a hash/percent/brace - write "{ #id" inside media queries.
+   ================================================================ */
+
+/* ---- 1. tokens ------------------------------------------------- */
+:root{
+  --fg:#d6ecff;
+  --ink1:#e8f0f9; --ink2:#9db3cc; --ink3:#7e93ab; --ink4:#6d84a0;
+  --accent:#5ad7ff; --ok:#3ecf8e; --warn:#ffb347; --down:#ff5a6a;
+  --line:rgba(148,178,212,.10);
+  --edge:rgba(125,160,200,.22);
+  --tile-line:rgba(125,160,200,.16);
+  --tile-bg:rgba(6,11,22,.55);
+  --well:rgba(9,16,30,.9);
+  --sx:112px; --sy:64px;        /* TV overscan inset               */
+  --railL:228px; --railR:236px; /* rail widths                     */
+  --cL:296px; --cR:316px;       /* centre column inset from edges  */
+  --gap:12px;                   /* vertical rhythm everywhere      */
+}
+
+/* ---- 2. ground + backdrop -------------------------------------- */
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;color:var(--fg);overflow:hidden;
+  font:12.5px/1.45 ui-monospace,Menlo,Consolas,monospace;
+  background:radial-gradient(ellipse 120% 80% at 50% 42%,#0a1b3d 0,#040b1e 34%,#01030a 74%,#000 100%)}
+#c{position:fixed;inset:0}
+body:before{content:"";position:fixed;inset:0;z-index:2;pointer-events:none;opacity:.7;
+  background:
+    radial-gradient(55% 38% at 14% 6%,rgba(90,215,255,.06),transparent 70%),
+    repeating-linear-gradient(0deg,rgba(0,0,0,.18) 0 1px,transparent 1px 3px)}
+@keyframes thb{0%,100%{opacity:1}50%{opacity:.45}}
+
+/* ---- 3. panel chrome ------------------------------------------- */
+.panel{position:relative;pointer-events:auto;overflow:hidden;
+  background:linear-gradient(180deg,rgba(10,16,29,.90),rgba(6,10,20,.84));
+  border:1px solid var(--edge);border-radius:6px;padding:7px 10px;
+  backdrop-filter:blur(10px);
+  box-shadow:0 6px 24px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.05)}
+.panel:before{content:"";position:absolute;left:0;right:0;top:0;height:1px;opacity:.5;
+  background:linear-gradient(90deg,transparent,rgba(160,195,235,.25),transparent)}
+#title.panel:before{opacity:.8;
+  background:linear-gradient(90deg,transparent,rgba(90,215,255,.65),transparent)}
+h3{color:var(--ink3);font-size:8.5px;font-weight:600;letter-spacing:1.3px;
+  text-transform:uppercase;margin-bottom:5px;padding-bottom:4px;
+  border-bottom:1px solid var(--line)}
+
+/* ---- 4. rails: fixed flex columns, 12px rhythm ------------------ */
+#railL,#railR{position:fixed;top:calc(8px + var(--sy));bottom:calc(8px + var(--sy));
+  display:flex;flex-direction:column;gap:var(--gap);z-index:5;pointer-events:none}
+#railL{left:calc(8px + var(--sx));width:var(--railL)}
+#railR{right:calc(8px + var(--sx));width:var(--railR)}
+#railL>*,#railR>*{flex:0 0 auto;min-height:0}
+
+/* ---- 5. left rail ---------------------------------------------- */
+#title b{font-size:14px;letter-spacing:.5px}
+#title b span{color:var(--accent);text-shadow:0 0 12px rgba(90,215,255,.40)}
+#title small{display:block;color:var(--ink3);font-size:8.5px;letter-spacing:1.2px;margin-top:1px}
+#clockbar{display:flex;gap:4px;align-items:center;margin-top:4px;flex-wrap:wrap}
+#clk{font-size:12px;font-weight:600;color:var(--ink1);letter-spacing:.8px;
+  font-variant-numeric:tabular-nums}
+.chip{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;
+  font-size:8.5px;letter-spacing:1px;line-height:1.7;text-transform:uppercase;
+  padding:1.5px 7px;border-radius:3px;border:1px solid var(--edge);
+  background:rgba(9,16,30,.6);color:#a9bfd8}
+.chip.good:before,.chip.bad:before{content:"";width:5px;height:5px;border-radius:50%;flex:0 0 auto}
+.chip.good:before{background:var(--ok);box-shadow:0 0 5px rgba(62,207,142,.7)}
+.chip.bad{border-color:rgba(255,90,106,.45);background:rgba(255,90,106,.07);color:#ff8b96}
+.chip.bad:before{background:var(--down);box-shadow:0 0 6px var(--down);
+  animation:thb 1.6s ease-in-out infinite}
+
+/* #alerts flashes in for ~9s when the alert set changes. It stays
+   display:block so the collapse can ANIMATE: the flash script fades
+   opacity inline and toggles body.has-alerts, and max-height /
+   padding / border transition with it - the rail below reflows
+   smoothly instead of jumping. */
+#alerts{display:block !important;opacity:0;max-height:0;overflow:hidden;
+  padding-top:0;padding-bottom:0;border-width:0;margin-bottom:calc(0px - var(--gap));
+  transition:max-height .5s ease,padding .5s ease,margin .5s ease,
+             border-width .5s ease,opacity .6s ease,transform .6s ease}
+body.has-alerts #alerts{max-height:160px;padding:7px 10px;border-width:1px;margin-bottom:0}
+#alerts .a{display:flex;gap:5px;align-items:baseline;padding:2px 0;font-size:9.5px;
+  border-bottom:1px solid var(--line)}
+#alerts .a:last-child{border-bottom:0}
+#alerts .a .sv{width:6px;height:6px;border-radius:50%;flex:0 0 auto;box-shadow:0 0 6px currentColor}
+#alerts .a .h{color:#dcefff;font-weight:600;flex:0 0 auto}
+#alerts .a .m{color:#8fb0d0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#alerts .more{margin-top:3px;color:var(--ink3);font-size:8.5px;letter-spacing:1px;text-align:right}
+#alerts.hot{border-color:rgba(255,90,106,.4);
+  box-shadow:0 6px 24px rgba(0,0,0,.45),0 0 22px rgba(255,90,106,.10)}
+#alerts.hot h3{color:#ff8b96}
+#alerts.hot:before{opacity:1;
+  background:linear-gradient(90deg,transparent,rgba(255,90,106,.75),transparent)}
+
+#fleetbody{font-size:10px}
+
+/* #np soaks up the rail between #fleet and #legend; overflow scrolls
+   (scrollbar hidden) behind a bottom fade instead of a hard clip.  */
+#np{flex:1 1 0px;min-height:30px;overflow-y:auto;font-size:10.5px;
+  padding-bottom:14px;scrollbar-width:none;
+  -webkit-mask-image:linear-gradient(180deg,#000 calc(100% - 16px),transparent);
+  mask-image:linear-gradient(180deg,#000 calc(100% - 16px),transparent)}
+#np::-webkit-scrollbar{display:none}
+#np .np-sec{margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid var(--line)}
+#np .np-sec:last-child{border-bottom:0;margin-bottom:0}
+#np .np-sec h4{color:var(--ink3);font-size:8.5px;font-weight:600;letter-spacing:1.3px;
+  text-transform:uppercase;margin:0 0 3px}
+#np .np-hot{border:1px solid rgba(255,90,106,.35);border-radius:4px;
+  padding:4px 6px 5px;background:rgba(255,90,106,.05)}
+#np .np-hot h4{color:#ff8b96}
+#np .np-kv{display:flex;justify-content:space-between;gap:6px;padding:1px 0}
+#np .np-kv span{color:var(--ink3)}
+#np .np-kv b{text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
+#np .np-row{padding:1px 0;font-size:10px;line-height:1.35;white-space:normal}
+#np .np-dim{color:var(--ink3)}
+#np .np-sub{color:var(--ink3);font-size:8px;letter-spacing:1.3px;text-transform:uppercase;margin-top:3px}
+#np .np-spark{color:var(--accent);letter-spacing:-1px;font-size:9px}
+
+#legend{display:grid;grid-template-columns:1fr 1fr;gap:2px 8px}
+#legend .r{display:flex;align-items:center;gap:5px;font-size:9px;color:var(--ink3)}
+#legend .d{width:6px;height:6px;border-radius:50%;box-shadow:0 0 4px currentColor}
+
+/* ---- 6. right rail --------------------------------------------- */
+.hostblock{margin:0 0 5px;padding:5px;border:1px solid var(--tile-line);
+  border-radius:4px;background:var(--tile-bg)}
+.hostblock:last-child{margin-bottom:0}
+.hosttitle{display:flex;justify-content:space-between;color:var(--ink3);font-size:9px;
+  letter-spacing:.8px;text-transform:uppercase;margin-bottom:3px;
+  font-variant-numeric:tabular-nums}
+.gpuchips{display:grid;grid-template-columns:1fr 1fr;gap:3px}
+.gpuchip{border:1px solid var(--tile-line);border-radius:4px;padding:3px 4px;
+  background:var(--tile-bg);font-size:9px;color:var(--ink2);font-variant-numeric:tabular-nums}
+.gpuchip b{display:block;color:var(--ink1);font-size:9.5px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.gpuchip span{display:flex;justify-content:space-between;color:var(--ink3)}
+.gpuchip em{font-style:normal}
+.sub{display:flex;gap:6px;color:var(--ink2);font-size:9px;margin-top:1px}
+.bar{height:5px;background:var(--well);border-radius:2px;overflow:hidden}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,#2e83b8,var(--accent));
+  transition:width .6s}
+#gpuhist{margin-top:4px}
+#gpuhist svg,#nethist svg{max-width:100%}
+#gpuhist svg polyline,#nethist svg polyline{stroke:var(--accent);stroke-width:1.4}
+#gpuhist svg:nth-of-type(2) polyline,
+#nethist svg:nth-of-type(2) polyline{stroke:#5a7d9e}
+
+#opsgrid{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.op{border:1px solid var(--tile-line);background:var(--tile-bg);border-radius:4px;padding:5px 6px}
+.op span{display:block;color:var(--ink3);font-size:8px;letter-spacing:1.1px;text-transform:uppercase}
+.op b{display:block;color:var(--ink1);font-size:11.5px;font-weight:600;margin-top:1px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.op small{display:block;color:var(--ink2);font-size:9px;margin-top:1px;
+  font-variant-numeric:tabular-nums}
+.meter{height:3px;border-radius:2px;background:var(--well);margin-top:4px;overflow:hidden}
+.meter i{display:block;height:100%;background:linear-gradient(90deg,#2e83b8,var(--accent))}
+
+/* live flows: cyan = LAN, amber = crosses the WAN (matches 3D arcs) */
+#flows{flex:0 1 auto;min-height:96px}
+#flows h3{display:flex;justify-content:space-between;align-items:baseline}
+#flowhd{color:var(--ink3);letter-spacing:1px;font-size:8.5px}
+#flows .fl{display:grid;grid-template-columns:1fr auto;gap:0 8px;padding:3px 0 4px;
+  border-bottom:1px solid var(--line)}
+#flows .fl:last-child{border-bottom:0}
+#flows .fp{font-size:11px;line-height:1.3;color:#dcefff;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+#flows .fx{color:var(--ink4);margin:0 5px}
+#flows .fb{color:#9ec7e6}
+#flows .fr{font-size:11px;line-height:1.3;color:var(--accent);white-space:nowrap;
+  font-variant-numeric:tabular-nums}
+#flows .fbar{height:2px;border-radius:1px;background:rgba(90,215,255,.10);align-self:center}
+#flows .fbar i{display:block;height:100%;border-radius:1px;background:var(--accent);
+  box-shadow:0 0 6px var(--accent)}
+#flows .fpr{font-size:8px;line-height:1.25;letter-spacing:.8px;color:var(--ink3);
+  text-align:right;white-space:nowrap}
+#flows .ext .fr{color:var(--warn)}
+#flows .ext .fbar i{background:var(--warn);box-shadow:0 0 6px var(--warn)}
+#flows .fnone{font-size:11px;color:var(--ink3);padding:6px 0}
+
+#feeds{margin-top:auto}
+#feeds .grid{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+#feeds .cam{position:relative;border-radius:4px;overflow:hidden;border:1px solid var(--edge)}
+#feeds .cam img{width:100%;display:block;aspect-ratio:16/9;object-fit:cover;background:#02030a}
+#feeds .cam span{position:absolute;left:0;right:0;bottom:0;padding:6px 4px 2px;
+  font-size:8.5px;letter-spacing:.6px;color:#d7e4f2;
+  background:linear-gradient(180deg,transparent,rgba(0,0,0,.75))}
+#feeds .cam:after{content:"LIVE";position:absolute;right:4px;top:3px;font-size:7px;
+  letter-spacing:1px;color:#ff9ba5;background:rgba(10,6,8,.88);
+  border:1px solid rgba(255,90,106,.35);padding:1px 4px;border-radius:2px}
+
+/* ---- 7. centre column ------------------------------------------ */
+#stat{position:fixed;z-index:5;top:calc(8px + var(--sy));
+  left:calc(var(--cL) + var(--sx));right:calc(var(--cR) + var(--sx));
+  display:flex;justify-content:space-evenly;align-items:center;
+  padding:5px 12px;text-align:center}
+#stat>div{padding:0 2px}
+#stat .n{font-size:16px;font-weight:600;color:var(--ink1);font-variant-numeric:tabular-nums}
+#stat .n.ok{color:var(--ink1)}
+#stat .n.warn{color:var(--warn)}
+#stat .n.bad{color:var(--down);animation:thb 1.6s ease-in-out infinite}
+#stat .l{font-size:8px;letter-spacing:1.2px;color:var(--ink3)}
+
+.kv{display:flex;justify-content:space-between;align-items:baseline;gap:6px;
+  padding:2.5px 0;min-height:18px;font-size:10px;border-bottom:1px solid var(--line)}
+.kv:last-child{border-bottom:0}
+.kv span{color:var(--ink3);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kv b{color:var(--ink1);font-weight:600;font-variant-numeric:tabular-nums;
+  margin-left:auto;padding-left:10px;text-align:right;white-space:nowrap}
+
+#data{position:fixed;z-index:5;bottom:calc(60px + var(--sy));
+  left:calc(var(--cL) + var(--sx));right:calc(var(--cR) + var(--sx));
+  display:grid;grid-template-columns:minmax(0,1fr) 224px;gap:1px 14px;align-content:start}
+#data h3{grid-column:1;grid-row:1;margin-bottom:2px}
+#data #kvs{grid-column:1;grid-row:2/span 3;display:block}
+#data #kvs .kv{font-size:9.5px}
+#data #nethist{grid-column:2;grid-row:1/span 2}
+#data #srcs{grid-column:2;grid-row:3;font-size:9px}
+#data #health{grid-column:2;grid-row:4;font-size:9px}
+
+#chat{position:fixed;z-index:5;bottom:calc(8px + var(--sy));left:50%;
+  transform:translateX(-50%);width:min(480px,42vw);padding:5px 7px}
+#chat .row{display:flex;gap:7px}
+#chat input{flex:1;background:rgba(8,14,26,.85);border:1px solid var(--edge);
+  color:var(--fg);border-radius:4px;padding:4px 9px;font:inherit;font-size:10.5px;outline:none}
+#chat input::placeholder{color:var(--ink4)}
+#chat input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(90,215,255,.14)}
+#chat button{background:var(--accent);color:#04121b;border:0;border-radius:4px;
+  padding:0 12px;font-weight:600;font-size:10.5px;cursor:pointer}
+#chat button:hover{filter:brightness(1.1)}
+#chat .out{color:var(--ink2);margin-top:4px;max-height:28px;overflow:hidden;
+  white-space:pre-wrap;font-size:9.5px;display:-webkit-box;-webkit-line-clamp:2;
+  -webkit-box-orient:vertical}
+#chat .out:empty{display:none;margin:0}
+
+/* ---- 8. floaters ------------------------------------------------ */
+#tour{position:fixed;z-index:5;top:calc(72px + var(--sy));left:50%;
+  transform:translateX(-50%);font-size:8.5px;letter-spacing:1.4px;color:#8fa6bd;
+  transition:opacity .5s}
+#focuscard{position:fixed;z-index:5;left:50%;top:calc(66px + var(--sy));
+  transform:translateX(-50%);min-width:260px;max-width:380px;text-align:center;
+  opacity:0;transition:opacity .4s;pointer-events:none;padding:8px 12px}
+#focuscard .fn{font-size:14px;font-weight:700;color:#fff;letter-spacing:.5px}
+#focuscard .fm{display:flex;gap:12px;justify-content:center;margin-top:4px}
+#focuscard .fm div{font-size:10px;color:var(--ink2)}
+#focuscard .fm b{display:block;font-size:12px;color:#dcefff}
+#focuscard .ftag{display:inline-block;margin-top:5px;font-size:10px;padding:2px 8px;border-radius:3px}
+#tip{position:fixed;pointer-events:none;background:rgba(4,10,22,.96);
+  border:1px solid rgba(125,160,200,.4);border-radius:4px;padding:5px 9px;
+  font-size:11px;display:none;z-index:9;white-space:nowrap}
+
+/* ---- 9. neutralize JS-inlined greens: nominal reads neutral ----- */
+/* attribute selector + important is the only pure-CSS way to beat an
+   inline style; red / amber state inlines stay untouched.           */
+#kvs [style*="#37f5a0"],
+#fleetbody [style*="#37f5a0"],
+#health [style*="#37f5a0"],
+#opsgrid [style*="#37f5a0"],
+#np [style*="#37f5a0"],
+#focuscard .fm b[style*="#37f5a0"]{color:var(--ink1)!important;text-shadow:none!important}
+/* data-source dots stay a QUIET green - indicators, not text */
+#srcs [style*="#37f5a0"]{color:#4faf83!important}
+
+/* ---- 10. breakpoints ------------------------------------------- */
+@media (min-width:1600px){
+  :root{--railL:280px;--railR:300px;--cL:320px;--cR:340px}
+  .panel{padding:10px 12px}
+  h3{font-size:9px}
+  #title b{font-size:17px}
+  #title small{font-size:9.5px}
+  #clk{font-size:14px}
+  body.has-alerts #alerts{padding:10px 12px}
+  #alerts .a{font-size:10.5px}
+  #fleetbody{font-size:11px}
+  .kv{font-size:11px}
+  #legend .r{font-size:10px}
+  .gpuchip{font-size:10px}
+  .gpuchip b{font-size:10.5px}
+  .op b{font-size:13px}
+  .op small{font-size:10px}
+  #feeds .cam span{font-size:9px}
+  #stat{padding:7px 16px}
+  #stat .n{font-size:20px}
+  #data{grid-template-columns:minmax(0,1fr) 280px;gap:2px 18px}
+  #data #kvs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:24px}
+  #data #kvs .kv{font-size:10.5px}
+  #data #srcs,#data #health{font-size:10px}
+  #chat{width:min(560px,36vw)}
+  #chat input{padding:6px 10px;font-size:11.5px}
+  #chat button{font-size:11.5px}
+  #tour{font-size:9.5px}
+}
+@media (min-width:2560px){
+  :root{--railL:340px;--railR:360px;--cL:432px;--cR:452px}
+  #data{grid-template-columns:minmax(0,1fr) 340px}
+  #chat{width:640px}
+}
+/* below 1600px the rails are narrow: let long values wrap in two
+   lines rather than ellipsize away real data */
+@media (max-width:1599px){
+  #kvs .kv,#fleetbody .kv{flex-wrap:wrap}
+  #kvs .kv span,#fleetbody .kv span{white-space:normal}
+  #kvs .kv b,#fleetbody .kv b{white-space:normal;word-break:break-word;flex:1 1 auto;padding-left:8px}
+}
+/* short viewports (<=820px tall): cap the stretchy panels so both
+   rails still fit; fades hide the clip instead of a hard cut */
+@media (max-height:820px){
+  #fleet{max-height:140px;overflow:hidden;
+    -webkit-mask-image:linear-gradient(180deg,#000 calc(100% - 12px),transparent);
+    mask-image:linear-gradient(180deg,#000 calc(100% - 12px),transparent)}
+  #gpuhist{display:none}
+  #gpu{max-height:150px;overflow:hidden;
+    -webkit-mask-image:linear-gradient(180deg,#000 calc(100% - 12px),transparent);
+    mask-image:linear-gradient(180deg,#000 calc(100% - 12px),transparent)}
+  #flows{min-height:80px;
+    -webkit-mask-image:linear-gradient(180deg,#000 calc(100% - 12px),transparent);
+    mask-image:linear-gradient(180deg,#000 calc(100% - 12px),transparent)}
+  body.has-alerts #alerts{max-height:120px}
+  #feeds .cam img{aspect-ratio:16/10}
+  .op b{font-size:12px}
+  .op small{font-size:8.5px;line-height:1.3}
+}
+</style></head><body>
+
+<canvas id="c"></canvas>
+
+<div id="railL">
+  <div id="title" class="panel"><b>HOMELAB<span>GALAXY</span></b><small>live topology · flows · telemetry</small><div id="clockbar"><span id="clk">--:--:--</span><span class="chip" id="chip-wan">WAN …</span><span class="chip" id="chip-isp">ISP …</span><span class="chip" id="chip-cam">CAMS …</span></div></div>
+  <div id="alerts" class="panel"><h3>Active Alerts</h3><div id="alertlist"></div></div>
+  <div id="fleet" class="panel"><h3>Fleet · extra services</h3><div id="fleetbody">starting…</div></div>
+  <div id="np" class="panel"></div>
+  <div id="legend" class="panel"></div>
+</div>
+
+<div id="railR">
+  <div id="gpu" class="panel"><h3>GPU Telemetry</h3><div id="gpus"></div><div id="gpuhist"></div></div>
+  <div id="ops" class="panel"><h3>Mission Ops</h3><div id="opsgrid"></div></div>
+  <div id="flows" class="panel"><h3>Live Flows <span id="flowhd"></span></h3><div id="flowlist"></div></div>
+  <div id="feeds" class="panel"><h3>Frigate · live</h3><div class="grid" id="cams"></div></div>
+</div>
+
+<div id="stat" class="panel">
+  <div><div class="n ok" id="s-run">–</div><div class="l">ONLINE</div></div>
+  <div><div class="n" id="s-tot">–</div><div class="l">GUESTS</div></div>
+  <div><div class="n" id="s-cli">–</div><div class="l">CLIENTS</div></div>
+  <div><div class="n" id="s-gpu">–</div><div class="l">GPU</div></div>
+  <div><div class="n ok" id="s-net">–</div><div class="l">SNMP NET</div></div>
+  <div><div class="n ok" id="s-fleet">–</div><div class="l">FLEET UP</div></div></div>
+<div id="data" class="panel"><h3>Homelab Data</h3><div id="kvs"></div><div id="nethist"></div><div id="srcs"></div><div id="health"></div></div>
+<div id="chat" class="panel"><div class="row"><input id="msg" placeholder="Ask the homelab LLM…"/><button onclick="ask()">Send</button></div><div class="out" id="cout"></div></div>
+<div id="tour">◆ AUTO-TOUR · move mouse to take control</div>
+<div id="focuscard" class="panel"></div>
+<div id="tip"></div>
+
+
+<script>window.NP_NO_AUTOPOLL=true;</script>
+<script src="/static/new_panels.js"></script>
+<script src="/static/vendor/three.min.js"></script>
+<script src="/static/vendor/OrbitControls.js"></script>
+<script src="/static/vendor/CopyShader.js"></script>
+<script src="/static/vendor/LuminosityHighPassShader.js"></script>
+<script src="/static/vendor/EffectComposer.js"></script>
+<script src="/static/vendor/RenderPass.js"></script>
+<script src="/static/vendor/ShaderPass.js"></script>
+<script src="/static/vendor/UnrealBloomPass.js"></script>
+<script>
+function startHudFallback(){
+  if(window.HUD_STARTED||window.SCENE_OK)return; window.HUD_STARTED=true;
+  if(window.__hudFallbackStarted)return;
+  window.__hudFallbackStarted=true;
+  const text=(v,fb='–')=>(v===undefined||v===null||v==='')?fb:v;
+  const pct=(used,total)=>Math.min(100,Math.max(0,total?used/total*100:0));
+  async function pollFallback(){
+    let d={},gpu=[];
+    try{d=await (await fetch('/api/all')).json();}catch(e){}if(window.renderNewPanels){try{window.renderNewPanels(d);}catch(e){}}
+    try{const g=await (await fetch('/api/gpu')).json();gpu=g.gpus||g||[];}catch(e){}
+    const byHost={};gpu.forEach(g=>{const h=g.host||'gpu';(byHost[h]=byHost[h]||[]).push(g);});
+    document.getElementById('s-run').textContent=text((d.running||0)+(d.ai_servers||[]).filter(s=>s.up).length);
+    document.getElementById('s-tot').textContent=text((d.guests||[]).length+(d.ai_servers||[]).reduce((a,s)=>a+1+(s.gpus||[]).length,0));
+    document.getElementById('s-cli').textContent=text(d.unifi&&d.unifi.clients);
+    document.getElementById('s-gpu').textContent=gpu.length?Math.round(gpu.reduce((a,g)=>a+Number(g.util||0),0)/gpu.length)+'%':'–';
+    document.getElementById('s-net').textContent=d.netmap?`${d.netmap.up}/${d.netmap.total}`:'–';
+    {const f=d.fleet&&d.fleet.services||[];document.getElementById('s-fleet').textContent=f.length?f.filter(s=>s.up).length+'/'+f.length:'–';}
+    document.getElementById('gpus').innerHTML=Object.entries(byHost).map(([host,arr])=>{
+      const util=arr.reduce((a,g)=>a+Number(g.util||0),0)/Math.max(arr.length,1);
+      const memUsed=arr.reduce((a,g)=>a+Number(g.mem_used||0),0),memTotal=arr.reduce((a,g)=>a+Number(g.mem_total||0),0);
+      return `<div class="hostblock"><div class="hosttitle"><span>${host}</span><b>${arr.length} GPU · ${Math.round(util)}%</b></div><div class="bar"><i style="width:${util}%"></i></div><div class="gpuchips">`+
+        arr.map(g=>`<div class="gpuchip"><b>${(g.name||'GPU').replace('NVIDIA GeForce ','').replace('ai-server-2 ','').replace('RTX 3090','3090')}</b><span><em>${g.util||0}%</em><em>${g.temp||0}°C</em><em>${(Number(g.mem_used||0)/1024).toFixed(1)}G</em></span></div>`).join('')+
+        `</div><div class="sub"><span>VRAM</span><span>${(memUsed/1024).toFixed(1)}/${(memTotal/1024).toFixed(0)}GB</span></div></div>`;
+    }).join('');
+    const nodes=d.nodes||[],health=d.health||[],upHealth=health.filter(h=>h.up).length,ai=d.ai_servers||[],u=d.unifi||{},z=d.zabbix||{};
+    const memTotal=nodes.reduce((a,n)=>a+Number(n.mem_total||0),0),memUsed=nodes.reduce((a,n)=>a+Number(n.mem_used||0),0);
+    const gpuMem=gpu.reduce((a,g)=>a+Number(g.mem_total||0),0),gpuUsed=gpu.reduce((a,g)=>a+Number(g.mem_used||0),0);
+    const ops=document.getElementById('opsgrid');
+    if(ops)ops.innerHTML=
+      `<div class="op"><span>Compute</span><b>${nodes.length} PVE · ${gpu.length} GPU</b><small>${(memUsed/1.07e9).toFixed(0)}/${(memTotal/1.07e9).toFixed(0)}G RAM</small><div class="meter"><i style="width:${pct(memUsed,memTotal)}%"></i></div></div>`+
+      `<div class="op"><span>AI Fabric</span><b>${ai.filter(s=>s.up).length}/${ai.length||1} online</b><small>${(gpuUsed/1024).toFixed(1)}/${(gpuMem/1024).toFixed(0)}GB VRAM</small><div class="meter"><i style="width:${pct(gpuUsed,gpuMem)}%"></i></div></div>`+
+      `<div class="op"><span>Network</span><b>${text(u.clients)} clients</b><small>${text(u.rx)} / ${text(u.tx)} Mbps WAN</small><div class="meter"><i style="width:${Math.min(100,Number(u.rx||0)*2)}%"></i></div></div>`+
+      `<div class="op"><span>Health</span><b style="color:${z.problems?'#ff5a6a':'#37f5a0'}">${z.problems||0} alerts</b><small>${upHealth}/${health.length||0} checks up</small><div class="meter"><i style="width:${pct(upHealth,health.length)}%"></i></div></div>`;
+    const storage=d.storage||[],pools=d.pools||[],storTotal=storage.reduce((a,s)=>a+Number(s.total||0),0),storUsed=storage.reduce((a,s)=>a+Number(s.used||0),0);
+    const aiLine=ai.map(s=>`${s.name}: ollama ${s.ollama_up?'ready':'down'} · ${s.models||0} models`).join(' · ')||'none';
+    document.getElementById('kvs').innerHTML=
+      `<div class="kv"><span>UniFi clients / devices</span><b>${text(u.clients)} / ${text(u.devices)} (${text(u.wifi,'?')} wifi)</b></div>`+
+      `<div class="kv"><span>WAN down / up</span><b>${text(u.rx)} / ${text(u.tx)} Mbps</b></div>`+
+      `<div class="kv"><span>Zabbix hosts / alerts</span><b style="color:${z.problems?'#ff5a6a':'#37f5a0'}">${text(z.hosts)} / ${z.problems||0}</b></div>`+
+      `<div class="kv"><span>PVE hosts</span><b>${nodes.length} · ${(memUsed/1.07e9).toFixed(0)}/${(memTotal/1.07e9).toFixed(0)}G RAM</b></div>`+
+      `<div class="kv"><span>AI GPU server</span><b style="color:${ai.length?'#37f5a0':'#ff5a6a'}">${aiLine}</b></div>`+
+      `<div class="kv"><span>ZFS pools</span><b>${pools.length} pools</b></div>`+
+      `<div class="kv"><span>Storage</span><b>${storage.length} stores · ${(storUsed/1e12).toFixed(1)}/${(storTotal/1e12).toFixed(1)}TB</b></div>`;
+    const cams=(d.cameras||[]).slice(0,4);
+    document.getElementById('cams').innerHTML=cams.map(c=>`<div class="cam"><img src="/cam/${c}.jpg?${Date.now()}" id="hud-${c}"/><span>${c}</span></div>`).join('');
+    const ent=Object.entries(z.alert_hosts||{}).sort((a,b)=>b[1].sev-a[1].sev),shown=ent.slice(0,6);
+    const ap=document.getElementById('alerts'),al=document.getElementById('alertlist'),SEVC={5:'#ff2b2b',4:'#ff5a6a',3:'#ffa033',2:'#ffd24a'};
+    if(ent.length){ap.style.display='block';al.innerHTML=shown.map(([h,v])=>`<div class="a"><span class="sv" style="color:${SEVC[v.sev]||'#ffd24a'}"></span><span class="h">${h}</span><span class="m">${(v.names&&v.names[0])||''}${v.n>1?' +'+(v.n-1):''}</span></div>`).join('')+(ent.length>shown.length?`<div class="more">+${ent.length-shown.length} more alerts in Zabbix</div>`:'');}
+    else ap.style.display='none';
+    const fl=d.fleet||{},svc=fl.services||[];
+    document.getElementById('fleetbody').innerHTML=svc.length
+      ? svc.map(s=>`<div class="kv"><span>${s.name}</span><b style="color:${s.up?'#37f5a0':'#ff5a6a'}">${s.up?'up':'down'}</b></div>`).join('')
+      : '<div class="kv"><span>no fleet targets</span><b>set FLEET_* in .env</b></div>';
+  }
+  pollFallback();setInterval(pollFallback,6000);setInterval(()=>document.querySelectorAll('#cams img').forEach(im=>im.src='/cam/'+im.id.replace('hud-','')+'.jpg?'+Date.now()),1800);
+}
+window.addEventListener('error',()=>startHudFallback(),{once:true});
+setTimeout(()=>{if(!window.SCENE_OK&&document.getElementById('s-run').textContent==='–')startHudFallback();},4500);
+if(!(window.THREE&&THREE.OrbitControls&&THREE.EffectComposer)){startHudFallback();}else{
+window.SCENE_OK=true;
+const CAT={ai:0xff4fa3,media:0x38e1ff,network:0x37f5a0,monitor:0xffb347,web:0x9b8cff,infra:0x8fb0d0};
+const CATNAME={ai:"AI / inference",media:"Media",network:"Network",monitor:"Monitoring",web:"Web / apps",infra:"Infra"};
+// Galaxy anchors are derived from whatever nodes the API reports, so the scene
+// adapts to any cluster size without editing this file.
+const NODE_PALETTE=[0x5ad7ff,0x37f5a0,0xff4fa3,0xffb347,0x9b8cff,0x38e1ff];
+function buildNodeAnchors(names){
+  const n=names.length||1, span=560, step=n>1?(span*2)/(n-1):0;
+  const out={};
+  names.forEach((nm,i)=>{out[nm]={x:n>1?-span+step*i:0,color:NODE_PALETTE[i%NODE_PALETTE.length],name:String(nm).toUpperCase()};});
+  return out;
+}
+let NODES=buildNodeAnchors([]);
+const R=150;
+
+const scene=new THREE.Scene();scene.fog=new THREE.FogExp2(0x01020a,0.00018);
+const cam=new THREE.PerspectiveCamera(58,innerWidth/innerHeight,0.5,18000);cam.position.set(0,330,1080);
+const rndr=new THREE.WebGLRenderer({canvas:c,antialias:true});rndr.setSize(innerWidth,innerHeight);rndr.setPixelRatio(Math.min(devicePixelRatio,2));
+rndr.toneMapping=THREE.ACESFilmicToneMapping;rndr.toneMappingExposure=1.2;
+const ctrl=new THREE.OrbitControls(cam,rndr.domElement);ctrl.enableDamping=true;ctrl.maxDistance=6200;ctrl.minDistance=25;
+scene.add(new THREE.AmbientLight(0x44557a,.6));
+const composer=new THREE.EffectComposer(rndr);composer.addPass(new THREE.RenderPass(scene,cam));
+const bloom=new THREE.UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),0.95,0.6,0.78);composer.addPass(bloom);
+window.scene=scene;window.cam=cam;window.rndr=rndr;window.composer=composer;window.bloom=bloom;window.ctrl=ctrl;
+
+// textures
+function dotTex(){const s=64,cv=document.createElement('canvas');cv.width=cv.height=s;const x=cv.getContext('2d');const g=x.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2);g.addColorStop(0,'#fff');g.addColorStop(.35,'rgba(255,255,255,.7)');g.addColorStop(1,'rgba(0,0,0,0)');x.fillStyle=g;x.beginPath();x.arc(s/2,s/2,s/2,0,7);x.fill();return new THREE.CanvasTexture(cv);}
+function glowTex(){const s=128,cv=document.createElement('canvas');cv.width=cv.height=s;const x=cv.getContext('2d');const g=x.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2);g.addColorStop(0,'rgba(255,255,255,.95)');g.addColorStop(.25,'rgba(200,225,255,.5)');g.addColorStop(1,'rgba(0,0,0,0)');x.fillStyle=g;x.fillRect(0,0,s,s);return new THREE.CanvasTexture(cv);}
+const DOT=dotTex(),GLOW=glowTex();
+const planetTexCache={};
+function planetTex(hex,seed){seed=seed||0;const key=hex+'_'+seed;if(planetTexCache[key])return planetTexCache[key];
+  let s=(hex^(seed*2654435761))>>>0;const rnd=()=>{s=(s*1664525+1013904223)>>>0;return s/4294967296;};
+  const w=256,h=128,cv=document.createElement('canvas');cv.width=w;cv.height=h;const x=cv.getContext('2d');
+  const base=new THREE.Color(hex);base.offsetHSL((rnd()-.5)*0.08,0,(rnd()-.5)*0.08);
+  x.fillStyle='#'+base.clone().multiplyScalar(.5+rnd()*.18).getHexString();x.fillRect(0,0,w,h);
+  const n=160+Math.floor(rnd()*200);
+  for(let i=0;i<n;i++){const r=rnd()*(10+seed*5)+3,bx=rnd()*w,by=rnd()*h;const sh=.35+rnd()*.9;
+    x.fillStyle='rgba('+Math.round(base.r*255*sh)+','+Math.round(base.g*255*sh)+','+Math.round(base.b*255*sh)+','+(.2+rnd()*.45)+')';
+    x.beginPath();x.arc(bx,by,r,0,7);x.fill();}
+  const t=new THREE.CanvasTexture(cv);planetTexCache[key]=t;return t;}
+// atmosphere fresnel
+function atmoMat(hex){return new THREE.ShaderMaterial({uniforms:{c:{value:new THREE.Color(hex)}},transparent:true,blending:THREE.AdditiveBlending,side:THREE.BackSide,depthWrite:false,
+  vertexShader:'varying vec3 vN;void main(){vN=normalize(normalMatrix*normal);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+  fragmentShader:'varying vec3 vN;uniform vec3 c;void main(){float i=pow(0.72-dot(vN,vec3(0.0,0.0,1.0)),2.5);gl_FragColor=vec4(c,1.0)*clamp(i,0.0,1.0);}'});}
+
+const labels=[];
+function label(text,color,sz){const cv=document.createElement('canvas');cv.width=256;cv.height=46;const x=cv.getContext('2d');x.font='600 22px ui-monospace,monospace';x.fillStyle=typeof color==='number'?'#'+color.toString(16).padStart(6,'0'):color;x.textAlign='center';x.shadowColor=x.fillStyle;x.shadowBlur=7;x.fillText(text,128,31);const s=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv),transparent:true,depthWrite:false,depthTest:false}));s.scale.set(sz,sz/5.6,1);s.userData.lbl=true;labels.push(s);return s;}
+
+// ---- netscene.js renders the live network topology + ntopng flows ----
+const GAL={};let PLANETS=[],NETMESHES=[],netNodes=[],camScreens=[],storageWraps=[],
+    satellites=[],TOUR=[],tIdx=-1;
+function updateGpuBlades(){}function buildGuests(){}function buildCameras(){}
+function buildNetmap(){}function refreshCams(){}function buildTour(){}
+function showStopCard(){}function buildStorage(){}function spawnMeteor(){}
+
+// ---- HUD (same data feeds) ----
+let GPU=[];
+async function pollGpu(){try{const j=await (await fetch('/api/gpu')).json();GPU=j.gpus;updateGpuBlades(GPU);
+  const grouped={};GPU.forEach(g=>{const h=g.host||'gpu';(grouped[h]=grouped[h]||[]).push(g);});
+  document.getElementById('gpus').innerHTML=Object.entries(grouped).map(([host,arr])=>{
+    const util=arr.reduce((a,g)=>a+Number(g.util||0),0)/arr.length;
+    const memUsed=arr.reduce((a,g)=>a+Number(g.mem_used||0),0),memTotal=arr.reduce((a,g)=>a+Number(g.mem_total||0),0);
+    const watts=arr.reduce((a,g)=>a+Number(g.power||0),0),temp=Math.max(...arr.map(g=>Number(g.temp||0)));
+    return `<div class="hostblock"><div class="hosttitle"><span>${host}</span><b>${arr.length} GPU · ${Math.round(util)}%</b></div><div class="bar"><i style="width:${util}%"></i></div><div class="gpuchips">`+
+      arr.map(g=>`<div class="gpuchip"><b>${(g.name||'GPU').replace('NVIDIA GeForce ','').replace('ai-server-2 ','').replace('RTX 3090','3090')}</b><span><em>${g.util}%</em><em>${g.temp}°C</em><em>${(g.mem_used/1024).toFixed(1)}G</em></span></div>`).join('')+
+      `</div>`+
+      `<div class="sub"><span>host total</span><span>${(memUsed/1024).toFixed(1)}/${(memTotal/1024).toFixed(0)}GB</span><span>${temp}°C max</span><span>${watts.toFixed(0)}W</span></div></div>`;
+  }).join('');
+  document.getElementById('s-gpu').textContent=(GPU.length?Math.round(GPU.reduce((a,g)=>a+Number(g.util||0),0)/GPU.length):0)+'%';
+  const byHost={};GPU.forEach(g=>{const h=g.host||'gpu';(byHost[h]=byHost[h]||[]).push(g);});
+  for(const h in byHost){const arr=byHost[h],avg=arr.reduce((a,g)=>a+Number(g.util||0),0)/arr.length;if(GAL[h]){GAL[h].halo.scale.setScalar(70+avg*.7);GAL[h].core.scale.setScalar(1+avg/100*.6);GAL[h].sun.intensity=2+avg/100*2;}}
+}catch(e){}}
+function aiServerPlanets(servers){
+  const out=[];
+  (servers||[]).forEach((s,si)=>{
+    out.push({id:9000+si,name:`${s.name} · ${s.gpu_count||0} GPUs`,type:'host',status:s.up?'running':'stopped',node:s.name,cat:'ai',cpu:s.gpu_util||0,mem:(s.gpu_mem_used||0)*1048576,maxmem:Math.max((s.gpu_mem_total||1)*1048576,1)});
+    (s.gpus||[]).forEach((g,gi)=>out.push({id:9100+si*20+gi,name:(g.name||`RTX 3090 ${gi}`).replace('ai-server-2 ','').replace('NVIDIA GeForce ',''),type:'gpu',status:'running',node:s.name,cat:'ai',cpu:g.util||0,mem:(g.mem_used||0)*1048576,maxmem:Math.max((g.mem_total||1)*1048576,1)}));
+  });
+  return out;
+}
+async function pollAll(){try{const d=await (await fetch('/api/all')).json();if(d.topology&&window.netSceneUpdate){try{window.netSceneUpdate(d.topology);}catch(e){}}if(d.topology){try{renderFlows(d.topology);}catch(e){}}if(window.renderNewPanels){try{window.renderNewPanels(d);}catch(e){}}const allGuests=(d.guests||[]).concat(aiServerPlanets(d.ai_servers));window.GMAP={};allGuests.forEach(g=>GMAP[g.id]=g);document.getElementById('s-run').textContent=(d.running||0)+(d.ai_servers||[]).filter(s=>s.up).length;document.getElementById('s-tot').textContent=allGuests.length;document.getElementById('s-cli').textContent=(d.unifi&&d.unifi.clients)??'–';
+  if(PLANETS.filter(p=>p.userData.g).length!==allGuests.length){buildGuests(allGuests);}
+  if(camScreens.length!==d.cameras.length)buildCameras(d.cameras);
+  if(d.netmap&&d.netmap.devices){if(d.netmap.devices.length!==netNodes.length)buildNetmap(d.netmap.devices);
+    else d.netmap.devices.forEach((dv,i)=>{const nn=netNodes[i];if(nn){nn.up=dv.up;nn.m.material.emissive.setHex(dv.up?0x37f5a0:0xff5a6a);nn.m.userData.netdev=dv;}});
+    window.NETMAP=d.netmap;document.getElementById('s-net').textContent=d.netmap.up+'/'+d.netmap.total;}
+  if(d.fleet){const fl=d.fleet,st=fl.stats||{},svc=fl.services||[],upc=svc.filter(s=>s.up).length;
+    document.getElementById('s-fleet').textContent=svc.length?upc+'/'+svc.length:'–';
+    const statRows=Object.entries(st).filter(([k])=>k!=='up')
+      .map(([k,v])=>`<div class="kv"><span>${k}</span><b>${typeof v==='object'?JSON.stringify(v):v}</b></div>`).join('');
+    document.getElementById('fleetbody').innerHTML=
+      (svc.map(sv=>`<div class="kv"><span>${sv.name}</span><b style="color:${sv.up?'#37f5a0':'#ff5a6a'}">${sv.up?'up':'down'}</b></div>`).join(''))
+      + statRows
+      || '<div class="kv"><span>no fleet targets</span><b>set FLEET_* in .env</b></div>';}
+  const u=d.unifi||{},z=d.zabbix||{};window.ALERTS=z.alert_hosts||{};
+  const _nodes=d.nodes||[],_pools=d.pools||[];
+  const hl=d.health||[],upHealth=hl.filter(h=>h.up).length;
+  const memTotal=_nodes.reduce((a,n)=>a+Number(n.mem_total||0),0),memUsed=_nodes.reduce((a,n)=>a+Number(n.mem_used||0),0);
+  const gpuMem=GPU.reduce((a,g)=>a+Number(g.mem_total||0),0),gpuUsed=GPU.reduce((a,g)=>a+Number(g.mem_used||0),0);
+  const aiUp=(d.ai_servers||[]).filter(s=>s.up).length;
+  const ops=document.getElementById('opsgrid');
+  if(ops)ops.innerHTML=
+    `<div class="op"><span>Compute</span><b>${_nodes.length} PVE · ${GPU.length} GPU</b><small>${(memUsed/1.07e9).toFixed(0)}/${(memTotal/1.07e9).toFixed(0)}G RAM</small><div class="meter"><i style="width:${Math.min(100,memUsed/Math.max(memTotal,1)*100)}%"></i></div></div>`+
+    `<div class="op"><span>AI Fabric</span><b>${aiUp}/${(d.ai_servers||[]).length||1} online</b><small>${(gpuUsed/1024).toFixed(1)}/${(gpuMem/1024).toFixed(0)}GB VRAM</small><div class="meter"><i style="width:${Math.min(100,gpuUsed/Math.max(gpuMem,1)*100)}%"></i></div></div>`+
+    `<div class="op"><span>Network</span><b>${u.clients??'–'} clients</b><small>${u.rx??'–'} / ${u.tx??'–'} Mbps WAN</small><div class="meter"><i style="width:${Math.min(100,Number(u.rx||0)*2)}%"></i></div></div>`+
+    `<div class="op"><span>Health</span><b style="color:${z.problems?'#ff5a6a':'#37f5a0'}">${z.problems??0} alerts</b><small>${upHealth}/${hl.length||0} checks up</small><div class="meter"><i style="width:${hl.length?upHealth/hl.length*100:0}%"></i></div></div>`;
+  const storage=d.storage||[],storTotal=storage.reduce((a,s)=>a+Number(s.total||0),0),storUsed=storage.reduce((a,s)=>a+Number(s.used||0),0);
+  const pveCpu=_nodes.length?(_nodes.reduce((a,n)=>a+Number(n.cpu||0),0)/_nodes.length):0;
+  const zfsBad=_pools.filter(p=>p.health!=='ONLINE'),zfsPct=_pools.length?Math.round(_pools.reduce((a,p)=>a+(Number(p.alloc||0)/Math.max(Number(p.size||1),1)*100),0)/_pools.length):0;
+  const aiLine=(d.ai_servers||[]).map(s=>`${s.name}: ollama ${s.ollama_up?'ready':'down'} · ${s.models||0} models`).join(' · ')||'none';
+  const sourceBits=[['Zabbix',d.sources&&d.sources.zabbix],['Prom',d.sources&&d.sources.prometheus],['Grafana',d.sources&&d.sources.grafana]]
+    .map(([n,o])=>`<span style="color:${o&&o.up?'#37f5a0':'#ff5a6a'}">${o&&o.up?'●':'○'} ${n}</span>`).join(' ');
+  document.getElementById('kvs').innerHTML=
+    `<div class="kv"><span>UniFi clients / devices</span><b>${u.clients??'–'} / ${u.devices??'–'} (${u.wifi??'?'} wifi)</b></div>`+
+    `<div class="kv"><span>WAN down / up</span><b>${u.rx??'–'} / ${u.tx??'–'} Mbps</b></div>`+
+    `<div class="kv"><span>WAN link</span><b style="color:${u.wan_up==='ok'?'#37f5a0':'#ff5a6a'}">${(u.wan_up||'?').toUpperCase()} · ${u.isp||'–'} · ${u.latency??'–'}ms</b></div>`+
+    `<div class="kv"><span>Zabbix hosts / alerts</span><b style="color:${z.problems?'#ff5a6a':'#37f5a0'}">${z.hosts??'–'} / ${z.problems??0}</b></div>`+
+    `<div class="kv"><span>PVE hosts</span><b>${_nodes.length} · avg ${pveCpu.toFixed(1)}% CPU · ${(memUsed/1.07e9).toFixed(0)}/${(memTotal/1.07e9).toFixed(0)}G</b></div>`+
+    `<div class="kv"><span>AI GPU server</span><b style="color:${aiUp?'#37f5a0':'#ff5a6a'}">${aiLine}</b></div>`+
+    `<div class="kv"><span>ZFS pools</span><b style="color:${zfsBad.length?'#ff5a6a':'#dcefff'}">${_pools.length} pools · ${zfsBad.length?zfsBad.length+' degraded':'ONLINE'} · ${zfsPct}% avg</b></div>`+
+    `<div class="kv"><span>Storage</span><b>${storage.length} stores · ${(storUsed/1e12).toFixed(1)}/${(storTotal/1e12).toFixed(1)}TB</b></div>`+
+    `<div class="kv" style="grid-column:1/-1;margin-top:2px"><span style="letter-spacing:1px">DATA SOURCES</span><b style="font-weight:400">${sourceBits}</b></div>`;
+  const camList=(d.cameras||[]).slice(0,4);
+  document.getElementById('cams').innerHTML=camList.map(c=>`<div class="cam"><img src="/cam/${c}.jpg" id="hud-${c}"/><span>${c}</span></div>`).join('');
+  const sr=d.sources||{},su=o=>o&&o.up?'#37f5a0':'#ff5a6a';const se=document.getElementById('srcs');
+  if(se)se.innerHTML='';
+  const he=document.getElementById('health');
+  if(he&&hl.length){const upn=hl.filter(h=>h.up).length;
+    const down=hl.filter(h=>!h.up);
+    he.innerHTML=`<div style="color:#7e93ab;font-size:10px;letter-spacing:1px;margin-top:4px">SERVICE HEALTH</div>`+
+      `<div class="kv"><span>${upn}/${hl.length} checks up</span><b style="color:${down.length?'#ff5a6a':'#37f5a0'}">${down.length?down.map(h=>h.name).slice(0,2).join(', '):'ALL GREEN'}</b></div>`;
+    // flare planets red for any down service (merge into Zabbix alert map)
+    hl.filter(h=>!h.up).forEach(h=>{window.ALERTS[h.name]=window.ALERTS[h.name]||{sev:4,n:1,names:['service down ('+h.code+')']};});}
+  const SEVC={5:'#ff2b2b',4:'#ff5a6a',3:'#ffa033',2:'#ffd24a'};const ent=Object.entries(z.alert_hosts||{});
+  const ap=document.getElementById('alerts'),al=document.getElementById('alertlist');
+  if(ent.length){const sorted=ent.sort((a,b)=>b[1].sev-a[1].sev),shown=sorted.slice(0,6);
+    ap.style.display='block';al.innerHTML=shown.map(([h,v])=>`<div class="a"><span class="sv" style="color:${SEVC[v.sev]||'#ffd24a'}"></span><span class="h">${h}</span><span class="m">${(v.names&&v.names[0])||''}${v.n>1?' +'+(v.n-1):''}</span></div>`).join('')+
+      (sorted.length>shown.length?`<div class="more">+${sorted.length-shown.length} more alerts in Zabbix</div>`:'');}
+  else{ap.style.display='none';}
+}catch(e){}}
+function refreshHud(){document.querySelectorAll('#cams img').forEach(im=>im.src='/cam/'+im.id.replace('hud-','')+'.jpg?'+Date.now());}
+document.getElementById('legend').innerHTML=Object.keys(CATNAME).map(k=>`<div class="r"><span class="d" style="color:#${CAT[k].toString(16).padStart(6,'0')}"></span>${CATNAME[k]}</div>`).join('');
+async function gpuHist(){try{const a=await (await fetch('/api/history?metric=gpu&idx=0&mins=120')).json();const b=await (await fetch('/api/history?metric=gpu&idx=1&mins=120')).json();
+  const el=document.getElementById('gpuhist');if(el)el.innerHTML='<div style="color:#7e93ab;font-size:9px;letter-spacing:1px;margin-bottom:2px">UTIL HISTORY · 2h</div>'+spark(a.map(x=>x.util),232,22,'#ff4fa3')+spark(b.map(x=>x.util),232,22,'#5ad7ff');}catch(e){}}
+async function netHist(){try{const n=await (await fetch('/api/history?metric=net&mins=120')).json();const el=document.getElementById('nethist');
+  if(el&&n.length)el.innerHTML='<div style="color:#7e93ab;font-size:9px;letter-spacing:1px;margin:4px 0 2px">WAN ↓ Mbps · CLIENTS · 2h</div>'+spark(n.map(x=>x.rx),232,18,'#37f5a0')+spark(n.map(x=>x.clients),232,16,'#9b8cff');}catch(e){}}
+pollGpu();pollAll();gpuHist();netHist();setInterval(pollGpu,2500);setInterval(pollAll,6000);setInterval(refreshCams,1300);setInterval(refreshHud,1600);setInterval(gpuHist,20000);setInterval(netHist,20000);
+
+function spark(vals,w,h,color){if(!vals||vals.length<2)return '<div style="color:#6d84a0;font-size:9px">collecting…</div>';
+  const mn=Math.min(...vals),mx=Math.max(...vals,mn+1),rng=(mx-mn)||1;
+  const pts=vals.map((v,i)=>`${(i/(vals.length-1)*w).toFixed(1)},${(h-((v-mn)/rng)*h).toFixed(1)}`).join(' ');
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block;overflow:visible;width:100%;height:${h}px"><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>`;}
+async function ask(){const i=document.getElementById('msg'),o=document.getElementById('cout');if(!i.value.trim())return;const q=i.value;i.value='';o.textContent='thinking…';try{const r=await (await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:q})})).json();o.textContent=r.reply;}catch(e){o.textContent='(error)';}}
+document.getElementById('msg').addEventListener('keydown',e=>{if(e.key==='Enter')ask();});
+const clock=new THREE.Clock();
+{const fc=document.getElementById('focuscard');if(fc)fc.style.display='none';
+ const te=document.getElementById('tour');if(te)te.style.display='none';}
+function animate(){requestAnimationFrame(animate);
+  const dt=Math.min(clock.getDelta(),.05),t=clock.getElapsedTime();
+  if(window.netSceneTick){try{window.netSceneTick(t,dt);}catch(e){console.error(e);window.netSceneTick=null;}}
+  ctrl.update();composer.render();}
+animate();
+addEventListener('resize',()=>{cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();rndr.setSize(innerWidth,innerHeight);composer.setSize(innerWidth,innerHeight);bloom.setSize(innerWidth,innerHeight);});
+}
+</script>
+<script src="/static/netscene.js"></script>
+<script src="/static/netscene_flows.js"></script>
+<script src="/static/galaxy.js"></script>
+<script>
+/* ---- live clock, WAN/ISP/CAM chips, alert-state styling ---- */
+(function(){
+  function tick(){
+    var d=new Date(), p=function(n){return String(n).padStart(2,'0');};
+    var e=document.getElementById('clk');
+    if(e) e.textContent=p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());
+  }
+  tick(); setInterval(tick,1000);
+
+  async function chips(){
+    try{
+      var d = await (await fetch('/api/all')).json();
+      var u = d.unifi||{};
+      var w = document.getElementById('chip-wan');
+      if(w){ var ok = u.wan_up==='ok';
+        w.className='chip '+(ok?'good':'bad');
+        w.textContent='WAN '+(ok?'UP':'DOWN')+(u.latency!=null?' · '+u.latency+'ms':''); }
+      var i = document.getElementById('chip-isp');
+      if(i) i.textContent=(u.isp||'ISP —')+(u.wan_ip?' · '+u.wan_ip:'');
+      var c = document.getElementById('chip-cam');
+      if(c){ var n=(d.cameras||[]).length;
+        c.className='chip '+(n?'good':'bad');
+        c.textContent=n+' CAMS LIVE'; }
+      /* alert panel goes "hot" when Zabbix has problems */
+      var ap=document.getElementById('alerts');
+      if(ap){ var pr=(d.zabbix||{}).problems||0; ap.classList.toggle('hot', pr>0); }
+      /* colour the headline ONLINE/alert counters */
+      var sn=document.getElementById('s-net');
+      if(sn&&d.netmap){ var frac=d.netmap.up/Math.max(d.netmap.total,1);
+        sn.className='n '+(frac>0.9?'ok':frac>0.7?'warn':'bad'); }
+    }catch(e){}
+  }
+  chips(); setInterval(chips,6000);
+})();
+</script>
+
+<script>
+/* alert flash */
+// The alerts panel used to sit open permanently and eat rail space. Now it slides in
+// for a few seconds whenever the alert set CHANGES (or every ~90s while any alert is
+// live), then fades out again - noticeable without being a permanent obstruction.
+(function(){
+  var el=document.getElementById('alerts'); if(!el) return;
+  var lastSig='', lastShow=0, hideAt=0;
+  function show(ms){ el.style.display='block'; el.style.opacity='1';
+    el.style.transform='translateX(0)'; document.body.classList.add('has-alerts');
+    hideAt=Date.now()+ms; lastShow=Date.now(); }
+  function hide(){ el.style.opacity='0'; el.style.transform='translateX(-14px)';
+    document.body.classList.remove('has-alerts');
+    setTimeout(function(){ if(parseFloat(el.style.opacity||'0')===0) el.style.display='none'; }, 650); }
+  hide();
+  setInterval(function(){
+    var d=window.ALERTS||{}; var keys=Object.keys(d);
+    var sig=keys.sort().map(function(k){return k+':'+(d[k]&&d[k].n);}).join('|');
+    var now=Date.now();
+    if(keys.length===0){ lastSig=''; if(hideAt) { hideAt=0; hide(); } return; }
+    if(sig!==lastSig){ lastSig=sig; show(9000); return; }        // changed -> show 9s
+    if(now-lastShow>90000){ show(6000); return; }                 // otherwise re-flash every 90s
+    if(hideAt && now>hideAt){ hideAt=0; hide(); }
+  }, 1000);
+})();
+</script>
+
+<script>
+function nbEsc(x){return String(x==null?'':x).replace(/[&<>"]/g,function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function nbBps(b){b=+b||0;
+  if(b<1e3)return b.toFixed(0)+' b/s';
+  if(b<1e6)return (b/1e3).toFixed(1)+' kb/s';
+  if(b<1e9)return (b/1e6).toFixed(2)+' Mb/s';
+  return (b/1e9).toFixed(2)+' Gb/s';}
+function renderFlows(topo){
+  var el=document.getElementById('flowlist'); if(!el||!topo)return;
+  var hd=document.getElementById('flowhd');
+  var meta=topo.flow_meta||{}, fl=(topo.flows||[]).slice().sort(function(a,b){return (b.bps||0)-(a.bps||0);});
+  if(hd) hd.textContent = meta.up ? ((meta.flow_count||fl.length)+' ACTIVE') : 'SOURCE DOWN';
+  if(!meta.up){ el.innerHTML='<div class="fnone">ntopng unreachable \u2014 no flow data</div>'; return; }
+  if(!fl.length){ el.innerHTML='<div class="fnone">no measurable conversations</div>'; return; }
+  var max=0; for(var i=0;i<fl.length;i++) max=Math.max(max, fl[i].bps||0);
+  if(max<=0) max=1;
+  el.innerHTML = fl.slice(0,6).map(function(f){
+    var a=f.src_label||f.src_ip||'?', b=f.dst_label||f.dst_ip||'?';
+    var w=Math.max(3,Math.round(100*(f.bps||0)/max));
+    return '<div class="fl'+(f.internal?'':' ext')+'">'+
+      '<div class="fp"><span class="fa">'+nbEsc(a)+'</span><span class="fx">&#8594;</span>'+
+        '<span class="fb">'+nbEsc(b)+'</span></div>'+
+      '<div class="fr">'+nbBps(f.bps)+'</div>'+
+      '<div class="fbar"><i style="width:'+w+'%"></i></div>'+
+      '<div class="fpr">'+nbEsc(f.proto||'')+'</div></div>';
+  }).join('');
+}
+</script>
+</body></html>

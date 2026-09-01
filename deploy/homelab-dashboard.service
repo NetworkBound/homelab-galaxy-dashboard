@@ -1,0 +1,37 @@
+[Unit]
+Description=Homelab Galaxy Dashboard
+Documentation=https://github.com/NetworkBound/homelab-galaxy-dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dashboard
+Group=dashboard
+WorkingDirectory=/opt/homelab-galaxy-dashboard
+
+# Credentials live here, mode 0600, owned by the service account.
+EnvironmentFile=/etc/homelab-galaxy-dashboard/env
+
+ExecStart=/opt/homelab-galaxy-dashboard/.venv/bin/python app.py
+Restart=on-failure
+RestartSec=5
+
+# The dashboard is read-only against every backend; give it a read-only system too.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+# The SQLite history store is the only thing it writes.
+ReadWritePaths=/var/lib/homelab-galaxy-dashboard
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=homelab-dashboard
+
+[Install]
+WantedBy=multi-user.target

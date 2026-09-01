@@ -1,0 +1,26 @@
+[Unit]
+Description=Homelab Galaxy Dashboard kiosk display
+After=graphical.target homelab-dashboard.service
+Wants=homelab-dashboard.service
+
+[Service]
+Type=simple
+User=kiosk
+Environment=DISPLAY=:0
+# Wait for the dashboard to answer before painting, so the wall display never
+# shows a connection error on boot.
+ExecStartPre=/bin/sh -c 'until curl -sf http://localhost:8080/ >/dev/null; do sleep 2; done'
+ExecStart=/usr/bin/chromium \
+    --kiosk \
+    --noerrdialogs \
+    --disable-infobars \
+    --disable-session-crashed-bubble \
+    --check-for-update-interval=31536000 \
+    --autoplay-policy=no-user-gesture-required \
+    --enable-features=VaapiVideoDecoder \
+    http://localhost:8080/desk
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=graphical.target

@@ -1,0 +1,14 @@
+# Core — always required
+Flask>=3.0,<4
+requests>=2.31
+urllib3>=2.0
+
+# Optional: NVIDIA GPU telemetry panels (set ENABLE_GPU=false to skip).
+# Needs an NVIDIA driver on the host; pynvml alone is not enough.
+nvidia-ml-py>=12.535
+
+# Optional: server-side offscreen 3D render on the GPU (ENABLE_GPU_RENDER=true).
+# Requires EGL headers and a GPU the container can see.
+# moderngl>=5.10
+# numpy>=1.26
+# Pillow>=10.0

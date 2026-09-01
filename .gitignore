@@ -1,0 +1,27 @@
+# Secrets — never commit
+.env
+*.env
+!.env.example
+secrets/
+
+# Runtime state
+metrics.db
+metrics.db-journal
+static/gpu_scene.png
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Local backups
+*.bak
+*.bak.*
+*.orig

@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0        # scan the history, not just the tip
+
+      - name: No credentials in the working tree
+        run: |
+          find . -path ./.git -prune -o -type f -print0 \
+            | xargs -0 python3 .github/secretscan.py
+
+      - name: No credentials anywhere in history
+        run: |
+          # Removing a secret from HEAD does not remove it from what GitHub
+          # serves. Every blob ever committed is checked, because that is what
+          # a clone actually hands over.
+          fail=0
+          for sha in $(git rev-list --objects --all | awk 'NF==2{print $1}' \
+                       | git cat-file --batch-check='%(objectname) %(objecttype)' \
+                       | awk '$2=="blob"{print $1}'); do
+            git cat-file -p "$sha" 2>/dev/null \
+              | python3 .github/secretscan.py --stdin --label "blob $sha" || fail=1
+          done
+          [ "$fail" -eq 0 ] || { echo "::error::Credential found in repository history."; exit 1; }
+
+  python:
+    name: Python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Byte-compile every module
+        run: python3 -m compileall -q app.py config.py pollers.py topology.py gpu_render.py
+
+      - name: Configuration resolves with nothing set
+        run: |
+          # config.py must fail with a clear message rather than a traceback
+          # when required variables are missing.
+          python3 - <<'PY'
+          import subprocess, sys
+          r = subprocess.run([sys.executable, "-c", "import config"],
+                             capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
+          if r.returncode == 0:
+              print("config imported with no environment set")
+          else:
+              out = (r.stdout + r.stderr).strip()
+              if "Traceback" in out and "SystemExit" not in out:
+                  print("::error::config.py raised instead of reporting the problem")
+                  print(out[-800:])
+                  sys.exit(1)
+              print("config reported the missing configuration cleanly")
+          PY

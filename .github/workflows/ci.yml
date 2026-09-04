@@ -43,8 +43,17 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install dependencies
+        run: python3 -m pip install -r requirements.txt
+
       - name: Byte-compile every module
-        run: python3 -m compileall -q app.py config.py pollers.py topology.py gpu_render.py
+        run: python3 -m compileall -q app.py config.py pollers.py topology.py gpu_render.py tests
+
+      - name: Regression tests
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Fresh setup smoke test
+        run: python3 tests/fresh_setup_smoke.py
 
       - name: Configuration resolves with nothing set
         run: |

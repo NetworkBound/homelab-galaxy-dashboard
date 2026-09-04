@@ -259,13 +259,13 @@ from the same data.
 | Endpoint | Returns |
 |---|---|
 | `GET /api/all` | Everything: guests, nodes, storage, pools, UniFi, Zabbix, cameras, health, topology, fleet |
-| `GET /api/gpu` | Per-GPU utilisation, memory, temperature, power. Errors (HTTP 500) unless `ENABLE_GPU_RENDER=true`; the bundled front end tolerates that and drops the GPU panels. |
+| `GET /api/gpu` | Per-GPU utilisation, memory, temperature, power. Returns `render_backend: "disabled"` when server-side GPU rendering is off. |
 | `GET /api/topology` | The network topology tree with measured per-link rates |
 | `GET /api/history?mins=<n>&guest=<vmid>` | CPU/memory series for one guest |
 | `GET /api/history?mins=<n>&metric=gpu&idx=<i>` | Utilisation/memory/temperature/power series for one GPU |
 | `GET /api/history?mins=<n>&metric=net` | Clients, WAN rx/tx and problem-count series |
 | `GET /cam/<name>.jpg` | Server-proxied still from the NVR |
-| `POST /api/chat` | Prompt relay to Ollama (only if `OLLAMA_URL` is set; the model name is fixed to `qwen2.5:7b` in `app.py`) |
+| `POST /api/chat` | Prompt relay to Ollama (only if `OLLAMA_URL` is set; model defaults to `qwen2.5:7b` and can be changed with `OLLAMA_MODEL`) |
 
 `mins` defaults to 120.
 
@@ -330,19 +330,17 @@ without GPU passthrough. The app continues; only the local GPU panels are
 absent. Set `ENABLE_GPU=false` to skip the probe and silence the line. Remote
 GPUs via `GPUX_*` do not need NVML.
 
-**The browser console shows `/api/gpu` failing with a 500.**
-Known behaviour when `ENABLE_GPU_RENDER` is false (the default): the endpoint
-references the render backend unconditionally. The front end catches the
-failure, so the only effect is missing GPU panels in the UI.
+**The browser console shows no GPU render backend.**
+Expected when `ENABLE_GPU_RENDER` is false (the default). `/api/gpu` still
+returns HTTP 200 with `render_backend: "disabled"`; the bundled front end simply
+drops the server-side render panel.
 
 **Sparklines are empty and the log repeats `[sampler]` errors.**
-The history sampler currently writes to a fixed path, `/opt/dashboard/metrics.db`
-— the `METRICS_DB` variable is not applied yet. If that directory does not
-exist, or is not writable by the service (the hardened systemd unit only
-permits writes under `/var/lib/homelab-galaxy-dashboard`), every sample fails
-and `/api/history` stays empty. Everything else keeps working. To get history,
-create `/opt/dashboard/` writable by the service user, or adjust `DBPATH` in
-`app.py`.
+The history sampler writes to `METRICS_DB`. If that path's parent directory does
+not exist, or is not writable by the service user, every sample fails and
+`/api/history` stays empty. The installer sets it to
+`/var/lib/homelab-galaxy-dashboard/metrics.db`; for manual runs, use a writable
+path such as `METRICS_DB=./metrics.db`.
 
 **Camera tiles are black or broken.**
 With `FRIGATE_URL` unset, `/cam/<name>.jpg` returns 404 — the layer is off.
@@ -352,9 +350,9 @@ than an error, which renders as a black tile. Check that the dashboard host
 
 **The chat box answers "(chat disabled: OLLAMA_URL is not configured)" or "(ollama unavailable: ...)".**
 The first means exactly what it says. The second means `OLLAMA_URL` is set but
-the request failed — the server may be down, or the model missing: the relay
-requests `qwen2.5:7b` by name, so `ollama pull qwen2.5:7b` on the Ollama host,
-or change the model string in `app.py`.
+the request failed — the server may be down, or the model missing. The relay
+requests `OLLAMA_MODEL` (`qwen2.5:7b` by default), so pull that model on the
+Ollama host or set `OLLAMA_MODEL` to one you already run.
 
 **The kiosk display never paints.**
 `deploy/kiosk.service` deliberately waits, polling `http://localhost:8080/`

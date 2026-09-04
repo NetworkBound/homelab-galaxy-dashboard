@@ -21,6 +21,7 @@ urllib3.disable_warnings()
 
 # --- resolved configuration (see config.py / .env.example) ---
 OLLAMA = config.OLLAMA_URL
+OLLAMA_MODEL = config.OLLAMA_MODEL
 FRIGATE = config.FRIGATE_URL
 ZBX_URL = config.ZBX_URL
 ZBX_USER, ZBX_PASS = config.ZBX_USER, config.ZBX_PASS
@@ -322,7 +323,7 @@ def poll_health():
         time.sleep(20)
 
 import sqlite3
-DBPATH = "/opt/dashboard/metrics.db"
+DBPATH = config.METRICS_DB
 def _db():
     c = sqlite3.connect(DBPATH, timeout=10); c.execute("PRAGMA journal_mode=WAL"); return c
 def sampler():
@@ -343,7 +344,7 @@ def sampler():
                     c.execute("INSERT INTO guest VALUES(?,?,?,?)", (now, g["id"], g.get("cpu", 0), g.get("mem", 0)))
             u = DATA.get("unifi", {}) or {}; z = DATA.get("zabbix", {}) or {}
             c.execute("INSERT INTO net VALUES(?,?,?,?,?)", (now, u.get("clients", 0), u.get("rx", 0), u.get("tx", 0), z.get("problems", 0)))
-            cut = now - 172800  # keep 48h
+            cut = now - (config.HISTORY_DAYS * 86400)
             for t in ("gpu", "guest", "net"): c.execute(f"DELETE FROM {t} WHERE ts<?", (cut,))
             c.commit(); c.close()
         except Exception as e:
@@ -377,7 +378,11 @@ def desk(): return render_template("desk.html")
 @app.route("/api/topology")
 def api_topology(): return jsonify(DATA.get("topology") or {})
 @app.route("/api/gpu")
-def api_gpu(): return jsonify({"gpus":gpu_stats(),"render_backend":getattr(gpu_render._renderer,"renderer","init")})
+def api_gpu():
+    render_backend = "disabled"
+    if gpu_render is not None:
+        render_backend = getattr(getattr(gpu_render, "_renderer", None), "renderer", "init")
+    return jsonify({"gpus": gpu_stats(), "render_backend": render_backend})
 @app.route("/api/all")
 def api_all():
     g=DATA["guests"]
@@ -399,7 +404,7 @@ def api_chat():
     if not OLLAMA:
         return jsonify({"reply":"(chat disabled: OLLAMA_URL is not configured)"})
     try:
-        r=requests.post(f"{OLLAMA}/api/generate",json={"model":"qwen2.5:7b","prompt":msg,"stream":False},timeout=120)
+        r=requests.post(f"{OLLAMA}/api/generate",json={"model":OLLAMA_MODEL,"prompt":msg,"stream":False},timeout=120)
         return jsonify({"reply":r.json().get("response","").strip()})
     except Exception as e:
         return jsonify({"reply":f"(ollama unavailable: {e})"})

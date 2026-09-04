@@ -18,7 +18,7 @@ arbitrary number can be declared without editing code::
 
     PVE_0_NAME=pve1
     PVE_0_URL=https://10.0.0.10:8006
-    PVE_0_TOKEN=root@pam!dashboard=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    PVE_0_TOKEN=dashboard@pve!readonly=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
     PVE_1_NAME=pve2
     ...
 """
@@ -90,6 +90,7 @@ UNIFI_SITE = _env("UNIFI_SITE", "default")
 # --------------------------------------------------------------------------
 FRIGATE_URL = _env("FRIGATE_URL")          # NVR — live camera JPEGs as orbiting satellites
 OLLAMA_URL = _env("OLLAMA_URL")            # local LLM — powers the in-scene chat box
+OLLAMA_MODEL = _env("OLLAMA_MODEL", "qwen2.5:7b")
 GRAFANA_URL = _env("GRAFANA_URL")
 GRAFANA_TOKEN = _env("GRAFANA_TOKEN")
 PROM_URL = _env("PROM_URL")                # Prometheus, for node_exporter style metrics
@@ -103,7 +104,7 @@ NTOPNG_IFNAME = _env("NTOPNG_IFNAME", "vmbr0")
 #   GPUX_0_NAME=rig-2
 #   GPUX_0_URL=http://10.0.0.20:9835/metrics
 REMOTE_GPU_EXPORTERS = [
-    {"name": e["name"], "url": e["url"], "name_prefix": e["name"]}
+    {"name": e["name"], "host": e["name"], "url": e["url"], "name_prefix": e["name"]}
     for e in _indexed("GPUX", ["name", "url"])
 ]
 

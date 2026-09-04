@@ -10,7 +10,7 @@ from threading import Thread
 from urllib.request import urlopen, Request
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-PY = os.path.join(REPO, ".venv", "bin", "python3")
+PY = os.environ.get("PYTHON", sys.executable)
 
 
 class ProxmoxMock(BaseHTTPRequestHandler):

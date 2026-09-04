@@ -65,7 +65,8 @@ SVC_1_URL=http://10.0.0.80:8096/System/Info/Public
 | Variable | Default | Meaning |
 |---|---|---|
 | `FRIGATE_URL` | *unset* | NVR base URL. Enables camera satellites and `/cam/<name>.jpg`. |
-| `OLLAMA_URL` | *unset* | Enables the in-scene chat box. Unset makes `/api/chat` report chat as disabled. The relay requests the model `qwen2.5:7b` by name; pull that model on the Ollama host or change the string in `app.py`. |
+| `OLLAMA_URL` | *unset* | Enables the in-scene chat box. Unset makes `/api/chat` report chat as disabled. |
+| `OLLAMA_MODEL` | `qwen2.5:7b` | Model name sent to Ollama's `/api/generate`. Pull this model on the Ollama host or change the variable. |
 | `GRAFANA_URL` / `GRAFANA_TOKEN` | *unset* | Up/down plus dashboard count. |
 | `PROM_URL` | *unset* | Prometheus base URL, used for node-exporter metrics. |
 | `NETMAP_URL` | *unset* | External topology JSON. See `data-sources.md`. |
@@ -99,10 +100,10 @@ rendered as rows in the fleet panel.
 | `LISTEN_HOST` | `0.0.0.0` | Bind address. Set to `127.0.0.1` if a reverse proxy fronts it. |
 | `LISTEN_PORT` | `8080` | |
 | `POLL_INTERVAL` | `20` | **Reserved — not yet applied.** Each poller currently uses its own fixed cadence (6–60 s depending on the source; the history sampler runs every 30 s). |
-| `METRICS_DB` | `metrics.db` | **Reserved — not yet applied.** The history sampler writes to the fixed path `/opt/dashboard/metrics.db` (`DBPATH` in `app.py`). If that path is not writable, history is disabled and everything else keeps working. |
-| `HISTORY_DAYS` | `7` | **Reserved — not yet applied.** Retention is fixed at 48 hours in the sampler. |
+| `METRICS_DB` | `metrics.db` | SQLite history store path. The systemd installer rewrites the example default to `/var/lib/homelab-galaxy-dashboard/metrics.db`. |
+| `HISTORY_DAYS` | `7` | Retention window for sampled history rows. |
 | `ENABLE_GPU` | `true` | NVML telemetry. Set `false` on a host with no NVIDIA GPU. |
-| `ENABLE_GPU_RENDER` | `false` | Offscreen EGL render, written to the fixed path `/opt/dashboard/static/gpu_scene.png`. Needs `moderngl`, `numpy`, `Pillow` (commented out in `requirements.txt` — uncomment and reinstall) and a GPU visible to the process. Also note `/api/gpu` returns HTTP 500 while this is off; the bundled front end tolerates that. |
+| `ENABLE_GPU_RENDER` | `false` | Offscreen EGL render, written to `static/gpu_scene.png`. Needs `moderngl`, `numpy`, `Pillow` (commented out in `requirements.txt` — uncomment and reinstall) and a GPU visible to the process. When disabled, `/api/gpu` returns HTTP 200 with `render_backend: "disabled"`. |
 
 Booleans accept `1`, `true`, `yes`, `on` (case-insensitive); anything else is false.
 

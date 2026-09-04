@@ -67,8 +67,10 @@ fi
 chown root:"${APP_USER}" "${CONFIG_DIR}/env"
 chmod 0640 "${CONFIG_DIR}/env"
 
-# Point the history store at the state dir unless the operator overrode it.
-if ! grep -qs '^METRICS_DB=' "${CONFIG_DIR}/env"; then
+# Point the history store at the state dir unless the operator already changed it.
+if grep -qs '^METRICS_DB=metrics.db$' "${CONFIG_DIR}/env"; then
+    sed -i "s|^METRICS_DB=metrics.db$|METRICS_DB=${STATE_DIR}/metrics.db|" "${CONFIG_DIR}/env"
+elif ! grep -qs '^METRICS_DB=' "${CONFIG_DIR}/env"; then
     echo "METRICS_DB=${STATE_DIR}/metrics.db" >> "${CONFIG_DIR}/env"
 fi
 

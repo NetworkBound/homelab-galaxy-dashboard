@@ -1,0 +1,58 @@
+name: Public repository guardrails
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  scan-public-content:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Block credential leaks
+        run: |
+          mapfile -t files < <(git ls-files)
+          python3 .github/secretscan.py "${files[@]}"
+
+      - name: Block non-placeholder private infrastructure IPs
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          ip = re.compile(r"\b(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})\b")
+          allowed_line = re.compile(r"(example|sample|placeholder|dummy|test|127\.0\.0\.1|10\.0\.0\.|docs?/|\.example|\.sample)", re.I)
+          skip_dirs = {".git", "node_modules", "dist", "build", "__pycache__", ".venv", "venv", "static/vendor"}
+          skip_suffixes = {".pyc", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".woff", ".woff2", ".ttf", ".min.js", ".map", ".lock"}
+          findings = []
+
+          for path in Path(".").rglob("*"):
+              rel = path.as_posix().lstrip("./")
+              if not path.is_file():
+                  continue
+              if any(part in skip_dirs for part in path.parts):
+                  continue
+              if path.suffix.lower() in skip_suffixes:
+                  continue
+              try:
+                  text = path.read_text(encoding="utf-8")
+              except UnicodeDecodeError:
+                  continue
+              for line_no, line in enumerate(text.splitlines(), 1):
+                  if ip.search(line) and not allowed_line.search(f"{rel} {line}"):
+                      findings.append(f"{rel}:{line_no}: {line[:160]}")
+
+          if findings:
+              print("Private infrastructure IP guardrail failed. Redact these values or mark placeholders clearly:")
+              print("\n".join(findings[:100]))
+              sys.exit(1)
+          print("Private infrastructure IP guardrail passed.")
+          PY

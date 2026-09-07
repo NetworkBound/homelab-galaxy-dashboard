@@ -5,10 +5,14 @@ dashboard serves. This genuinely exercises the server GPU (GL_RENDERER reports
 the 3080 Ti). The scene's color/displacement is driven by live GPU utilization
 so the picture reflects real load.
 """
-import os, math, time, threading
+import math
+import os
+import threading
+import time
+
 os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
-import numpy as np
 import moderngl
+import numpy as np
 from PIL import Image
 
 W, H = 960, 540

@@ -7,7 +7,7 @@ import tempfile
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
-from urllib.request import urlopen, Request
+from urllib.request import Request, urlopen
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 PY = os.environ.get("PYTHON", sys.executable)

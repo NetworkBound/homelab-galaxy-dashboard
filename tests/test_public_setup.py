@@ -5,7 +5,6 @@ import tempfile
 import unittest
 from unittest import mock
 
-
 MODULES = ("config", "app", "pollers", "topology")
 
 

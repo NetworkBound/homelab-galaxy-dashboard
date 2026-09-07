@@ -20,8 +20,14 @@ Every poller is a `while True` daemon loop whose body is fully wrapped in
 try/except: one unreachable backend never affects anything else.
 Secrets come ONLY from os.environ; nothing is ever hardcoded or logged.
 """
-import os, re, ssl, socket, time, threading
+import os
+import re
+import socket
+import ssl
+import threading
+import time
 from collections import deque
+
 import requests
 
 import config
@@ -246,9 +252,9 @@ def poll_top():
 # ---------- 6. TLS certificate expiry for the public hostnames (warn <21d) ----------
 def _cert_days(host, port=443):
     ctx = ssl.create_default_context()
-    with socket.create_connection((host, port), timeout=8) as sock:
-        with ctx.wrap_socket(sock, server_hostname=host) as tls:
-            cert = tls.getpeercert()
+    with socket.create_connection((host, port), timeout=8) as sock, \
+         ctx.wrap_socket(sock, server_hostname=host) as tls:
+        cert = tls.getpeercert()
     exp = ssl.cert_time_to_seconds(cert["notAfter"])
     issuer = dict(x[0] for x in cert.get("issuer", ())).get("organizationName", "")[:20]
     return round((exp - time.time()) / 86400, 1), issuer

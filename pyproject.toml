@@ -1,0 +1,26 @@
+# Tooling configuration only — the application is run directly, not installed
+# as a package.
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+extend-exclude = ["static/vendor"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "W",    # pycodestyle warnings
+    "I",    # import sorting
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "C4",   # comprehensions
+    "SIM",  # simplify
+]
+ignore = [
+    "E501",   # line length is a judgement call in dense poller code
+    "E701",   # compact `if x: y` one-liners are the house style here
+    "E702",   # likewise for `a; b` in short state updates
+    "SIM105", # bare try/except/pass is the poller-isolation idiom, documented
+              # in README troubleshooting; contextlib.suppress hides it less well
+]

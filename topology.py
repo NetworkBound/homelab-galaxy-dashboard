@@ -47,7 +47,12 @@ dict, or append verbatim to app.py (globals are then reused automatically and
 start_topology_poller() needs no argument).
 Secrets come ONLY from os.environ; nothing is hardcoded or logged.
 """
-import os, time, threading, ipaddress, re
+import ipaddress
+import os
+import re
+import threading
+import time
+
 import requests
 
 import config
@@ -70,7 +75,7 @@ if "UNIFI" not in globals():
 if "FRIGATE" not in globals():
     FRIGATE = config.FRIGATE_URL
 if "categorize" not in globals():
-    from app import categorize   # single source of truth for guest categories
+    from app import categorize  # single source of truth for guest categories
 
 NVR_IP     = os.environ.get("NP_NVR_IP", "")   # optional: NVR address if it is not on the main LAN
 FAST_S     = 5            # rate sampling interval (seconds)
@@ -577,8 +582,8 @@ def _build(devices, stas, wan, guests, now, unifi_fresh, pve_fresh, health_fresh
 
     _ipmap = ipmap        # atomic swap; read-only in the flow thread
 
-    lan_bps = sum(l["bps"] for l in links
-                  if l["measured"] and l["source"] != "wan" and not l["target"].startswith("ext:"))
+    lan_bps = sum(lk["bps"] for lk in links
+                  if lk["measured"] and lk["source"] != "wan" and not lk["target"].startswith("ext:"))
     return {"ts": now, "nodes": nodes, "links": links,
             "totals": {"wan_rx_bps": round((wan_rx or 0) * 8, 1),
                        "wan_tx_bps": round((wan_tx or 0) * 8, 1),

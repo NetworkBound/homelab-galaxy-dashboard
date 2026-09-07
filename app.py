@@ -10,10 +10,15 @@ Configuration lives in ``config.py`` and is read entirely from the environment;
 see ``.env.example``. Any data source you leave unconfigured is skipped, and the
 dashboard renders without that layer.
 """
-import os
-import time, threading, urllib3, re, socket
+import re
+import socket
+import sqlite3
+import threading
+import time
+
 import requests
-from flask import Flask, jsonify, render_template, request, Response
+import urllib3
+from flask import Flask, Response, jsonify, render_template, request
 
 import config
 
@@ -322,7 +327,6 @@ def poll_health():
         DATA["health"]=out
         time.sleep(20)
 
-import sqlite3
 DBPATH = config.METRICS_DB
 def _db():
     c = sqlite3.connect(DBPATH, timeout=10); c.execute("PRAGMA journal_mode=WAL"); return c

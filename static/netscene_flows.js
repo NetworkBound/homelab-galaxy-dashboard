@@ -1,8 +1,10 @@
 /* ============================================================================
    netscene_flows.js — MEASURED host-to-host traffic arcs on top of netscene.js
-   Data source: DATA["topology"].flows from topology.py's ntopng poller
-   (real conversations sniffed on the PVE host's vmbr0 bridge — includes
-   guest-to-guest traffic that never reaches the physical switch).
+   Reads:  /api/topology .flows[] {src,dst,src_label,dst_label,bps,proto,
+           internal,as_name,...} from topology.py's ntopng poller, plus
+           .flow_meta. Colour comes from window.CONFIG.palette via netscene.
+   (Real conversations sniffed on the Proxmox host's bridge — includes
+   guest-to-guest traffic that never reaches the physical switch.)
 
    VISUAL LANGUAGE (deliberately distinct from the physical `links`)
    ----------------------------------------------------------------------
@@ -60,6 +62,18 @@
 (function () {
   'use strict';
 
+  function sharpTex(t) {
+    t.generateMipmaps = true;
+    t.minFilter = THREE.LinearMipmapLinearFilter;
+    t.magFilter = THREE.LinearFilter;
+    try {
+      var r = window.rndr && window.rndr.capabilities;
+      if (r && r.getMaxAnisotropy) t.anisotropy = Math.min(8, r.getMaxAnisotropy());
+    } catch (e) { }
+    return t;
+  }
+
+
   /* ---------------- tunables ---------------- */
   var SEG = 20;            // bezier segments per arc (ribbon cross-sections - 1)
   var MAXF = 64;           // hard cap on drawn flows (payload is ~30-40)
@@ -81,6 +95,11 @@
   /* HUD-safe region as viewport fractions (measured: x 388-1513, y 129-807 at
      1920x1080). Labels are the widest thing in the scene — a label candidate
      whose screen rect leaves this region is REJECTED, at every camera pose. */
+  /* The region flow labels are allowed to occupy, as viewport fractions.
+     These were the dense HUD's centre box; hero mode hands back most of the
+     screen, so it is a variable now and hero.js sets it per layout. Leaving it
+     hardcoded meant every flow label fought for 58% of the width while the
+     graph spread across all of it. */
   var SAFE = { x0: 388 / 1920, x1: 1513 / 1920, y0: 129 / 1080, y1: 807 / 1080, pad: 14 };
   var FAN_R    = 22;       // radius of the per-IP fan around the WAN cloud anchor
   var LBL_MAX      = 5;    // label sprite pool. NB: the selector backfills up
@@ -134,8 +153,25 @@
   function protoFam(f) { return String(f.proto || '').split('.')[0]; }
   function protoKey(f) { return protoFam(f).toUpperCase(); }
   var _c = null; // lazy THREE.Color scratch
+  /* WAN-crossing flows are tinted by what they ARE: a tunnel to Cloudflare gets
+     Cloudflare orange, VPN protocols teal, messaging / DoH violet, plain
+     TLS/QUIC blue, everything else keeps the amber "this leaves the estate" cue.
+     The left-hand side of each pair is matched against ntopng's full L7
+     protocol name (e.g. "TLS.<service>") and against Akvorado's AS name. */
+  /* MESSAGING: ntopng names chat services at L7 ("TLS.<service>"). This list is
+     a starting point — add whatever your own estate actually talks to. */
+  var MSG_RE = /signal|whatsapp|messenger|matrix|xmpp|discord|slack/i;
+  var EXT_TINT = [
+    [/cloudflare/i, 0xf6821f], [/wireguard|openvpn|ipsec/i, 0x2ee6c5], [MSG_RE, 0xb08cff],
+    [/\bdoh\b|dns|dot\b/i, 0xb08cff], [/^tls|^https|^quic/i, 0x5ad7ff], [/^http\b/i, 0x77dcff], [/ssh|rdp|vnc/i, 0x9b8cff]
+  ];
+  function extHex(f) {
+    var p = String(f.proto || ''), a = String(f.as_name || '');
+    for (var i = 0; i < EXT_TINT.length; i++) if (EXT_TINT[i][0].test(p) || (i === 0 && EXT_TINT[i][0].test(a))) return EXT_TINT[i][1];
+    return EXT_HEX;
+  }
   function flowColor(f, out) {
-    if (!f.internal) { out.setHex(EXT_HEX); return out; }
+    if (!f.internal) { out.setHex(extHex(f)); return out; }
     var p = protoKey(f);
     if (!p) { out.setHex(UNK_HEX); return out; }
     if (PROTO_HEX[p]) { out.setHex(PROTO_HEX[p]); return out; }
@@ -229,10 +265,21 @@
     FL.grp.add(FL.pPts);
 
     for (var i = 0; i < LBL_MAX; i++) FL.lblPool.push(makeFlowLabel());
+    /* netscene's collision pass caches opt-in (userData.lbl) sprites and rescans
+       only every 2 s of scene time: a pool created between scans is drawn but
+       not judged until the next scan (2 frames at the audit's ~1 fps). Force a
+       rescan so these labels are judged from their first visible frame. */
+    if (window.NETSCENE) window.NETSCENE._extScan = undefined;
 
     window.netFlowsUpdate = netFlowsUpdate;
     window.netFlowsTick = netFlowsTick;
     window.NETFLOWS = FL;
+    FL.setSafe = function (o) {
+      if (!o) return;
+      ['x0', 'x1', 'y0', 'y1', 'pad'].forEach(function (k) {
+        if (o[k] !== undefined) SAFE[k] = o[k];
+      });
+    };
 
     wrapNetscene();
 
@@ -251,7 +298,20 @@
   /* chain onto netscene's public API so no host-page edits are strictly
      required; the host can also call netFlowsUpdate/netFlowsTick directly. */
   function wrapNetscene() {
-    var tries = 0;
+    /* Self-healing, not just a one-shot race-fix: this used to give up after
+       60 tries (30s) waiting for netscene.js's init() to publish
+       window.netSceneTick/Update. On at least one real page load that window
+       closed before init() actually finished (cause never fully pinned down -
+       maybe a slow first data fetch inside init()), so the flow *data* kept
+       updating (netFlowsUpdate has its own independent setInterval fetch)
+       while the per-frame *tick* that actually animates the pulses along the
+       links silently never got hooked in - flows existed but never moved.
+       Fix: never stop checking. The check itself is nearly free (two typeof
+       + two boolean reads), so polling forever costs nothing, and it also
+       means if anything ever replaces netSceneTick/Update after a
+       successful wrap (nothing currently does, but "nothing does" is exactly
+       the assumption that silently broke this the first time), it gets
+       re-wrapped within 2s instead of staying broken until the next reload. */
     (function w() {
       try {
         if (typeof window.netSceneUpdate === 'function' && !window.netSceneUpdate.__flows) {
@@ -273,7 +333,7 @@
       } catch (e) { }
       var done = window.netSceneUpdate && window.netSceneUpdate.__flows &&
                  window.netSceneTick && window.netSceneTick.__flows;
-      if (!done && tries++ < 60) setTimeout(w, 500);
+      setTimeout(w, done ? 2000 : 300);
     })();
   }
 
@@ -374,7 +434,11 @@
       }));
       cs.scale.set(CHEV_SZ, CHEV_SZ, 1);
       cs.visible = false; cs.userData.on = false;
-      FL.grp.add(cs); FL.chev.push(cs);
+      FL.grp.add(cs);       /* chevrons are decoration and travel along the arcs, so they will
+         sometimes pass under a name. Draw them behind all text rather than
+         letting an additive arrowhead brighten a glyph. */
+      cs.renderOrder = -3;
+      FL.chev.push(cs);
     }
     for (i = 0; i < FL.chev.length; i++) { FL.chev[i].visible = false; FL.chev[i].userData.on = false; }
     refresh();
@@ -458,7 +522,8 @@
     return s.length > n ? s.slice(0, n - 1) + '…' : s;
   }
   /* best displayable name for an external remote: a real hostname beats an
-     IP; an ntopng-identified service (TLS.Telegram, Cloudflare) beats both */
+     IP; an ntopng-identified service (the "<service>" half of an L7 name such
+     as "TLS.<service>", or an AS name like Cloudflare) beats both */
   function extDstName(f) {
     var parts = String(f.proto || '').split('.');
     if (parts.length > 1 && parts[1]) return parts[1];
@@ -489,10 +554,15 @@
     var W = 704, H = 120;
     var cv = document.createElement('canvas'); cv.width = W; cv.height = H;
     var x = cv.getContext('2d');
-    var t = new THREE.CanvasTexture(cv); t.minFilter = THREE.LinearFilter;
+    var t = sharpTex(new THREE.CanvasTexture(cv));
     var sp = new THREE.Sprite(new THREE.SpriteMaterial({
       map: t, transparent: true, depthWrite: false, depthTest: false
     }));
+    /* opt in to netscene's unified label collision pass: this pool used to
+       dodge netscene's text but nothing dodged it back, and it ran off the
+       previous frame's visibility. Tagging lets the authoritative pass hide
+       it when it loses. */
+    sp.userData.lbl = true;
     sp.scale.set(LBL_W, LBL_W * H / W, 1);
     sp.visible = false;
     sp.userData.entry = null;
@@ -540,8 +610,9 @@
     FL.flows.forEach(function (f, i) {
       var fam = protoKey(f) || 'UNKNOWN';
       /* internal flows group by protocol family (one poller -> N hosts);
-         external flows group by the identified remote service, so
-         one host's Telegram legs never blur into "3 peers" with other TLS.
+         external flows group by the identified remote service, so one host's
+         several legs to the same service never blur into "3 peers" with
+         every other plain TLS conversation.
          Inbound WAN flows anchor on their INTERNAL (dst) endpoint. */
       var ws = wanSide(f);
       var anchor = ws === 'src' ? (f.dst || f.dst_ip) : (f.src || f.src_ip);
@@ -673,12 +744,29 @@
          flying camera, easing lag can drag a label out of the safe region
          even though its target is legal — snap to the validated target. */
       var er = screenRect(sp, ex, ey, ez, cam);
-      if (!er || er.x0 < sx0 || er.x1 > sx1 || er.y0 < sy0 || er.y1 > sy1) {
+      var erBad = !er || er.x0 < sx0 || er.x1 > sx1 || er.y0 < sy0 || er.y1 > sy1;
+      if (!erBad) {
+        // the TARGET was checked against `placed`, but the eased position is
+        // somewhere else for a few frames and was never checked at all - which
+        // is exactly when a label slides through a node name
+        for (var qi = 0; qi < placed.length; qi++) {
+          if (overlapArea(er, placed[qi]) > ownArea * 0.02) { erBad = true; break; }
+        }
+      }
+      if (erBad) {
         sp.userData.liftX = gx = pick[0]; sp.userData.lift = gy = pick[1];
         ex = ax + _r.x * gx; ey = ay + _r.y * gx + gy; ez = az + _r.z * gx;
       }
       sp.position.set(ex, ey, ez);
-      sp.visible = true;
+      /* the unified pass hides a loser by zeroing material.opacity; nothing here
+         ever restored it, so a flow label died for good the first time it lost
+         (measured: all 5 at opacity 0 on the live wall). Re-arm it - the pass
+         runs after this, same frame, and re-hides it if it still clashes. */
+      /* ...unless the pass has ALREADY judged this frame (its fallback runs
+         inside netSceneTick, before us): then its verdict is final. */
+      var judged = sp.userData.hidden && NS.t !== undefined && sp.userData.lpFrame === NS.t;
+      sp.material.opacity = judged ? 0 : 1;
+      sp.visible = !judged;
     }
   }
   var _v = null, _wv = null, _r = null;

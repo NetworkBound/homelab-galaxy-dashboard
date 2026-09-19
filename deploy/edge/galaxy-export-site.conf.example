@@ -1,0 +1,23 @@
+# nginx vhost serving the CrowdSec + audience exports to the dashboard.
+# LAN-only, read-only JSON. Copy to /etc/nginx/sites-available/galaxy-export
+# (or conf.d/) on the origin, replace the addresses, `nginx -t && systemctl reload nginx`.
+# Then set on the dashboard:
+#   CROWDSEC_EXPORT_URL=http://10.0.0.36:8099/_cs
+#   AUDIENCE_URL=http://10.0.0.36:8099/_cs/audience.json
+# Do NOT include your CrowdSec bouncer snippet here: an internal export vhost
+# must never be cut off by a bad decision.
+server {
+    listen 10.0.0.36:8099;                 # the origin's LAN address
+    server_name _;
+    access_log off;
+    location /_cs/ {
+        alias /var/www/galaxy-export/;
+        allow 10.0.0.51;                   # the dashboard host
+        allow 127.0.0.1;
+        deny all;
+        default_type application/json;
+        add_header Cache-Control "no-cache" always;
+        autoindex off;
+    }
+    location / { return 404; }
+}

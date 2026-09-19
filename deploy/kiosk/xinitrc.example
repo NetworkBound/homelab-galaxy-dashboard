@@ -1,0 +1,53 @@
+#!/bin/bash
+# Dual kiosk .xinitrc: screen :0.0 = the wall (index.html), screen :0.1 = /nexus.
+# Copy to the kiosk user's ~/.xinitrc (kiosk.service runs `startx ~/.xinitrc`).
+# Needs: chromium, openbox, unclutter, xrandr, curl.
+DASH=${DASHBOARD_URL:-http://127.0.0.1:8080}
+OUT0=${KIOSK_OUTPUT0:-HDMI-0}          # xrandr output name on screen 0 (`DISPLAY=:0.0 xrandr`)
+OUT1=${KIOSK_OUTPUT1:-HDMI-0}          # xrandr output name on screen 1 (`DISPLAY=:0.1 xrandr`)
+PROFILE=${KIOSK_PROFILE_DIR:-$HOME/.config}
+
+# --- screen 0 (primary kiosk monitor)
+xrandr --output "$OUT0" --mode 1920x1080 --rate 60 2>/dev/null || true
+xset -dpms; xset s off; xset s noblank
+openbox-session &
+# unclutter handles every screen of the display by default; one instance only
+( while true; do unclutter -idle 0.5; sleep 5; done ) &
+
+# --- screen 1 (second screen): separate X screen, own window-manager instance
+if [ -e /tmp/.X11-unix/X0 ] && DISPLAY=:0.1 xdpyinfo >/dev/null 2>&1; then
+  DISPLAY=:0.1 xrandr --output "$OUT1" --mode 3840x2160 --rate 60 2>/dev/null || true
+  DISPLAY=:0.1 openbox &
+  HAVE_SCREEN1=1
+fi
+
+# cold boot: wait until the dashboard is serving before launching the browsers,
+# so the wall never shows a connection error
+until curl -fsS -o /dev/null --max-time 3 "$DASH/"; do sleep 2; done
+
+COMMON=(--kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble
+        --password-store=basic --check-for-update-interval=31536000 "--remote-allow-origins=*")
+# add --no-sandbox only if the kiosk user is root (not recommended)
+
+# primary kiosk loop (remote debugging on 9222 for headless QA / screenshots)
+(
+  while true; do
+    rm -f "$PROFILE/chromium-kiosk/Singleton"* 2>/dev/null
+    chromium "${COMMON[@]}" --user-data-dir="$PROFILE/chromium-kiosk" --remote-debugging-port=9222 --app="$DASH"
+    sleep 2
+  done
+) &
+
+# second-screen loop (remote debugging on 9223)
+if [ -n "$HAVE_SCREEN1" ]; then
+  (
+    while true; do
+      rm -f "$PROFILE/chromium-nexus/Singleton"* 2>/dev/null
+      DISPLAY=:0.1 chromium "${COMMON[@]}" --force-device-scale-factor=2 --user-data-dir="$PROFILE/chromium-nexus" \
+        --remote-debugging-port=9223 --app="$DASH/nexus"
+      sleep 2
+    done
+  ) &
+fi
+
+wait

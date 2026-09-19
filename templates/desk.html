@@ -25,9 +25,13 @@
     #certs    TLS expiry per public host, warn <21d, crit <7d
     #top      top talkers by CPU / RAM + pools >=80% full
     #stor     storage utilisation bars per node
-    #frig     Frigate: per-cam fps/detect/skip, detector ms, recording storage + retention
+    #frig     NVR: per-cam fps/detect/skip, detector ms, recording storage + retention
     #ai       data sources + fleet + AI servers rollup
     #cams     (wf) live camera thumbnails via /cam/<name>.jpg (refreshed every 10s)
+
+  IDENTITY: brand, tagline and the camera feature flag come from GET /api/config
+  via static/config.js (docs/contracts.md) — this file contains no host name,
+  address or brand of its own.
 
   DATA: /api/all polled @6s, /api/gpu @3s, /api/history (net + gpu) @60s.
   Every renderer is try/caught; a missing key shows a muted placeholder, never an exception.
@@ -36,7 +40,8 @@
 -->
 <html lang="en"><head>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Homelab Desk</title>
+<title>Desk</title>
+<script src="/static/config.js?v=1"></script>
 <style>
 :root{
   --fg:#d6ecff; --mut:#7fa3c8; --dim:#5f7da0;
@@ -204,7 +209,7 @@ hr.sep{border:0;border-top:1px solid var(--edge2);margin:6px 0}
 <main>
 
   <section class="panel wf" id="strip">
-    <div class="idw"><b>HOMELAB <span>DESK</span></b><small>gpu · frigate · live telemetry</small></div>
+    <div class="idw"><b id="deskbrand">HOMELAB <span>DESK</span></b><small id="desktag">gpu · nvr · live telemetry</small></div>
     <div id="clk">--:--:--</div>
     <div id="light"><div class="dot"></div><b>CONNECTING&#8230;</b></div>
     <div id="issues"></div>
@@ -868,5 +873,19 @@ setInterval(pollAll,6000);
 setInterval(pollGpu,3000);
 setInterval(pollHist,60000);
 setInterval(refreshCamImgs,10000);
+
+/* identity from /api/config, applied once (config.js has already normalised it) */
+if(window.loadConfig) window.loadConfig().then(function(C){
+  try{
+    document.title=C.brand+" \u00b7 desk";
+    var b=document.getElementById("deskbrand");
+    if(b) b.innerHTML=C.brandHtml()+" <span>DESK</span>";
+    var t=document.getElementById("desktag"); if(t) t.textContent=C.tagline;
+    /* no NVR configured: the camera panels would sit empty forever */
+    if(!C.features.cameras){
+      ["cams","frig"].forEach(function(id){var e=document.getElementById(id); if(e) e.style.display="none";});
+    }
+  }catch(e){}
+});
 </script>
 </body></html>

@@ -1,9 +1,13 @@
-"""Server-side GPU rendering on the RTX 3080 Ti via EGL + moderngl.
+"""Server-side GPU rendering via EGL + moderngl (optional, ENABLE_GPU_RENDER=true).
 
-Renders an animated 3D scene OFFSCREEN on the GPU and writes a PNG that the
-dashboard serves. This genuinely exercises the server GPU (GL_RENDERER reports
-the 3080 Ti). The scene's color/displacement is driven by live GPU utilization
-so the picture reflects real load.
+Renders an animated 3D scene OFFSCREEN on the host's GPU and writes a PNG that
+the dashboard serves at ``static/gpu_scene.png``. This genuinely exercises the
+server GPU (``GL_RENDERER`` reports the card). The scene's colour/displacement
+is driven by live GPU utilisation so the picture reflects real load, and the
+loop idles when nobody is in the room (``get_active``, fed by /api/presence).
+
+Needs ``moderngl``, ``numpy`` and ``Pillow`` (commented out in requirements.txt)
+and a GPU the process can see.
 """
 import math
 import os
@@ -16,7 +20,7 @@ import numpy as np
 from PIL import Image
 
 W, H = 960, 540
-OUT = "/opt/dashboard/static/gpu_scene.png"
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "gpu_scene.png")
 
 _VERT = """
 #version 330
@@ -131,16 +135,25 @@ class Renderer:
         img.save(tmp, format="PNG"); os.replace(tmp, OUT)
 
 _renderer = None
-def loop(get_load):
+def loop(get_load, get_active=lambda: True):
     global _renderer
     _renderer = Renderer()
     print("[gpu_render] GL_RENDERER =", _renderer.renderer, flush=True)
+    idle_logged = False
     while True:
         try:
-            _renderer.frame(get_load())
+            if get_active():
+                idle_logged = False
+                _renderer.frame(get_load())
+                time.sleep(0.1)  # ~10 fps server-side GPU render
+            else:
+                if not idle_logged:
+                    print("[gpu_render] room empty - pausing offscreen render", flush=True)
+                    idle_logged = True
+                time.sleep(1.0)  # still polled, so it wakes promptly on presence
         except Exception as e:
             print("[gpu_render] err", e, flush=True)
-        time.sleep(0.1)  # ~10 fps server-side GPU render
+            time.sleep(0.1)
 
-def start(get_load):
-    threading.Thread(target=loop, args=(get_load,), daemon=True).start()
+def start(get_load, get_active=lambda: True):
+    threading.Thread(target=loop, args=(get_load, get_active), daemon=True).start()

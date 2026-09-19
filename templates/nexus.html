@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Nexus · the estate from orbit</title>
+<!-- NEXUS — the 4K "big screen". One spiral galaxy per configured Proxmox node
+     (window.CONFIG.nodes[], any number), a WAN sun, a fabric of gateway/switch/AP
+     planets with client moons, and THE EDGE galaxy for the outside world.
+     Everything site-specific (brand, node labels/accents, WAN label, category
+     palette, legend) arrives from GET /api/config via static/config.js — this
+     template contains no host name, address or brand of its own.
+     Scripts: config.js -> nexus.js -> lightsync.js (publishes colour only; the
+     wall owns the tour protocol) -> showtime.js (modes + the LIVE pill). -->
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root{--wall:#5ad7ff;--ink:#d6ecff;--dim:#7e93ab;--sub:#94a8c0;--line:rgba(120,170,220,.2);--ease:cubic-bezier(.22,.61,.36,1)}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#02040c;overflow:hidden;cursor:none}
+  body{font:16px/1.4 ui-monospace,Menlo,Consolas,monospace;color:var(--ink)}
+  #c{position:fixed;inset:0;display:block}
+  #labels{position:fixed;inset:0;pointer-events:none;overflow:hidden}
+  /* labels: nexus.js owns inline transform/opacity per frame (never transition transform here —
+     it would lag the 3D anchor). Opacity fade is the only settle we add; the halo is a tight
+     dark drop + soft bloom so text reads over dust without a box. Any per-label dimming must
+     go on the CHILDREN (b/span): the inline opacity on .lbl itself always wins over CSS. */
+  .lbl{position:absolute;left:0;top:0;opacity:0;transition:opacity .3s var(--ease);white-space:nowrap;line-height:1.3;
+    text-shadow:0 .05vw .16vw rgba(0,0,0,.95),0 0 .55vw rgba(0,0,0,.85);will-change:transform}
+  .lbl b{display:block;font-weight:600;letter-spacing:.06em}
+  .lbl span{display:block;color:var(--sub);letter-spacing:.06em}
+  /* no fixed width/margin-left here on purpose: position:absolute + left(no right) already
+     shrink-wraps to content, so JS can measure the TRUE rendered width (offsetWidth) and
+     center it with translateX(-50%) — a fixed vw width let long titles (letter-spacing
+     included) overflow the box and get clipped by #labels' overflow:hidden at the viewport
+     edge ("NTURYLINK · WAN") even though the visibility check thought it was safely inside */
+  .lbl.gal{text-align:center}
+  .lbl.gal b{font-size:1.25vw;letter-spacing:.26em}
+  .lbl.gal span{font-size:.66vw;letter-spacing:.16em;text-transform:uppercase;margin-top:.12vw}
+  /* per-node landmark colour is written INLINE by nexus.js from CONFIG.nodes[].accent
+     (this file knows no node names); this is only the neutral fallback */
+  .lbl.gal.node b{color:#cfe3f5}
+  /* THE EDGE: violet landmark; its PoP / country stars reuse .lbl.station (colour set inline) */
+  .lbl.gal.edge b{color:#b48cff;text-shadow:0 .05vw .16vw rgba(0,0,0,.95),0 0 .9vw rgba(180,140,255,.4)}
+  .lbl.sun{text-align:center}
+  .lbl.sun b{font-size:1vw;color:#ffb347;letter-spacing:.22em}.lbl.sun span{font-size:.68vw;white-space:pre;letter-spacing:.1em}
+  .lbl.bridge{text-align:center}
+  .lbl.bridge b{font-size:.8vw;color:#5ad7ff;letter-spacing:.22em}.lbl.bridge span{font-size:.62vw;letter-spacing:.1em}
+  .lbl.planet{text-align:center}
+  .lbl.planet b{font-size:.85vw;letter-spacing:.18em;color:#e8f0f9}.lbl.planet span{font-size:.58vw;letter-spacing:.1em}
+  /* dark backing pill, not just the base .lbl text-shadow glow: verified on screen that guest
+     labels parked over a bright core/sun disc were unreadable even with
+     the glow — a blurred black shadow can't out-contrast a near-white background under it, a
+     solid semi-opaque backing can. Padding/radius kept small so it still reads as a label, not
+     a card; box-sizing:border-box (set globally above) keeps it inside the measured offsetWidth
+     the clash-avoidance code relies on. */
+  .lbl.guest{text-align:left;padding:.14vw .4vw .16vw;background:rgba(2,5,12,.42);border-radius:.22vw;line-height:1.25}
+  .lbl.guest b{font-size:.6vw;letter-spacing:.03em;text-shadow:0 .05vw .16vw #000,0 0 .4vw rgba(0,0,0,.85)}
+  /* the secondary line (cat · cpu · mem) is what makes 26 labels read as noise: keep it, but
+     let the NAME carry the label — sub sits smaller, dimmer, and drops further when far */
+  .lbl.guest span{font-size:.46vw;color:var(--sub);letter-spacing:.05em;opacity:.78;text-shadow:0 .05vw .14vw #000}
+  .lbl.guest.far b{font-size:.48vw;opacity:.85}.lbl.guest.far span{font-size:.4vw;opacity:.5}
+  /* exosphere stations: external AS · country beyond the WAN sun, pool-placed like guests */
+  .lbl.station{text-align:left;padding:.14vw .4vw .16vw;background:rgba(2,5,12,.42);border-radius:.22vw;line-height:1.25}
+  .lbl.station b{font-size:.6vw;letter-spacing:.06em;text-shadow:0 .05vw .16vw #000,0 0 .4vw rgba(0,0,0,.85)}
+  .lbl.station span{font-size:.46vw;color:var(--sub);letter-spacing:.05em;opacity:.8;text-shadow:0 .05vw .14vw #000}
+  .lbl.station.cf b{color:#ffb073;letter-spacing:.14em;text-shadow:0 .05vw .16vw rgba(0,0,0,.95),0 0 .9vw rgba(246,130,31,.35)}
+  /* HUD chrome: opacity/transform only, so showcase in/out is a GPU composite, never a repaint */
+  .hud{position:fixed;pointer-events:none;transition:opacity .5s var(--ease),transform .5s var(--ease)}
+  #clock{top:4.5vh;left:4vw;font-size:3vw;font-weight:600;letter-spacing:.02em;color:#eef4fb;font-variant-numeric:tabular-nums;line-height:1;text-shadow:0 .1vw .5vw rgba(0,0,0,.7)}
+  #date{top:calc(4.5vh + 3.4vw);left:4vw;font-size:.85vw;color:var(--sub);letter-spacing:.18em;text-transform:uppercase;text-shadow:0 .05vw .3vw rgba(0,0,0,.8)}
+  #status{top:4.5vh;right:4vw;text-align:right}
+  #status .big{font-size:2vw;font-weight:600;letter-spacing:.12em;transition:color .6s,text-shadow .6s;line-height:1}
+  #status .big.ok{color:#37f5a0;text-shadow:0 0 1.2vw rgba(55,245,160,.4),0 .1vw .4vw rgba(0,0,0,.6)}
+  #status .big.warn{color:#ffb347;text-shadow:0 0 1.2vw rgba(255,179,71,.4),0 .1vw .4vw rgba(0,0,0,.6)}
+  #status .big.sec{font-size:1.35vw;letter-spacing:.1em;line-height:1.5}   /* security-finding flash: a title, not a 2vw headline */
+  #status .big.down{color:#ff5a6a;text-shadow:0 0 1.2vw rgba(255,90,106,.55),0 .1vw .4vw rgba(0,0,0,.6);animation:blink 1.4s ease-in-out infinite}
+  #status .sub{font-size:.75vw;color:var(--sub);margin-top:.55vw;letter-spacing:.14em;text-shadow:0 .05vw .3vw rgba(0,0,0,.8)}
+  /* THREAT chip: level colour is written inline by nexus.js (GREEN/YELLOW/RED/BLACK) */
+  #status .chip{display:inline-block;margin-top:.6vw;font-size:.66vw;font-weight:600;letter-spacing:.18em;padding:.24vw .8vw .26vw;border:1px solid currentColor;border-radius:2vw;
+    color:#37f5a0;background:rgba(3,6,14,.55);text-shadow:0 0 .6vw currentColor;transition:color .6s,border-color .6s}
+  @keyframes blink{50%{opacity:.55}}
+  /* no backdrop-filter: two 19vw blur regions over a 4K WebGL canvas is exactly the kind of
+     per-frame cost the 60fps budget can't afford; a slightly deeper gradient reads the same */
+  .card{position:relative;width:19vw;padding:.95vw 1.15vw 1.05vw;border:1px solid var(--line);border-radius:.4vw;
+    background:linear-gradient(180deg,rgba(7,13,26,.8),rgba(3,6,14,.86));box-shadow:0 .5vw 1.6vw rgba(0,0,0,.4);
+    font-size:.62vw;letter-spacing:.03em;transition:opacity .5s var(--ease)}
+  .card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:.18vw;border-radius:.4vw 0 0 .4vw}
+  /* two fixed columns, not two hardwired cards: nexus.js appends one .card per
+     configured node — even indices left, odd right — so N nodes stack cleanly.
+     --acc is the node's own accent, set inline on each card. */
+  .cards{position:fixed;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:.8vw;
+    max-height:86vh;overflow:hidden;transition:opacity .5s var(--ease),transform .5s var(--ease)}
+  #cards-l{left:1.6vw}#cards-r{right:1.6vw}
+  .card::before{background:var(--acc,#5ad7ff)}
+  .card .k{font-size:.85vw;font-weight:600;letter-spacing:.22em;margin-bottom:.6vw;padding-bottom:.45vw;border-bottom:1px solid rgba(120,170,220,.12);display:flex;justify-content:space-between;align-items:baseline}
+  .card .k em{font-style:normal;font-size:.58vw;color:var(--sub);letter-spacing:.08em;font-weight:500}
+  .card .r{display:flex;align-items:center;gap:.5vw;margin:.24vw 0;min-height:.9vw}
+  .card .r span{width:4.2vw;color:var(--dim);letter-spacing:.08em;text-transform:uppercase;flex:none;overflow:hidden;text-overflow:ellipsis}
+  .card .r b{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums;color:#e3eefa}
+  .card .r.gpu span{color:#ff4fa3}
+  .card .bar{flex:1;height:.34vw;background:rgba(255,255,255,.07);border-radius:.2vw;overflow:hidden;position:relative}
+  .card .bar b{position:absolute;left:0;top:0;bottom:0;background:#5ad7ff;border-radius:.2vw;transition:width .8s ease;box-shadow:0 0 .5vw rgba(90,215,255,.6)}
+  .card .bar.pink b{background:#ff4fa3;box-shadow:0 0 .5vw rgba(255,79,163,.6)}
+  .card .bar.cyan b{background:#38e1ff}.card .bar.amber b{background:#ffb347;box-shadow:0 0 .5vw rgba(255,179,71,.6)}.card .bar.red b{background:#ff5a6a}
+  .dim{color:var(--dim)}.hot2{color:#ff4fa3}.mono{font-variant-numeric:tabular-nums}
+  /* full-width block, not left:50% + translate: a shrink-to-fit fixed box at left:50% only gets
+     50vw before it wraps, and a long stop title ("<SWITCH> · WIRED (28)") wrapped onto two lines and climbed
+     into the landmark labels above the 19vh band nexus.js reserves for this caption */
+  #caption{bottom:7vh;left:0;right:0;text-align:center}
+  #cap,#capsub{white-space:nowrap}
+  /* nexus.js crossfades #cap/#capsub by writing inline opacity 0 -> (380ms) -> 1; these
+     durations are tuned to that timer so the fade completes before the text swaps */
+  #cap{font-size:1.9vw;font-weight:600;letter-spacing:.36em;color:#fff;text-shadow:0 0 1.1vw var(--wall),0 .12vw .5vw rgba(0,0,0,.75);transition:text-shadow .9s,opacity .34s var(--ease)}
+  #capsub{font-size:.75vw;color:var(--sub);letter-spacing:.2em;margin-top:.4vw;text-transform:uppercase;text-shadow:0 .05vw .3vw rgba(0,0,0,.8);transition:opacity .34s var(--ease)}
+  #sync{margin:.85vw auto 0;display:inline-flex;align-items:center;gap:.5vw;font-size:.6vw;letter-spacing:.18em;text-transform:uppercase;
+    padding:.3vw .85vw;border:1px solid var(--line);border-radius:2vw;color:var(--dim);background:rgba(3,6,14,.55);
+    transition:color .4s var(--ease),border-color .4s var(--ease),background-color .4s var(--ease)}
+  #sync i{width:.45vw;height:.45vw;border-radius:50%;background:#34455c;transition:background-color .4s}
+  #sync.on{color:#e8f0f9;border-color:var(--wall)}#sync.on i{background:var(--wall);box-shadow:0 0 .6vw var(--wall);animation:blink 1.6s infinite}
+  #sync.on::before{content:"in sync with wall ·"}
+  #legend{bottom:4.5vh;left:4vw;display:flex;gap:1.5vw;font-size:.6vw;letter-spacing:.12em;text-transform:uppercase;color:var(--sub);text-shadow:0 .05vw .3vw rgba(0,0,0,.8)}
+  #legend i{display:inline-block;width:.48vw;height:.48vw;border-radius:50%;margin-right:.38vw;vertical-align:-.02vw;box-shadow:0 0 .5vw currentColor}
+  #brand{bottom:4.5vh;right:4vw;font-size:.66vw;color:#6a82a2;letter-spacing:.32em;text-transform:uppercase;text-shadow:0 .05vw .3vw rgba(0,0,0,.8)}
+  .bracket{position:fixed;width:2.4vw;height:2.4vw;border:1px solid rgba(120,170,220,.26);transition:opacity .5s var(--ease)}
+  .bracket.tl{top:2.6vh;left:2.4vw;border-right:0;border-bottom:0}.bracket.tr{top:2.6vh;right:2.4vw;border-left:0;border-bottom:0}
+  .bracket.bl{bottom:2.6vh;left:2.4vw;border-right:0;border-top:0}.bracket.br{bottom:2.6vh;right:2.4vw;border-left:0;border-top:0}
+  /* one static composited layer: the edge vignette plus a soft top/bottom scrim under the HUD
+     bands so chrome reads over the render without boxes. Never opaque over the canvas centre
+     (lightsync samples the canvas element itself, but keep the picture honest regardless). */
+  #vig{position:fixed;inset:0;pointer-events:none;transition:opacity .8s var(--ease);
+    background:linear-gradient(180deg,rgba(2,4,12,.5) 0,rgba(2,4,12,0) 15vh),
+               linear-gradient(0deg,rgba(2,4,12,.55) 0,rgba(2,4,12,0) 19vh),
+               radial-gradient(ellipse at center,rgba(0,0,0,0) 55%,rgba(0,0,0,.5) 100%)}
+  /* showtime modes (body classes from showtime.js) */
+  body.st-night .cards,body.st-night #legend{opacity:.55}
+  body.st-night .lbl>*{opacity:.6}                       /* on the children: inline .lbl opacity from nexus.js would override the parent */
+  body.st-alert #cap{color:#ff5a6a;text-shadow:0 0 1.1vw rgba(255,90,106,.6),0 .12vw .5vw rgba(0,0,0,.75)}
+  /* intrusion caption: nexus.js holds body.nx-threat for 5 s per intrusion event */
+  body.nx-threat #cap{color:#ff5a6a;text-shadow:0 0 1.1vw rgba(255,90,106,.65),0 .12vw .5vw rgba(0,0,0,.75)}
+  body.nx-threat #capsub{color:#ffb3bb}
+  body.st-showcase .cards{opacity:0}
+  /* the playthrough: letterbox bars + chapter progress, clean of every other HUD element.
+     Bars are full height and scaleY'd in (transform, not height) so the reveal is compositor-only. */
+  .letterbox{position:fixed;left:0;right:0;height:8.5vh;background:#000;transform:scaleY(0);transition:transform .8s var(--ease);z-index:6;pointer-events:none;will-change:transform}
+  .letterbox.top{top:0;transform-origin:50% 0}.letterbox.bottom{bottom:0;transform-origin:50% 100%}
+  body.nx-showcase .letterbox{transform:scaleY(1)}
+  #scprog{position:fixed;left:4vw;right:4vw;bottom:1.6vh;height:.18vw;background:rgba(255,255,255,.12);border-radius:.2vw;overflow:hidden;opacity:0;transition:opacity .8s;z-index:7}
+  #scprog i{display:block;height:100%;width:100%;background:var(--wall);transform-origin:left center;transform:scaleX(0);box-shadow:0 0 .6vw var(--wall)}
+  body.nx-showcase #scprog{opacity:1}
+  body.nx-showcase #vig{opacity:.6}
+  body.nx-showcase .cards,body.nx-showcase #clock,body.nx-showcase #date,body.nx-showcase #status,
+  body.nx-showcase #legend,body.nx-showcase #brand,body.nx-showcase .bracket,body.nx-showcase #sync{opacity:0;transition:opacity .6s var(--ease),transform .6s var(--ease)}
+  /* HUD drifts a touch outward as it fades so the showcase in/out settles instead of blinking */
+  body.nx-showcase #clock,body.nx-showcase #date,body.nx-showcase #status{transform:translateY(-.6vw)}
+  body.nx-showcase #legend,body.nx-showcase #brand{transform:translateY(.6vw)}
+  body.nx-showcase #cards-l{transform:translateY(-50%) translateX(-1.4vw)}
+  body.nx-showcase #cards-r{transform:translateY(-50%) translateX(1.4vw)}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="vig"></div>
+<div id="labels"></div>
+<div class="bracket tl"></div><div class="bracket tr"></div><div class="bracket bl"></div><div class="bracket br"></div>
+<div id="lbt" class="letterbox top"></div><div id="lbb" class="letterbox bottom"></div>
+<div id="scprog"><i id="scbar"></i></div>
+<div id="clock" class="hud">--:--:--</div>
+<div id="date" class="hud">—</div>
+<div id="status" class="hud"><div id="status-big" class="big ok">CONNECTING</div><div id="status-sub" class="sub">—</div><div id="status-threat" class="chip">THREAT —</div></div>
+<div id="cards-l" class="cards"></div>
+<div id="cards-r" class="cards"></div>
+<div id="caption" class="hud"><div id="cap">THE ESTATE</div><div id="capsub">—</div><div id="sync" class="off"><i></i><span>free roam</span></div></div>
+<!-- filled from CONFIG.categories + CONFIG.palette below -->
+<div id="legend" class="hud"></div>
+<div id="brand" class="hud">Nexus · homelab from orbit</div>
+
+<script src="/static/config.js?v=1"></script>
+<script src="/static/vendor/three.min.js"></script>
+<script src="/static/vendor/CopyShader.js"></script>
+<script src="/static/vendor/LuminosityHighPassShader.js"></script>
+<script src="/static/vendor/EffectComposer.js"></script>
+<script src="/static/vendor/RenderPass.js"></script>
+<script src="/static/vendor/ShaderPass.js"></script>
+<script src="/static/vendor/UnrealBloomPass.js"></script>
+<script>
+(function(){
+  var DAYS=['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'];
+  var MON=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  function tick(){var d=new Date(),p=function(n){return (n<10?'0':'')+n};
+    document.getElementById('clock').textContent=p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());
+    document.getElementById('date').textContent=DAYS[d.getDay()]+' · '+d.getDate()+' '+MON[d.getMonth()]+' '+d.getFullYear();}
+  tick();setInterval(tick,1000);
+})();
+</script>
+<script>window.LIGHTSYNC_SRC='nexus';window.LIGHTSYNC_TOUR=false;</script>
+<script>
+/* Identity first: nexus.js reads window.CONFIG synchronously at load, so the
+   scene modules are only appended once GET /api/config has answered. */
+(function () {
+  function esc(x){return String(x==null?'':x).replace(/[&<>"]/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  window.loadConfig().then(function (C) {
+    document.title = C.brand + ' · nexus';
+    var b = document.getElementById('brand');
+    if (b) b.textContent = C.brand + ' · ' + (C.domain || 'homelab') + ' from orbit';
+    /* the legend is the configured category palette, plus the stopped colour */
+    var lg = document.getElementById('legend');
+    if (lg) {
+      lg.innerHTML = C.categories.map(function (k) {
+        var h = C.palette[k] || '#8fb0d0';
+        return '<span><i style="color:' + esc(h) + ';background:' + esc(h) + '"></i>' + esc(k) + '</span>';
+      }).join('') +
+      '<span><i style="color:' + esc(C.palette.stopped) + ';background:' + esc(C.palette.stopped) + '"></i>stopped</span>';
+    }
+    document.body.classList.toggle('no-cameras', !C.features.cameras);
+    window.loadScripts([
+      '/static/nexus.js?v=1',
+      '/static/lightsync.js?v=1',
+      '/static/showtime.js?v=1'
+    ]);
+  });
+})();
+</script>
+</body>
+</html>

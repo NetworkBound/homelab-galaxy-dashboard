@@ -1,0 +1,1 @@
+{"gpus":[{"host":"pve1","index":0,"mem_total":12288,"mem_used":11177,"name":"NVIDIA GeForce RTX 3080 Ti","power":128.9,"temp":61,"util":11},{"host":"pve1","index":1,"mem_total":11264,"mem_used":906,"name":"NVIDIA GeForce GTX 1080 Ti","power":28.8,"temp":30,"util":23}],"render_backend":"NVIDIA GeForce RTX 3080 Ti/PCIe/SSE2"}

@@ -46,8 +46,16 @@ jobs:
       - name: Install dependencies
         run: python3 -m pip install -r requirements.txt
 
+      - name: Lint (ruff, config in pyproject.toml)
+        run: |
+          python3 -m pip install -q ruff
+          ruff check .
+
       - name: Byte-compile every module
-        run: python3 -m compileall -q app.py config.py pollers.py topology.py gpu_render.py tests
+        run: |
+          python3 -m compileall -q app.py config.py pollers.py topology.py probe.py edge.py threats.py \
+            showtime.py gpu_render.py demo.py setup.py addons.py addons tests deploy/lights/galaxy-lights.py \
+            deploy/edge/galaxy-audience-export.py
 
       - name: Regression tests
         run: python3 -m unittest discover -s tests -v
@@ -55,21 +63,48 @@ jobs:
       - name: Fresh setup smoke test
         run: python3 tests/fresh_setup_smoke.py
 
-      - name: Configuration resolves with nothing set
+      - name: Starts with nothing configured and offers the setup wizard
         run: |
-          # config.py must fail with a clear message rather than a traceback
-          # when required variables are missing.
+          # With no configuration at all the app must not exit: it prints a
+          # setup token and serves /setup (docs/contracts.md). Run it from an
+          # empty directory so the token file and config.json land there.
           python3 - <<'PY'
-          import subprocess, sys
-          r = subprocess.run([sys.executable, "-c", "import config"],
-                             capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
-          if r.returncode == 0:
-              print("config imported with no environment set")
-          else:
-              out = (r.stdout + r.stderr).strip()
-              if "Traceback" in out and "SystemExit" not in out:
-                  print("::error::config.py raised instead of reporting the problem")
-                  print(out[-800:])
-                  sys.exit(1)
-              print("config reported the missing configuration cleanly")
+          import os, subprocess, sys, tempfile, time, urllib.request
+          td = tempfile.mkdtemp()
+          env = {"PATH": os.environ["PATH"], "LISTEN_HOST": "127.0.0.1", "LISTEN_PORT": "18090",
+                 "CONFIG_FILE": os.path.join(td, "config.json"), "DATA_DIR": td, "ENABLE_GPU": "false"}
+          p = subprocess.Popen([sys.executable, os.path.abspath("app.py")], cwd=td, env=env,
+                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+          out, deadline = "", time.time() + 30
+          try:
+              while time.time() < deadline:
+                  line = p.stdout.readline()
+                  out += line
+                  if "[setup] token:" in out and "Running on" in out:
+                      break
+                  if p.poll() is not None:
+                      print("::error::app exited with nothing configured"); print(out[-1500:]); sys.exit(1)
+              r = urllib.request.urlopen("http://127.0.0.1:18090/", timeout=5)
+              assert r.geturl().endswith("/setup"), r.geturl()
+              try:
+                  urllib.request.urlopen("http://127.0.0.1:18090/api/setup/schema", timeout=5)
+                  print("::error::setup API answered without a token"); sys.exit(1)
+              except urllib.error.HTTPError as e:
+                  assert e.code == 401, e.code
+              assert os.stat(os.path.join(td, "setup-token")).st_mode & 0o777 == 0o600
+              print("unconfigured start: token printed, / redirects to /setup, API gated")
+          finally:
+              p.terminate()
           PY
+
+      - name: Demo mode boots from a fresh clone with zero configuration
+        run: |
+          DEMO=1 LISTEN_PORT=18091 timeout 20 python3 app.py > demo.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:18091/api/config > cfg.json && break; sleep 1
+          done
+          python3 -c "import json; c=json.load(open('cfg.json')); assert c['demo'] and c['nodes'], c; print('demo /api/config ok:', c['brand'], [n['id'] for n in c['nodes']])"
+          # the retired personal automation stack must not leak into the public API
+          curl -sf http://127.0.0.1:18091/api/all | grep -q "nb""ai" && { echo '::error::retired automation keys leaked into /api/all'; exit 1; } || true
+          curl -sf -o /dev/null http://127.0.0.1:18091/api/topology
+          curl -sf -o /dev/null http://127.0.0.1:18091/api/threats

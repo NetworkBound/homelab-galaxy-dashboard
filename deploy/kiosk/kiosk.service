@@ -1,0 +1,24 @@
+[Unit]
+Description=Galaxy dashboard kiosk (one Xorg, two screens: wall + nexus)
+After=multi-user.target
+StartLimitIntervalSec=0
+
+[Service]
+# The kiosk user needs a ~/.xinitrc (deploy/kiosk/xinitrc.example) and permission
+# to start X on a VT (Xwrapper.config allowed_users=anybody, or run as root).
+User=kiosk
+Environment=HOME=/home/kiosk
+Environment=DASHBOARD_URL=http://127.0.0.1:8080
+Environment=KIOSK_OUTPUT0=HDMI-0
+Environment=KIOSK_OUTPUT1=HDMI-0
+Type=simple
+ExecStartPre=/bin/sh -c 'rm -f "$HOME/.config/chromium-kiosk/Singleton"* "$HOME/.config/chromium-nexus/Singleton"*; true'
+ExecStartPre=/bin/sh -c 'rm -f /tmp/.X0-lock /tmp/.X11-unix/X0 2>/dev/null; true'
+ExecStart=/usr/bin/startx /home/kiosk/.xinitrc -- :0 vt1 -nolisten tcp
+# re-probe the displays once X is up (cold-boot EDID race, see the script)
+ExecStartPost=/bin/sh -c '/usr/local/bin/kiosk-fix-modes.sh >/var/log/kiosk-fix-modes.log 2>&1 &'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

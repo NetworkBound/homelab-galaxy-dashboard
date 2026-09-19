@@ -1,0 +1,13 @@
+[Unit]
+Description=Kiosk display mode guard (one shot; scheduled by kiosk-fix-modes.timer)
+After=kiosk.service
+
+[Service]
+Type=oneshot
+Environment=OUT0=HDMI-0
+Environment=OUT1=HDMI-0
+Environment=WANT1=3840x2160
+Environment=RETRY_S=60
+ExecStart=/usr/local/bin/kiosk-fix-modes.sh
+StandardOutput=append:/var/log/kiosk-fix-modes.log
+StandardError=append:/var/log/kiosk-fix-modes.log

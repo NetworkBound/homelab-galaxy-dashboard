@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Homelab Galaxy</title>
+<title>Galaxy · wall</title>
 <style>
 /* ================================================================
-   DASHBOARD HUD — single-layer stylesheet (consolidated 2026-08)
+   WALL HUD — single-layer stylesheet
    ----------------------------------------------------------------
    Read top to bottom:
      1 tokens          6 right rail (#gpu #ops #flows #feeds)
@@ -12,7 +12,7 @@
      3 panel chrome    8 floaters (#tour #focuscard #tip)
      4 rails           9 state overrides (inline-style neutralizers)
      5 left rail      10 breakpoints (>=1600, >=2560, short)
-   TV SAFE AREA: the wall kiosk overscans ~5% per edge. --sx/--sy
+   TV SAFE AREA: a wall kiosk overscans ~5% per edge. --sx/--sy
    inset every HUD element; the 3D canvas stays full-bleed.
    RAILS are fixed flex columns: consistent 12px rhythm, #np and
    #flows flex to soak up slack, #legend / #feeds anchor the bottom.
@@ -31,6 +31,9 @@
    amber = degraded/WAN, red = alerts (the only thing that pulses).
    JINJA WARNING: this file is a template. Never let a brace touch
    a hash/percent/brace - write "{ #id" inside media queries.
+   Everything brand- or site-specific (title, node names, palette,
+   WAN label, which panels exist) comes from GET /api/config via
+   static/config.js; nothing in this file names a real estate.
    ================================================================ */
 
 /* ---- 1. tokens ------------------------------------------------- */
@@ -92,12 +95,14 @@ h3{color:var(--ink3);font-size:8.5px;font-weight:600;letter-spacing:1.3px;
 .chip{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;
   font-size:8.5px;letter-spacing:1px;line-height:1.7;text-transform:uppercase;
   padding:1.5px 7px;border-radius:3px;border:1px solid var(--edge);
-  background:rgba(9,16,30,.6);color:#a9bfd8}
+  background:rgba(9,16,30,.6);color:#a9bfd8;text-decoration:none}
 .chip.good:before,.chip.bad:before{content:"";width:5px;height:5px;border-radius:50%;flex:0 0 auto}
 .chip.good:before{background:var(--ok);box-shadow:0 0 5px rgba(62,207,142,.7)}
 .chip.bad{border-color:rgba(255,90,106,.45);background:rgba(255,90,106,.07);color:#ff8b96}
 .chip.bad:before{background:var(--down);box-shadow:0 0 6px var(--down);
   animation:thb 1.6s ease-in-out infinite}
+#chip-light i{width:6px;height:6px;border-radius:50%;background:#5ad7ff;box-shadow:0 0 6px currentColor;display:inline-block}
+a#nexus-hint{color:var(--accent);border-color:rgba(90,215,255,.35)}
 
 /* #alerts flashes in for ~9s when the alert set changes. It stays
    display:block so the collapse can ANIMATE: the flash script fades
@@ -122,9 +127,24 @@ body.has-alerts #alerts{max-height:160px;padding:7px 10px;border-width:1px;margi
 #alerts.hot:before{opacity:1;
   background:linear-gradient(90deg,transparent,rgba(255,90,106,.75),transparent)}
 
-#fleetbody{font-size:10px}
+/* ADD-ONS: one block per addons/<id>.py (see docs/contracts.md).
+   Hidden entirely when the back end reports none. */
+#addonbody{font-size:10px}
+.addon{margin:0 0 5px;padding:4px 6px 3px;border:1px solid var(--tile-line);
+  border-radius:4px;background:var(--tile-bg)}
+.addon:last-child{margin-bottom:0}
+.addon .ah{display:flex;align-items:center;gap:6px;color:var(--ink2);font-size:9px;
+  letter-spacing:.8px;text-transform:uppercase;margin-bottom:2px}
+.addon .ah b{color:var(--ink1);font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.addon .ah em{font-style:normal;color:var(--ink3);font-size:8px;letter-spacing:.6px}
+.addon .pip{width:6px;height:6px;border-radius:50%;flex:0 0 auto;background:var(--ink4)}
+.addon .pip.up{background:var(--ok);box-shadow:0 0 5px rgba(62,207,142,.7)}
+.addon .pip.warn{background:var(--warn);box-shadow:0 0 5px rgba(255,179,71,.6)}
+.addon .pip.down{background:var(--down);box-shadow:0 0 6px var(--down);animation:thb 1.6s ease-in-out infinite}
+.addon .err{color:#ff8b96;font-size:9px;white-space:normal;word-break:break-word}
+.kv b.warn{color:var(--warn)} .kv b.bad{color:var(--down)}
 
-/* #np soaks up the rail between #fleet and #legend; overflow scrolls
+/* #np soaks up the rail between #addons and #legend; overflow scrolls
    (scrollbar hidden) behind a bottom fade instead of a hard clip.  */
 #np{flex:1 1 0px;min-height:30px;overflow-y:auto;font-size:10.5px;
   padding-bottom:14px;scrollbar-width:none;
@@ -216,6 +236,9 @@ body.has-alerts #alerts{max-height:160px;padding:7px 10px;border-width:1px;margi
 #feeds .cam:after{content:"LIVE";position:absolute;right:4px;top:3px;font-size:7px;
   letter-spacing:1px;color:#ff9ba5;background:rgba(10,6,8,.88);
   border:1px solid rgba(255,90,106,.35);padding:1px 4px;border-radius:2px}
+/* features.cameras false: no NVR configured, so no camera panel and no chip */
+body.no-cameras #feeds,body.no-cameras #chip-cam{display:none!important}
+body.no-chat #chat{display:none!important}
 
 /* ---- 7. centre column ------------------------------------------ */
 #stat{position:fixed;z-index:5;top:calc(8px + var(--sy));
@@ -281,7 +304,7 @@ body.has-alerts #alerts{max-height:160px;padding:7px 10px;border-width:1px;margi
 /* attribute selector + important is the only pure-CSS way to beat an
    inline style; red / amber state inlines stay untouched.           */
 #kvs [style*="#37f5a0"],
-#fleetbody [style*="#37f5a0"],
+#addonbody [style*="#37f5a0"],
 #health [style*="#37f5a0"],
 #opsgrid [style*="#37f5a0"],
 #np [style*="#37f5a0"],
@@ -299,7 +322,7 @@ body.has-alerts #alerts{max-height:160px;padding:7px 10px;border-width:1px;margi
   #clk{font-size:14px}
   body.has-alerts #alerts{padding:10px 12px}
   #alerts .a{font-size:10.5px}
-  #fleetbody{font-size:11px}
+  #addonbody{font-size:11px}
   .kv{font-size:11px}
   #legend .r{font-size:10px}
   .gpuchip{font-size:10px}
@@ -326,14 +349,14 @@ body.has-alerts #alerts{max-height:160px;padding:7px 10px;border-width:1px;margi
 /* below 1600px the rails are narrow: let long values wrap in two
    lines rather than ellipsize away real data */
 @media (max-width:1599px){
-  #kvs .kv,#fleetbody .kv{flex-wrap:wrap}
-  #kvs .kv span,#fleetbody .kv span{white-space:normal}
-  #kvs .kv b,#fleetbody .kv b{white-space:normal;word-break:break-word;flex:1 1 auto;padding-left:8px}
+  #kvs .kv,#addonbody .kv{flex-wrap:wrap}
+  #kvs .kv span,#addonbody .kv span{white-space:normal}
+  #kvs .kv b,#addonbody .kv b{white-space:normal;word-break:break-word;flex:1 1 auto;padding-left:8px}
 }
 /* short viewports (<=820px tall): cap the stretchy panels so both
    rails still fit; fades hide the clip instead of a hard cut */
 @media (max-height:820px){
-  #fleet{max-height:140px;overflow:hidden;
+  #addons{max-height:140px;overflow:hidden;
     -webkit-mask-image:linear-gradient(180deg,#000 calc(100% - 12px),transparent);
     mask-image:linear-gradient(180deg,#000 calc(100% - 12px),transparent)}
   #gpuhist{display:none}
@@ -348,14 +371,63 @@ body.has-alerts #alerts{max-height:160px;padding:7px 10px;border-width:1px;margi
   .op b{font-size:12px}
   .op small{font-size:8.5px;line-height:1.3}
 }
+
+/* focuscard-nocut: the title was clipped at BOTH ends - the card is centred with
+   max-width:380px and .panel sets overflow:hidden, so a long device name lost its
+   first and last characters. Let it grow to the TV safe area and wrap instead. */
+#focuscard{max-width:min(760px, calc(100vw - 2*var(--sx) - 24px)) !important;
+  overflow:visible !important}
+#focuscard .fn{white-space:normal !important; overflow-wrap:anywhere;
+  line-height:1.25; padding:0 2px}
+#focuscard .fm{flex-wrap:wrap; row-gap:4px}
+
+/* ---- 11. broadcast pop ------------------------------------------
+   --tour / --tour-glow / --tour-soft are published by netscene_exo.js from the
+   tour's current stop (amber at the WAN edge, a guest category's hue in its
+   block, cyan at the overview). Chrome follows the camera; ink does not. */
+:root{--tour:#5ad7ff;--tour-glow:rgba(90,215,255,.45);--tour-soft:rgba(90,215,255,.16)}
+.chip:empty{display:none}
+.chip.cf{color:#ffb073;border-color:rgba(246,130,31,.45);background:rgba(246,130,31,.06)}
+.chip.warn{color:var(--warn);border-color:rgba(255,179,71,.45)}
+/* crisper panel edges: a hairline gradient border keyed to the tour colour */
+.panel{border-color:rgba(125,160,200,.14);
+  box-shadow:0 6px 24px rgba(0,0,0,.45),0 0 0 1px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.06)}
+.panel:after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;padding:1px;
+  background:linear-gradient(135deg,var(--tour-glow),transparent 38%,transparent 62%,var(--tour-soft));
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;
+  transition:background .9s ease}
+#title.panel:before,#stat.panel:before{opacity:.75;transition:background .9s ease;
+  background:linear-gradient(90deg,transparent,var(--tour),transparent)}
+/* vignette between the scene and the HUD: focus, not darkness (stays clear of the centre) */
+body:after{content:"";position:fixed;inset:0;z-index:1;pointer-events:none;
+  background:radial-gradient(ellipse 82% 74% at 50% 47%,transparent 60%,rgba(0,2,8,.40) 100%)}
+/* numerals never jitter */
+#stat .n,#hstats b,#herobot b,#st-live .tc,#cin .cstats,#focuscard .fm b,#clk{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+#hbrand .wm{text-shadow:0 0 22px var(--tour-glow)}
+/* LIVE pill: a broadcast bug, not a chip */
+body #st-live{background:linear-gradient(180deg,rgba(14,20,34,.94),rgba(6,10,20,.90));
+  border:1px solid rgba(255,90,106,.32);border-radius:999px;
+  box-shadow:0 8px 28px rgba(0,0,0,.5),0 0 0 1px rgba(0,0,0,.45),0 0 18px rgba(255,90,106,.10),inset 0 1px 0 rgba(255,255,255,.06)}
+body #st-live .live{text-shadow:0 0 10px rgba(255,90,106,.55)}
+body #st-live .dot{animation:st-livedot 2s ease-in-out infinite}
+@keyframes st-livedot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
+/* lower third: soft plate, tour-coloured underline and progress tick */
+body #cin{padding:8px 22px 9px;border-radius:8px;
+  background:linear-gradient(90deg,transparent,rgba(6,10,20,.74) 20%,rgba(6,10,20,.74) 80%,transparent)}
+body #cin:before{content:"";position:absolute;left:50%;bottom:0;width:240px;height:1px;transform:translateX(-50%);
+  background:linear-gradient(90deg,transparent,var(--tour),transparent);opacity:.85;transition:background .9s ease}
+body #cin .cname{text-shadow:0 0 16px var(--tour-glow),0 1px 2px rgba(0,0,0,.85)}
+body #cin .cbar i.now{background:var(--tour);box-shadow:0 0 8px var(--tour-glow)}
+/* the whole scene shares one tour hue at the panel hairlines; keep #tip readable on any palette */
+#tip{background:rgba(4,10,22,.97);border-color:var(--tour-soft);box-shadow:0 8px 24px rgba(0,0,0,.6),0 0 0 1px rgba(0,0,0,.5)}
 </style></head><body>
 
 <canvas id="c"></canvas>
 
 <div id="railL">
-  <div id="title" class="panel"><b>HOMELAB<span>GALAXY</span></b><small>live topology · flows · telemetry</small><div id="clockbar"><span id="clk">--:--:--</span><span class="chip" id="chip-wan">WAN …</span><span class="chip" id="chip-isp">ISP …</span><span class="chip" id="chip-cam">CAMS …</span></div></div>
+  <div id="title" class="panel"><b id="brand">GAL<span>AXY</span></b><small id="tagline">live topology · flows · telemetry</small><div id="clockbar"><span id="clk">--:--:--</span><span class="chip" id="chip-wan">WAN …</span><span class="chip" id="chip-isp">ISP …</span><span class="chip" id="chip-cam">CAMS …</span><span class="chip cf" id="chip-cf"></span><span class="chip" id="chip-cs"></span><span class="chip" id="chip-light" style="display:none"></span><a class="chip" id="nexus-hint" href="/nexus" style="display:none">4K · /nexus</a></div></div>
   <div id="alerts" class="panel"><h3>Active Alerts</h3><div id="alertlist"></div></div>
-  <div id="fleet" class="panel"><h3>Fleet · extra services</h3><div id="fleetbody">starting…</div></div>
+  <div id="addons" class="panel" style="display:none"><h3>Add-ons</h3><div id="addonbody">starting…</div></div>
   <div id="np" class="panel"></div>
   <div id="legend" class="panel"></div>
 </div>
@@ -364,7 +436,7 @@ body.has-alerts #alerts{max-height:160px;padding:7px 10px;border-width:1px;margi
   <div id="gpu" class="panel"><h3>GPU Telemetry</h3><div id="gpus"></div><div id="gpuhist"></div></div>
   <div id="ops" class="panel"><h3>Mission Ops</h3><div id="opsgrid"></div></div>
   <div id="flows" class="panel"><h3>Live Flows <span id="flowhd"></span></h3><div id="flowlist"></div></div>
-  <div id="feeds" class="panel"><h3>Frigate · live</h3><div class="grid" id="cams"></div></div>
+  <div id="feeds" class="panel"><h3>Cameras · live</h3><div class="grid" id="cams"></div></div>
 </div>
 
 <div id="stat" class="panel">
@@ -373,7 +445,7 @@ body.has-alerts #alerts{max-height:160px;padding:7px 10px;border-width:1px;margi
   <div><div class="n" id="s-cli">–</div><div class="l">CLIENTS</div></div>
   <div><div class="n" id="s-gpu">–</div><div class="l">GPU</div></div>
   <div><div class="n ok" id="s-net">–</div><div class="l">SNMP NET</div></div>
-  <div><div class="n ok" id="s-fleet">–</div><div class="l">FLEET UP</div></div></div>
+  <div><div class="n ok" id="s-addons">–</div><div class="l">ADD-ONS</div></div></div>
 <div id="data" class="panel"><h3>Homelab Data</h3><div id="kvs"></div><div id="nethist"></div><div id="srcs"></div><div id="health"></div></div>
 <div id="chat" class="panel"><div class="row"><input id="msg" placeholder="Ask the homelab LLM…"/><button onclick="ask()">Send</button></div><div class="out" id="cout"></div></div>
 <div id="tour">◆ AUTO-TOUR · move mouse to take control</div>
@@ -382,7 +454,8 @@ body.has-alerts #alerts{max-height:160px;padding:7px 10px;border-width:1px;margi
 
 
 <script>window.NP_NO_AUTOPOLL=true;</script>
-<script src="/static/new_panels.js"></script>
+<script src="/static/config.js?v=1"></script>
+<script src="/static/new_panels.js?v=1"></script>
 <script src="/static/vendor/three.min.js"></script>
 <script src="/static/vendor/OrbitControls.js"></script>
 <script src="/static/vendor/CopyShader.js"></script>
@@ -392,6 +465,30 @@ body.has-alerts #alerts{max-height:160px;padding:7px 10px;border-width:1px;margi
 <script src="/static/vendor/ShaderPass.js"></script>
 <script src="/static/vendor/UnrealBloomPass.js"></script>
 <script>
+/* ---- shared helpers for the inline HUD code below ---- */
+function nbEsc(x){return String(x==null?'':x).replace(/[&<>"]/g,function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function cfg(){return window.CONFIG||{features:{},palette:{},nodes:[],categories:[]};}
+/* ADD-ONS panel: one block per data.addons[id] = {title,status,rows,ts,error}
+   (contract in docs/contracts.md). Hidden when there are none. */
+function renderAddons(d){
+  var panel=document.getElementById('addons'),body=document.getElementById('addonbody'),stat=document.getElementById('s-addons');
+  var A=(d&&d.addons)||{},ids=Object.keys(A);
+  if(!ids.length){panel.style.display='none';if(stat){stat.textContent='–';stat.className='n ok';}return;}
+  panel.style.display='';
+  var up=0,now=Date.now()/1000;
+  body.innerHTML=ids.map(function(id){
+    var a=A[id]||{},st=String(a.status||'unknown').toLowerCase();
+    if(st==='ok')st='up';
+    if(st==='up')up++;
+    var age=a.ts?Math.max(0,now-a.ts):null,ageS=age==null?'':age<90?Math.round(age)+'s':age<5400?Math.round(age/60)+'m':Math.round(age/3600)+'h';
+    var rows=(a.rows||[]).map(function(r){var c=r.cls==='ok'?'':r.cls==='warn'?' warn':r.cls==='bad'?' bad':'';
+      return '<div class="kv"><span>'+nbEsc(r.k)+'</span><b class="'+c.trim()+'">'+nbEsc(r.v)+'</b></div>';}).join('');
+    return '<div class="addon"><div class="ah"><span class="pip '+nbEsc(st)+'"></span><b>'+nbEsc(a.title||id)+'</b><em>'+ageS+'</em></div>'+
+      rows+(a.error?'<div class="err">'+nbEsc(a.error)+'</div>':'')+'</div>';
+  }).join('');
+  if(stat){stat.textContent=up+'/'+ids.length;stat.className='n '+(up===ids.length?'ok':up?'warn':'bad');}
+}
 function startHudFallback(){
   if(window.HUD_STARTED||window.SCENE_OK)return; window.HUD_STARTED=true;
   if(window.__hudFallbackStarted)return;
@@ -408,12 +505,12 @@ function startHudFallback(){
     document.getElementById('s-cli').textContent=text(d.unifi&&d.unifi.clients);
     document.getElementById('s-gpu').textContent=gpu.length?Math.round(gpu.reduce((a,g)=>a+Number(g.util||0),0)/gpu.length)+'%':'–';
     document.getElementById('s-net').textContent=d.netmap?`${d.netmap.up}/${d.netmap.total}`:'–';
-    {const f=d.fleet&&d.fleet.services||[];document.getElementById('s-fleet').textContent=f.length?f.filter(s=>s.up).length+'/'+f.length:'–';}
+    try{renderAddons(d);}catch(e){}
     document.getElementById('gpus').innerHTML=Object.entries(byHost).map(([host,arr])=>{
       const util=arr.reduce((a,g)=>a+Number(g.util||0),0)/Math.max(arr.length,1);
       const memUsed=arr.reduce((a,g)=>a+Number(g.mem_used||0),0),memTotal=arr.reduce((a,g)=>a+Number(g.mem_total||0),0);
-      return `<div class="hostblock"><div class="hosttitle"><span>${host}</span><b>${arr.length} GPU · ${Math.round(util)}%</b></div><div class="bar"><i style="width:${util}%"></i></div><div class="gpuchips">`+
-        arr.map(g=>`<div class="gpuchip"><b>${(g.name||'GPU').replace('NVIDIA GeForce ','').replace('ai-server-2 ','').replace('RTX 3090','3090')}</b><span><em>${g.util||0}%</em><em>${g.temp||0}°C</em><em>${(Number(g.mem_used||0)/1024).toFixed(1)}G</em></span></div>`).join('')+
+      return `<div class="hostblock"><div class="hosttitle"><span>${nbEsc(host)}</span><b>${arr.length} GPU · ${Math.round(util)}%</b></div><div class="bar"><i style="width:${util}%"></i></div><div class="gpuchips">`+
+        arr.map(g=>`<div class="gpuchip"><b>${nbEsc((g.name||'GPU').replace('NVIDIA GeForce ',''))}</b><span><em>${g.util||0}%</em><em>${g.temp||0}°C</em><em>${(Number(g.mem_used||0)/1024).toFixed(1)}G</em></span></div>`).join('')+
         `</div><div class="sub"><span>VRAM</span><span>${(memUsed/1024).toFixed(1)}/${(memTotal/1024).toFixed(0)}GB</span></div></div>`;
     }).join('');
     const nodes=d.nodes||[],health=d.health||[],upHealth=health.filter(h=>h.up).length,ai=d.ai_servers||[],u=d.unifi||{},z=d.zabbix||{};
@@ -426,7 +523,7 @@ function startHudFallback(){
       `<div class="op"><span>Network</span><b>${text(u.clients)} clients</b><small>${text(u.rx)} / ${text(u.tx)} Mbps WAN</small><div class="meter"><i style="width:${Math.min(100,Number(u.rx||0)*2)}%"></i></div></div>`+
       `<div class="op"><span>Health</span><b style="color:${z.problems?'#ff5a6a':'#37f5a0'}">${z.problems||0} alerts</b><small>${upHealth}/${health.length||0} checks up</small><div class="meter"><i style="width:${pct(upHealth,health.length)}%"></i></div></div>`;
     const storage=d.storage||[],pools=d.pools||[],storTotal=storage.reduce((a,s)=>a+Number(s.total||0),0),storUsed=storage.reduce((a,s)=>a+Number(s.used||0),0);
-    const aiLine=ai.map(s=>`${s.name}: ollama ${s.ollama_up?'ready':'down'} · ${s.models||0} models`).join(' · ')||'none';
+    const aiLine=ai.map(s=>`${nbEsc(s.name)} ${s.ollama_up?'ready':'down'} · ${s.models||0} models`).join(' · ')||'none';
     document.getElementById('kvs').innerHTML=
       `<div class="kv"><span>UniFi clients / devices</span><b>${text(u.clients)} / ${text(u.devices)} (${text(u.wifi,'?')} wifi)</b></div>`+
       `<div class="kv"><span>WAN down / up</span><b>${text(u.rx)} / ${text(u.tx)} Mbps</b></div>`+
@@ -435,40 +532,43 @@ function startHudFallback(){
       `<div class="kv"><span>AI GPU server</span><b style="color:${ai.length?'#37f5a0':'#ff5a6a'}">${aiLine}</b></div>`+
       `<div class="kv"><span>ZFS pools</span><b>${pools.length} pools</b></div>`+
       `<div class="kv"><span>Storage</span><b>${storage.length} stores · ${(storUsed/1e12).toFixed(1)}/${(storTotal/1e12).toFixed(1)}TB</b></div>`;
-    const cams=(d.cameras||[]).slice(0,4);
-    document.getElementById('cams').innerHTML=cams.map(c=>`<div class="cam"><img src="/cam/${c}.jpg?${Date.now()}" id="hud-${c}"/><span>${c}</span></div>`).join('');
+    const cams=cfg().features.cameras?(d.cameras||[]).slice(0,4):[];
+    document.getElementById('cams').innerHTML=cams.map(c=>`<div class="cam"><img src="/cam/${encodeURIComponent(c)}.jpg?${Date.now()}" id="hud-${nbEsc(c)}"/><span>${nbEsc(c)}</span></div>`).join('');
     const ent=Object.entries(z.alert_hosts||{}).sort((a,b)=>b[1].sev-a[1].sev),shown=ent.slice(0,6);
     const ap=document.getElementById('alerts'),al=document.getElementById('alertlist'),SEVC={5:'#ff2b2b',4:'#ff5a6a',3:'#ffa033',2:'#ffd24a'};
-    if(ent.length){ap.style.display='block';al.innerHTML=shown.map(([h,v])=>`<div class="a"><span class="sv" style="color:${SEVC[v.sev]||'#ffd24a'}"></span><span class="h">${h}</span><span class="m">${(v.names&&v.names[0])||''}${v.n>1?' +'+(v.n-1):''}</span></div>`).join('')+(ent.length>shown.length?`<div class="more">+${ent.length-shown.length} more alerts in Zabbix</div>`:'');}
+    if(ent.length){ap.style.display='block';al.innerHTML=shown.map(([h,v])=>`<div class="a"><span class="sv" style="color:${SEVC[v.sev]||'#ffd24a'}"></span><span class="h">${nbEsc(h)}</span><span class="m">${nbEsc((v.names&&v.names[0])||'')}${v.n>1?' +'+(v.n-1):''}</span></div>`).join('')+(ent.length>shown.length?`<div class="more">+${ent.length-shown.length} more alerts in Zabbix</div>`:'');}
     else ap.style.display='none';
-    const fl=d.fleet||{},svc=fl.services||[];
-    document.getElementById('fleetbody').innerHTML=svc.length
-      ? svc.map(s=>`<div class="kv"><span>${s.name}</span><b style="color:${s.up?'#37f5a0':'#ff5a6a'}">${s.up?'up':'down'}</b></div>`).join('')
-      : '<div class="kv"><span>no fleet targets</span><b>set FLEET_* in .env</b></div>';
   }
   pollFallback();setInterval(pollFallback,6000);setInterval(()=>document.querySelectorAll('#cams img').forEach(im=>im.src='/cam/'+im.id.replace('hud-','')+'.jpg?'+Date.now()),1800);
 }
 window.addEventListener('error',()=>startHudFallback(),{once:true});
-setTimeout(()=>{if(!window.SCENE_OK&&document.getElementById('s-run').textContent==='–')startHudFallback();},4500);
-if(!(window.THREE&&THREE.OrbitControls&&THREE.EffectComposer)){startHudFallback();}else{
-window.SCENE_OK=true;
-const CAT={ai:0xff4fa3,media:0x38e1ff,network:0x37f5a0,monitor:0xffb347,web:0x9b8cff,infra:0x8fb0d0};
-const CATNAME={ai:"AI / inference",media:"Media",network:"Network",monitor:"Monitoring",web:"Web / apps",infra:"Infra"};
-// Galaxy anchors are derived from whatever nodes the API reports, so the scene
-// adapts to any cluster size without editing this file.
-const NODE_PALETTE=[0x5ad7ff,0x37f5a0,0xff4fa3,0xffb347,0x9b8cff,0x38e1ff];
-function buildNodeAnchors(names){
-  const n=names.length||1, span=560, step=n>1?(span*2)/(n-1):0;
-  const out={};
-  names.forEach((nm,i)=>{out[nm]={x:n>1?-span+step*i:0,color:NODE_PALETTE[i%NODE_PALETTE.length],name:String(nm).toUpperCase()};});
-  return out;
+setTimeout(()=>{if(!window.SCENE_OK&&document.getElementById('s-run').textContent==='–')startHudFallback();},6500);
+
+/* ---- brand / features from /api/config, applied before the scene boots ---- */
+function applyConfig(C){
+  document.title=C.brand+' · wall';
+  var b=document.getElementById('brand');if(b)b.innerHTML=C.brandHtml();
+  var tl=document.getElementById('tagline');if(tl)tl.textContent=C.tagline;
+  document.body.classList.toggle('no-cameras',!C.features.cameras);
+  document.body.classList.toggle('no-chat',!C.features.chat);
+  var nh=document.getElementById('nexus-hint');if(nh)nh.style.display=C.features.nexus?'':'none';
+  var CAT={},CATNAME={};
+  C.categories.forEach(function(c){CAT[c]=C.catHex(c);CATNAME[c]=C.catName(c);});
+  window.CAT=CAT;window.CATNAME=CATNAME;
+  document.getElementById('legend').innerHTML=Object.keys(CATNAME).map(k=>`<div class="r"><span class="d" style="color:${C.hexStr(CAT[k])}"></span>${nbEsc(CATNAME[k])}</div>`).join('');
 }
-let NODES=buildNodeAnchors([]);
+
+/* ---- the 3D scene: renderer, composer, HUD pollers. netscene.js and the
+   other modules (loaded afterwards, in order) build everything visible. ---- */
+function bootScene(){
+if(!(window.THREE&&THREE.OrbitControls&&THREE.EffectComposer)){startHudFallback();return;}
+window.SCENE_OK=true;
+const CAT=window.CAT||{},CATNAME=window.CATNAME||{};
 const R=150;
 
 const scene=new THREE.Scene();scene.fog=new THREE.FogExp2(0x01020a,0.00018);
 const cam=new THREE.PerspectiveCamera(58,innerWidth/innerHeight,0.5,18000);cam.position.set(0,330,1080);
-const rndr=new THREE.WebGLRenderer({canvas:c,antialias:true});rndr.setSize(innerWidth,innerHeight);rndr.setPixelRatio(Math.min(devicePixelRatio,2));
+const rndr=new THREE.WebGLRenderer({canvas:c,antialias:true,powerPreference:'high-performance'});rndr.setSize(innerWidth,innerHeight);rndr.setPixelRatio(Math.min(devicePixelRatio,2));
 rndr.toneMapping=THREE.ACESFilmicToneMapping;rndr.toneMappingExposure=1.2;
 const ctrl=new THREE.OrbitControls(cam,rndr.domElement);ctrl.enableDamping=true;ctrl.maxDistance=6200;ctrl.minDistance=25;
 scene.add(new THREE.AmbientLight(0x44557a,.6));
@@ -476,30 +576,7 @@ const composer=new THREE.EffectComposer(rndr);composer.addPass(new THREE.RenderP
 const bloom=new THREE.UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),0.95,0.6,0.78);composer.addPass(bloom);
 window.scene=scene;window.cam=cam;window.rndr=rndr;window.composer=composer;window.bloom=bloom;window.ctrl=ctrl;
 
-// textures
-function dotTex(){const s=64,cv=document.createElement('canvas');cv.width=cv.height=s;const x=cv.getContext('2d');const g=x.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2);g.addColorStop(0,'#fff');g.addColorStop(.35,'rgba(255,255,255,.7)');g.addColorStop(1,'rgba(0,0,0,0)');x.fillStyle=g;x.beginPath();x.arc(s/2,s/2,s/2,0,7);x.fill();return new THREE.CanvasTexture(cv);}
-function glowTex(){const s=128,cv=document.createElement('canvas');cv.width=cv.height=s;const x=cv.getContext('2d');const g=x.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2);g.addColorStop(0,'rgba(255,255,255,.95)');g.addColorStop(.25,'rgba(200,225,255,.5)');g.addColorStop(1,'rgba(0,0,0,0)');x.fillStyle=g;x.fillRect(0,0,s,s);return new THREE.CanvasTexture(cv);}
-const DOT=dotTex(),GLOW=glowTex();
-const planetTexCache={};
-function planetTex(hex,seed){seed=seed||0;const key=hex+'_'+seed;if(planetTexCache[key])return planetTexCache[key];
-  let s=(hex^(seed*2654435761))>>>0;const rnd=()=>{s=(s*1664525+1013904223)>>>0;return s/4294967296;};
-  const w=256,h=128,cv=document.createElement('canvas');cv.width=w;cv.height=h;const x=cv.getContext('2d');
-  const base=new THREE.Color(hex);base.offsetHSL((rnd()-.5)*0.08,0,(rnd()-.5)*0.08);
-  x.fillStyle='#'+base.clone().multiplyScalar(.5+rnd()*.18).getHexString();x.fillRect(0,0,w,h);
-  const n=160+Math.floor(rnd()*200);
-  for(let i=0;i<n;i++){const r=rnd()*(10+seed*5)+3,bx=rnd()*w,by=rnd()*h;const sh=.35+rnd()*.9;
-    x.fillStyle='rgba('+Math.round(base.r*255*sh)+','+Math.round(base.g*255*sh)+','+Math.round(base.b*255*sh)+','+(.2+rnd()*.45)+')';
-    x.beginPath();x.arc(bx,by,r,0,7);x.fill();}
-  const t=new THREE.CanvasTexture(cv);planetTexCache[key]=t;return t;}
-// atmosphere fresnel
-function atmoMat(hex){return new THREE.ShaderMaterial({uniforms:{c:{value:new THREE.Color(hex)}},transparent:true,blending:THREE.AdditiveBlending,side:THREE.BackSide,depthWrite:false,
-  vertexShader:'varying vec3 vN;void main(){vN=normalize(normalMatrix*normal);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
-  fragmentShader:'varying vec3 vN;uniform vec3 c;void main(){float i=pow(0.72-dot(vN,vec3(0.0,0.0,1.0)),2.5);gl_FragColor=vec4(c,1.0)*clamp(i,0.0,1.0);}'});}
-
-const labels=[];
-function label(text,color,sz){const cv=document.createElement('canvas');cv.width=256;cv.height=46;const x=cv.getContext('2d');x.font='600 22px ui-monospace,monospace';x.fillStyle=typeof color==='number'?'#'+color.toString(16).padStart(6,'0'):color;x.textAlign='center';x.shadowColor=x.fillStyle;x.shadowBlur=7;x.fillText(text,128,31);const s=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv),transparent:true,depthWrite:false,depthTest:false}));s.scale.set(sz,sz/5.6,1);s.userData.lbl=true;labels.push(s);return s;}
-
-// ---- netscene.js renders the live network topology + ntopng flows ----
+// ---- netscene.js renders the live network topology + flows ----
 const GAL={};let PLANETS=[],NETMESHES=[],netNodes=[],camScreens=[],storageWraps=[],
     satellites=[],TOUR=[],tIdx=-1;
 function updateGpuBlades(){}function buildGuests(){}function buildCameras(){}
@@ -508,43 +585,35 @@ function showStopCard(){}function buildStorage(){}function spawnMeteor(){}
 
 // ---- HUD (same data feeds) ----
 let GPU=[];
-async function pollGpu(){try{const j=await (await fetch('/api/gpu')).json();GPU=j.gpus;updateGpuBlades(GPU);
+async function pollGpu(){try{const j=await (await fetch('/api/gpu')).json();GPU=j.gpus||[];updateGpuBlades(GPU);
   const grouped={};GPU.forEach(g=>{const h=g.host||'gpu';(grouped[h]=grouped[h]||[]).push(g);});
   document.getElementById('gpus').innerHTML=Object.entries(grouped).map(([host,arr])=>{
     const util=arr.reduce((a,g)=>a+Number(g.util||0),0)/arr.length;
     const memUsed=arr.reduce((a,g)=>a+Number(g.mem_used||0),0),memTotal=arr.reduce((a,g)=>a+Number(g.mem_total||0),0);
     const watts=arr.reduce((a,g)=>a+Number(g.power||0),0),temp=Math.max(...arr.map(g=>Number(g.temp||0)));
-    return `<div class="hostblock"><div class="hosttitle"><span>${host}</span><b>${arr.length} GPU · ${Math.round(util)}%</b></div><div class="bar"><i style="width:${util}%"></i></div><div class="gpuchips">`+
-      arr.map(g=>`<div class="gpuchip"><b>${(g.name||'GPU').replace('NVIDIA GeForce ','').replace('ai-server-2 ','').replace('RTX 3090','3090')}</b><span><em>${g.util}%</em><em>${g.temp}°C</em><em>${(g.mem_used/1024).toFixed(1)}G</em></span></div>`).join('')+
+    return `<div class="hostblock"><div class="hosttitle"><span>${nbEsc(cfg().nodeLabel?cfg().nodeLabel(host):host)}</span><b>${arr.length} GPU · ${Math.round(util)}%</b></div><div class="bar"><i style="width:${util}%"></i></div><div class="gpuchips">`+
+      arr.map(g=>`<div class="gpuchip"><b>${nbEsc((g.name||'GPU').replace('NVIDIA GeForce ',''))}</b><span><em>${g.util}%</em><em>${g.temp}°C</em><em>${(g.mem_used/1024).toFixed(1)}G</em></span></div>`).join('')+
       `</div>`+
       `<div class="sub"><span>host total</span><span>${(memUsed/1024).toFixed(1)}/${(memTotal/1024).toFixed(0)}GB</span><span>${temp}°C max</span><span>${watts.toFixed(0)}W</span></div></div>`;
   }).join('');
   document.getElementById('s-gpu').textContent=(GPU.length?Math.round(GPU.reduce((a,g)=>a+Number(g.util||0),0)/GPU.length):0)+'%';
-  const byHost={};GPU.forEach(g=>{const h=g.host||'gpu';(byHost[h]=byHost[h]||[]).push(g);});
-  for(const h in byHost){const arr=byHost[h],avg=arr.reduce((a,g)=>a+Number(g.util||0),0)/arr.length;if(GAL[h]){GAL[h].halo.scale.setScalar(70+avg*.7);GAL[h].core.scale.setScalar(1+avg/100*.6);GAL[h].sun.intensity=2+avg/100*2;}}
 }catch(e){}}
 function aiServerPlanets(servers){
   const out=[];
   (servers||[]).forEach((s,si)=>{
     out.push({id:9000+si,name:`${s.name} · ${s.gpu_count||0} GPUs`,type:'host',status:s.up?'running':'stopped',node:s.name,cat:'ai',cpu:s.gpu_util||0,mem:(s.gpu_mem_used||0)*1048576,maxmem:Math.max((s.gpu_mem_total||1)*1048576,1)});
-    (s.gpus||[]).forEach((g,gi)=>out.push({id:9100+si*20+gi,name:(g.name||`RTX 3090 ${gi}`).replace('ai-server-2 ','').replace('NVIDIA GeForce ',''),type:'gpu',status:'running',node:s.name,cat:'ai',cpu:g.util||0,mem:(g.mem_used||0)*1048576,maxmem:Math.max((g.mem_total||1)*1048576,1)}));
+    (s.gpus||[]).forEach((g,gi)=>out.push({id:9100+si*20+gi,name:(g.name||`GPU ${gi}`).replace('NVIDIA GeForce ',''),type:'gpu',status:'running',node:s.name,cat:'ai',cpu:g.util||0,mem:(g.mem_used||0)*1048576,maxmem:Math.max((g.mem_total||1)*1048576,1)}));
   });
   return out;
 }
 async function pollAll(){try{const d=await (await fetch('/api/all')).json();if(d.topology&&window.netSceneUpdate){try{window.netSceneUpdate(d.topology);}catch(e){}}if(d.topology){try{renderFlows(d.topology);}catch(e){}}if(window.renderNewPanels){try{window.renderNewPanels(d);}catch(e){}}const allGuests=(d.guests||[]).concat(aiServerPlanets(d.ai_servers));window.GMAP={};allGuests.forEach(g=>GMAP[g.id]=g);document.getElementById('s-run').textContent=(d.running||0)+(d.ai_servers||[]).filter(s=>s.up).length;document.getElementById('s-tot').textContent=allGuests.length;document.getElementById('s-cli').textContent=(d.unifi&&d.unifi.clients)??'–';
   if(PLANETS.filter(p=>p.userData.g).length!==allGuests.length){buildGuests(allGuests);}
-  if(camScreens.length!==d.cameras.length)buildCameras(d.cameras);
+  const camList0=cfg().features.cameras?(d.cameras||[]):[];
+  if(camScreens.length!==camList0.length)buildCameras(camList0);
   if(d.netmap&&d.netmap.devices){if(d.netmap.devices.length!==netNodes.length)buildNetmap(d.netmap.devices);
     else d.netmap.devices.forEach((dv,i)=>{const nn=netNodes[i];if(nn){nn.up=dv.up;nn.m.material.emissive.setHex(dv.up?0x37f5a0:0xff5a6a);nn.m.userData.netdev=dv;}});
     window.NETMAP=d.netmap;document.getElementById('s-net').textContent=d.netmap.up+'/'+d.netmap.total;}
-  if(d.fleet){const fl=d.fleet,st=fl.stats||{},svc=fl.services||[],upc=svc.filter(s=>s.up).length;
-    document.getElementById('s-fleet').textContent=svc.length?upc+'/'+svc.length:'–';
-    const statRows=Object.entries(st).filter(([k])=>k!=='up')
-      .map(([k,v])=>`<div class="kv"><span>${k}</span><b>${typeof v==='object'?JSON.stringify(v):v}</b></div>`).join('');
-    document.getElementById('fleetbody').innerHTML=
-      (svc.map(sv=>`<div class="kv"><span>${sv.name}</span><b style="color:${sv.up?'#37f5a0':'#ff5a6a'}">${sv.up?'up':'down'}</b></div>`).join(''))
-      + statRows
-      || '<div class="kv"><span>no fleet targets</span><b>set FLEET_* in .env</b></div>';}
+  try{renderAddons(d);}catch(e){}
   const u=d.unifi||{},z=d.zabbix||{};window.ALERTS=z.alert_hosts||{};
   const _nodes=d.nodes||[],_pools=d.pools||[];
   const hl=d.health||[],upHealth=hl.filter(h=>h.up).length;
@@ -556,43 +625,43 @@ async function pollAll(){try{const d=await (await fetch('/api/all')).json();if(d
     `<div class="op"><span>Compute</span><b>${_nodes.length} PVE · ${GPU.length} GPU</b><small>${(memUsed/1.07e9).toFixed(0)}/${(memTotal/1.07e9).toFixed(0)}G RAM</small><div class="meter"><i style="width:${Math.min(100,memUsed/Math.max(memTotal,1)*100)}%"></i></div></div>`+
     `<div class="op"><span>AI Fabric</span><b>${aiUp}/${(d.ai_servers||[]).length||1} online</b><small>${(gpuUsed/1024).toFixed(1)}/${(gpuMem/1024).toFixed(0)}GB VRAM</small><div class="meter"><i style="width:${Math.min(100,gpuUsed/Math.max(gpuMem,1)*100)}%"></i></div></div>`+
     `<div class="op"><span>Network</span><b>${u.clients??'–'} clients</b><small>${u.rx??'–'} / ${u.tx??'–'} Mbps WAN</small><div class="meter"><i style="width:${Math.min(100,Number(u.rx||0)*2)}%"></i></div></div>`+
-    `<div class="op"><span>Health</span><b style="color:${z.problems?'#ff5a6a':'#37f5a0'}">${z.problems??0} alerts</b><small>${upHealth}/${hl.length||0} checks up</small><div class="meter"><i style="width:${hl.length?upHealth/hl.length*100:0}%"></i></div></div>`;
+    `<div class="op"><span>Health</span><b style="color:${z.problems?'#ff5a6a':'#37f5a0'}">${z.problems??0} alerts</b><small>${upHealth}/${hl.length||0} checks up</small><div class="meter"><i style="width:${hl.length?upHealth/hl.length*100:0}%"></i></div></div>`+
+    opsTelemetry(d.telemetry||{});
   const storage=d.storage||[],storTotal=storage.reduce((a,s)=>a+Number(s.total||0),0),storUsed=storage.reduce((a,s)=>a+Number(s.used||0),0);
   const pveCpu=_nodes.length?(_nodes.reduce((a,n)=>a+Number(n.cpu||0),0)/_nodes.length):0;
   const zfsBad=_pools.filter(p=>p.health!=='ONLINE'),zfsPct=_pools.length?Math.round(_pools.reduce((a,p)=>a+(Number(p.alloc||0)/Math.max(Number(p.size||1),1)*100),0)/_pools.length):0;
-  const aiLine=(d.ai_servers||[]).map(s=>`${s.name}: ollama ${s.ollama_up?'ready':'down'} · ${s.models||0} models`).join(' · ')||'none';
+  const aiLine=(d.ai_servers||[]).map(s=>`${nbEsc(s.name)} ${s.ollama_up?'ready':'down'} · ${s.models||0} models`).join(' · ')||'none';
   const sourceBits=[['Zabbix',d.sources&&d.sources.zabbix],['Prom',d.sources&&d.sources.prometheus],['Grafana',d.sources&&d.sources.grafana]]
     .map(([n,o])=>`<span style="color:${o&&o.up?'#37f5a0':'#ff5a6a'}">${o&&o.up?'●':'○'} ${n}</span>`).join(' ');
   document.getElementById('kvs').innerHTML=
     `<div class="kv"><span>UniFi clients / devices</span><b>${u.clients??'–'} / ${u.devices??'–'} (${u.wifi??'?'} wifi)</b></div>`+
     `<div class="kv"><span>WAN down / up</span><b>${u.rx??'–'} / ${u.tx??'–'} Mbps</b></div>`+
-    `<div class="kv"><span>WAN link</span><b style="color:${u.wan_up==='ok'?'#37f5a0':'#ff5a6a'}">${(u.wan_up||'?').toUpperCase()} · ${u.isp||'–'} · ${u.latency??'–'}ms</b></div>`+
+    `<div class="kv"><span>WAN link</span><b style="color:${u.wan_up==='ok'?'#37f5a0':'#ff5a6a'}">${(u.wan_up||'?').toUpperCase()} · ${nbEsc(u.isp||cfg().wan_label||'–')} · ${u.latency??'–'}ms</b></div>`+
     `<div class="kv"><span>Zabbix hosts / alerts</span><b style="color:${z.problems?'#ff5a6a':'#37f5a0'}">${z.hosts??'–'} / ${z.problems??0}</b></div>`+
     `<div class="kv"><span>PVE hosts</span><b>${_nodes.length} · avg ${pveCpu.toFixed(1)}% CPU · ${(memUsed/1.07e9).toFixed(0)}/${(memTotal/1.07e9).toFixed(0)}G</b></div>`+
     `<div class="kv"><span>AI GPU server</span><b style="color:${aiUp?'#37f5a0':'#ff5a6a'}">${aiLine}</b></div>`+
     `<div class="kv"><span>ZFS pools</span><b style="color:${zfsBad.length?'#ff5a6a':'#dcefff'}">${_pools.length} pools · ${zfsBad.length?zfsBad.length+' degraded':'ONLINE'} · ${zfsPct}% avg</b></div>`+
     `<div class="kv"><span>Storage</span><b>${storage.length} stores · ${(storUsed/1e12).toFixed(1)}/${(storTotal/1e12).toFixed(1)}TB</b></div>`+
     `<div class="kv" style="grid-column:1/-1;margin-top:2px"><span style="letter-spacing:1px">DATA SOURCES</span><b style="font-weight:400">${sourceBits}</b></div>`;
-  const camList=(d.cameras||[]).slice(0,4);
-  document.getElementById('cams').innerHTML=camList.map(c=>`<div class="cam"><img src="/cam/${c}.jpg" id="hud-${c}"/><span>${c}</span></div>`).join('');
-  const sr=d.sources||{},su=o=>o&&o.up?'#37f5a0':'#ff5a6a';const se=document.getElementById('srcs');
+  const camList=camList0.slice(0,4);
+  document.getElementById('cams').innerHTML=camList.map(c=>`<div class="cam"><img src="/cam/${encodeURIComponent(c)}.jpg" id="hud-${nbEsc(c)}"/><span>${nbEsc(c)}</span></div>`).join('');
+  const se=document.getElementById('srcs');
   if(se)se.innerHTML='';
   const he=document.getElementById('health');
   if(he&&hl.length){const upn=hl.filter(h=>h.up).length;
     const down=hl.filter(h=>!h.up);
     he.innerHTML=`<div style="color:#7e93ab;font-size:10px;letter-spacing:1px;margin-top:4px">SERVICE HEALTH</div>`+
-      `<div class="kv"><span>${upn}/${hl.length} checks up</span><b style="color:${down.length?'#ff5a6a':'#37f5a0'}">${down.length?down.map(h=>h.name).slice(0,2).join(', '):'ALL GREEN'}</b></div>`;
+      `<div class="kv"><span>${upn}/${hl.length} checks up</span><b style="color:${down.length?'#ff5a6a':'#37f5a0'}">${down.length?nbEsc(down.map(h=>h.name).slice(0,2).join(', ')):'ALL GREEN'}</b></div>`;
     // flare planets red for any down service (merge into Zabbix alert map)
     hl.filter(h=>!h.up).forEach(h=>{window.ALERTS[h.name]=window.ALERTS[h.name]||{sev:4,n:1,names:['service down ('+h.code+')']};});}
   const SEVC={5:'#ff2b2b',4:'#ff5a6a',3:'#ffa033',2:'#ffd24a'};const ent=Object.entries(z.alert_hosts||{});
   const ap=document.getElementById('alerts'),al=document.getElementById('alertlist');
   if(ent.length){const sorted=ent.sort((a,b)=>b[1].sev-a[1].sev),shown=sorted.slice(0,6);
-    ap.style.display='block';al.innerHTML=shown.map(([h,v])=>`<div class="a"><span class="sv" style="color:${SEVC[v.sev]||'#ffd24a'}"></span><span class="h">${h}</span><span class="m">${(v.names&&v.names[0])||''}${v.n>1?' +'+(v.n-1):''}</span></div>`).join('')+
+    ap.style.display='block';al.innerHTML=shown.map(([h,v])=>`<div class="a"><span class="sv" style="color:${SEVC[v.sev]||'#ffd24a'}"></span><span class="h">${nbEsc(h)}</span><span class="m">${nbEsc((v.names&&v.names[0])||'')}${v.n>1?' +'+(v.n-1):''}</span></div>`).join('')+
       (sorted.length>shown.length?`<div class="more">+${sorted.length-shown.length} more alerts in Zabbix</div>`:'');}
   else{ap.style.display='none';}
 }catch(e){}}
 function refreshHud(){document.querySelectorAll('#cams img').forEach(im=>im.src='/cam/'+im.id.replace('hud-','')+'.jpg?'+Date.now());}
-document.getElementById('legend').innerHTML=Object.keys(CATNAME).map(k=>`<div class="r"><span class="d" style="color:#${CAT[k].toString(16).padStart(6,'0')}"></span>${CATNAME[k]}</div>`).join('');
 async function gpuHist(){try{const a=await (await fetch('/api/history?metric=gpu&idx=0&mins=120')).json();const b=await (await fetch('/api/history?metric=gpu&idx=1&mins=120')).json();
   const el=document.getElementById('gpuhist');if(el)el.innerHTML='<div style="color:#7e93ab;font-size:9px;letter-spacing:1px;margin-bottom:2px">UTIL HISTORY · 2h</div>'+spark(a.map(x=>x.util),232,22,'#ff4fa3')+spark(b.map(x=>x.util),232,22,'#5ad7ff');}catch(e){}}
 async function netHist(){try{const n=await (await fetch('/api/history?metric=net&mins=120')).json();const el=document.getElementById('nethist');
@@ -603,22 +672,92 @@ function spark(vals,w,h,color){if(!vals||vals.length<2)return '<div style="color
   const mn=Math.min(...vals),mx=Math.max(...vals,mn+1),rng=(mx-mn)||1;
   const pts=vals.map((v,i)=>`${(i/(vals.length-1)*w).toFixed(1)},${(h-((v-mn)/rng)*h).toFixed(1)}`).join(' ');
   return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block;overflow:visible;width:100%;height:${h}px"><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>`;}
-async function ask(){const i=document.getElementById('msg'),o=document.getElementById('cout');if(!i.value.trim())return;const q=i.value;i.value='';o.textContent='thinking…';try{const r=await (await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:q})})).json();o.textContent=r.reply;}catch(e){o.textContent='(error)';}}
+window.ask=async function(){const i=document.getElementById('msg'),o=document.getElementById('cout');if(!i.value.trim())return;const q=i.value;i.value='';o.textContent='thinking…';try{const r=await (await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:q})})).json();o.textContent=r.reply;}catch(e){o.textContent='(error)';}};
 document.getElementById('msg').addEventListener('keydown',e=>{if(e.key==='Enter')ask();});
 const clock=new THREE.Clock();
 {const fc=document.getElementById('focuscard');if(fc)fc.style.display='none';
  const te=document.getElementById('tour');if(te)te.style.display='none';}
-function animate(){requestAnimationFrame(animate);
+// This is a monitoring dashboard, not a game, so an uncapped render loop at
+// full quality was real waste — but the fix is NOT an arbitrary fps cap. A cap
+// that isn't a clean divisor of the display's refresh rate (45fps on a 60Hz
+// panel) makes requestAnimationFrame skip a frame every 2-3 ticks unevenly,
+// which *looks* like stutter even though the average fps sounds fine. rAF is
+// already vsync-locked by the browser, so just render every tick: smooth by
+// construction, and per-frame cost (not frame count) is the real lever.
+let RENDER_ACTIVE=true,_animRunning=true;
+// data-doom is a compound string ("phase=off booted=true capture=live ..."), so it
+// is truthy and !== 'off' even when idle — comparing it to 'off' pinned the wall
+// rendering forever after the first takeover. Read the phase token instead.
+function doomActive(){const d=document.body.dataset.doom;return !!d&&!/(^|\s)phase=off(\s|$)/.test(d);}
+function animate(now){
+  // Room is empty: stop the rAF chain instead of scheduling another frame.
+  // A presence SSE event flips RENDER_ACTIVE back and restarts it. Never
+  // pause mid-DOOM-takeover even if presence lags the last keypress.
+  if(!RENDER_ACTIVE&&!doomActive()){_animRunning=false;return;}
+  requestAnimationFrame(animate);
   const dt=Math.min(clock.getDelta(),.05),t=clock.getElapsedTime();
   if(window.netSceneTick){try{window.netSceneTick(t,dt);}catch(e){console.error(e);window.netSceneTick=null;}}
-  ctrl.update();composer.render();}
+  ctrl.update();
+  // AFTER ctrl.update(): only now is the camera in its final orientation for
+  // this frame, so this is the only point at which label collisions and the
+  // hover raycast can be decided against what will actually be drawn.
+  if(window.NETSCENE&&NETSCENE.labelPass){try{NETSCENE.labelPass();}catch(e){NETSCENE._lpExternal=false;}}
+  // Shared heartbeat with the nexus (big-screen) view — same beat, same
+  // instant, both screens flash together since /api/pulse/stream derives
+  // its beat number from wall-clock time, not per-connection state.
+  // (bloom itself is owned by cinema.js; the beat is handed over below
+  // with CINEMA.beat, and only a fallback touches it here)
+  if(!window.CINEMA){beatFlash=Math.max(0,beatFlash-dt*0.8);bloom.strength=BLOOM_BASE+beatFlash*0.9+(beatSev>=3?0.4:0);}
+  composer.render();}
+let beatFlash=0,beatSev=0;const BLOOM_BASE=bloom.strength;
+/* SSE budget: Chrome allows 6 connections per host and every EventSource holds
+   one. This page opens pulse (here + showtime.js), presence, takeover (doom.js)
+   and mode (showtime.js) = five. Never add a sixth; poll instead. */
+(function connectPulse(){
+  if(typeof window.EventSource!=='function')return;
+  const es=new EventSource('/api/pulse/stream');
+  es.onmessage=(ev)=>{try{const d=JSON.parse(ev.data);beatFlash=1;beatSev=d.sev||0;if(window.CINEMA&&CINEMA.beat)CINEMA.beat(beatSev);}catch(e){}};
+})();
+// Resume where we left off. getDelta() must be flushed or the first frame gets a
+// dt of the whole pause, but it also ADDS that gap to Clock.elapsedTime — and the
+// tour/shaders key off elapsed time, so the scene fast-forwarded the moment the
+// room was occupied again. Restoring elapsedTime makes a pause invisible.
+function wakeRender(){if(!_animRunning){_animRunning=true;const keep=clock.elapsedTime;clock.getDelta();clock.elapsedTime=keep;requestAnimationFrame(animate);}}
+(function connectPresence(){
+  if(typeof window.EventSource!=='function')return;
+  const es=new EventSource('/api/presence/stream');
+  es.onmessage=(ev)=>{try{
+    const d=JSON.parse(ev.data);
+    RENDER_ACTIVE=('effective' in d)?d.effective:d.active;
+    if(RENDER_ACTIVE)wakeRender();
+  }catch(e){}};
+})();
+// A takeover fired at an empty room finds the loop already stopped, so the
+// RENDER_ACTIVE guard in animate() cannot help — it only prevents pausing.
+// DOOM's tear/leak entry and unswallow/unleak/untear exit are composited over
+// the live scene, so wake it here. 1 Hz, no GPU work while idle.
+setInterval(()=>{if(doomActive())wakeRender();},1000);
 animate();
 addEventListener('resize',()=>{cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();rndr.setSize(innerWidth,innerHeight);composer.setSize(innerWidth,innerHeight);bloom.setSize(innerWidth,innerHeight);});
 }
+
+/* ---- boot: config first, then the scene, then the modules in load order ---- */
+window.loadConfig().then(function(C){
+  applyConfig(C);
+  bootScene();
+  window.loadScripts([
+    '/static/netscene.js?v=1',
+    '/static/netscene_flows.js?v=1',
+    '/static/netscene_exo.js?v=1',
+    '/static/galaxy.js?v=1',
+    '/static/lightsync.js?v=1',
+    '/static/cinema.js?v=1',
+    '/static/doom.js?v=1',
+    '/static/hero.js?v=1',
+    '/static/showtime.js?v=1'
+  ]);
+});
 </script>
-<script src="/static/netscene.js"></script>
-<script src="/static/netscene_flows.js"></script>
-<script src="/static/galaxy.js"></script>
 <script>
 /* ---- live clock, WAN/ISP/CAM chips, alert-state styling ---- */
 (function(){
@@ -632,17 +771,31 @@ addEventListener('resize',()=>{cam.aspect=innerWidth/innerHeight;cam.updateProje
   async function chips(){
     try{
       var d = await (await fetch('/api/all')).json();
+      var C = cfg();
       var u = d.unifi||{};
       var w = document.getElementById('chip-wan');
       if(w){ var ok = u.wan_up==='ok';
         w.className='chip '+(ok?'good':'bad');
         w.textContent='WAN '+(ok?'UP':'DOWN')+(u.latency!=null?' · '+u.latency+'ms':''); }
       var i = document.getElementById('chip-isp');
-      if(i) i.textContent=(u.isp||'ISP —')+(u.wan_ip?' · '+u.wan_ip:'');
+      if(i) i.textContent=(u.isp||C.wan_label||'ISP')+(u.wan_ip?' · '+u.wan_ip:'');
       var c = document.getElementById('chip-cam');
-      if(c){ var n=(d.cameras||[]).length;
+      if(c){ var n=C.features.cameras?(d.cameras||[]).length:0;
         c.className='chip '+(n?'good':'bad');
         c.textContent=n+' CAMS LIVE'; }
+      /* the edge: Cloudflare tunnel + CrowdSec, from d.edge. Blocks
+         that are not up leave the chip empty rather than guessing. */
+      var e=d.edge||{}, cf=e.cloudflare||{}, cs=e.crowdsec||{};
+      var fc=document.getElementById('chip-cf');
+      if(fc){ if(cf.up){ fc.textContent='CF EDGE · '+(cf.ha_connections!=null?cf.ha_connections+' conns':'?')+' · '+Math.round(cf.req_per_min||0)+' req/min · '+(cf.locations||[]).join(' ');
+                fc.className='chip cf'+((cf.err_per_min||0)>0?' warn':''); }
+              else { fc.textContent=''; fc.className='chip cf'; } }
+      var sc=document.getElementById('chip-cs');
+      if(sc){ if(cs.up){ var la=null;(cs.top_attackers||[]).forEach(function(a){if(a&&a.ts&&(!la||a.ts>la.ts))la=a;});
+                var ag=la?Math.max(0,Date.now()/1000-la.ts):0, agS=ag<3600?Math.round(ag/60)+'m':ag<86400?Math.round(ag/3600)+'h':Math.round(ag/86400)+'d';
+                sc.textContent='CROWDSEC · '+(cs.alerts_24h||0)+' atk/24h · '+(cs.banned||0)+' banned'+(la?' · last '+agS+' ago · '+(la.cn||'??')+' · '+String(la.scenario||'').replace(/^crowdsecurity\//,''):'');
+                sc.className='chip'+((cs.alerts_1h||0)>0?' warn':''); }
+              else { sc.textContent=''; sc.className='chip'; } }
       /* alert panel goes "hot" when Zabbix has problems */
       var ap=document.getElementById('alerts');
       if(ap){ var pr=(d.zabbix||{}).problems||0; ap.classList.toggle('hot', pr>0); }
@@ -684,8 +837,6 @@ addEventListener('resize',()=>{cam.aspect=innerWidth/innerHeight;cam.updateProje
 </script>
 
 <script>
-function nbEsc(x){return String(x==null?'':x).replace(/[&<>"]/g,function(c){
-  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 function nbBps(b){b=+b||0;
   if(b<1e3)return b.toFixed(0)+' b/s';
   if(b<1e6)return (b/1e3).toFixed(1)+' kb/s';
@@ -696,7 +847,7 @@ function renderFlows(topo){
   var hd=document.getElementById('flowhd');
   var meta=topo.flow_meta||{}, fl=(topo.flows||[]).slice().sort(function(a,b){return (b.bps||0)-(a.bps||0);});
   if(hd) hd.textContent = meta.up ? ((meta.flow_count||fl.length)+' ACTIVE') : 'SOURCE DOWN';
-  if(!meta.up){ el.innerHTML='<div class="fnone">ntopng unreachable \u2014 no flow data</div>'; return; }
+  if(!meta.up){ el.innerHTML='<div class="fnone">ntopng unreachable — no flow data</div>'; return; }
   if(!fl.length){ el.innerHTML='<div class="fnone">no measurable conversations</div>'; return; }
   var max=0; for(var i=0;i<fl.length;i++) max=Math.max(max, fl[i].bps||0);
   if(max<=0) max=1;
@@ -710,6 +861,24 @@ function renderFlows(topo){
       '<div class="fbar"><i style="width:'+w+'%"></i></div>'+
       '<div class="fpr">'+nbEsc(f.proto||'')+'</div></div>';
   }).join('');
+}
+
+/* exporter fleet (ipmi / smartctl / pbs / gatus / crowdsec / akvorado) via DATA.telemetry.
+   Per-node maps (smart_hot, smart_worn, arc_hit ...) are keyed by node id; the
+   tiles show the worst value across nodes. */
+function opsTelemetry(t){
+  if(!t||!t.up)return '';
+  const n=(v,d=0)=>(v==null||isNaN(v))?'–':Number(v).toFixed(d);
+  const mx=o=>{const v=Object.values(o||{}).map(Number).filter(x=>!isNaN(x));return v.length?Math.max(...v):null;};
+  const hotV=mx(t.smart_hot),wornV=mx(t.smart_worn),arcV=mx(t.arc_hit);
+  const nDrives=Object.values(t.smart_n||{}).reduce((a,b)=>a+b,0);
+  const slo=t.slo_total?`${t.slo_ok}/${t.slo_total}`:'–',sloBad=t.slo_total&&t.slo_ok<t.slo_total;
+  const cs=t.cs_alerts_h||0,flows=t.flows_fps||0;
+  const domain=cfg().domain||'WAN';
+  return `<div class="op"><span>Iron · IPMI</span><b>${n(t.watts)} W</b><small>fans ${n(t.fan_min)}–${n(t.fan_max)} rpm · inlet ${n(t.inlet_c)}°C</small><div class="meter"><i style="width:${Math.min(100,(t.watts||0)/6)}%"></i></div></div>`+
+    `<div class="op"><span>Drives</span><b style="color:${t.smart_bad?'#ff5a6a':'#37f5a0'}">${nDrives||'–'} · ${t.smart_bad?t.smart_bad+' FAILING':'SMART ok'}</b><small>hottest ${n(hotV)}°C · worn ${n(wornV)}% · ARC ${n(arcV)}%</small><div class="meter"><i style="width:${Math.min(100,wornV||0)}%"></i></div></div>`+
+    `<div class="op"><span>Backups · PBS</span><b style="color:${t.pbs_stale?'#ffb347':(t.pbs_up?'#37f5a0':'#ff5a6a')}">${t.pbs_up?n(t.pbs_vms)+' guests':'PBS DOWN'}</b><small>oldest ${n(t.pbs_oldest_h)}h · ${n(t.pbs_stale)} stale · ${n(t.pbs_used_pct)}% full</small><div class="meter"><i style="width:${Math.min(100,t.pbs_used_pct||0)}%"></i></div></div>`+
+    `<div class="op"><span>Edge · ${nbEsc(domain)}</span><b style="color:${sloBad?'#ff5a6a':'#37f5a0'}">${slo} up · ${n(t.slo_24h,1)}% 24h</b><small>${n(cs)} attacks/h · ${n(t.cs_banned)} banned · ${n(flows,1)} flows/s</small><div class="meter"><i style="width:${Math.min(100,cs*5)}%"></i></div></div>`;
 }
 </script>
 </body></html>

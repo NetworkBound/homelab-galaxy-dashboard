@@ -1,0 +1,734 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Setup · Homelab Galaxy Dashboard</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- SETUP WIZARD — a self-contained page, no build step, no dependencies.
+     It renders itself entirely from GET /api/setup/schema (sections, fields,
+     types, help, current values with secrets masked), so it never hardcodes a
+     field list: add a section to config.SECTIONS and it appears here.
+
+     Reads / writes (all gated on the X-Setup-Token header, asked once and kept
+     in localStorage; a 401 clears it and re-asks):
+       GET  /api/setup/schema   sections[] -> the whole form
+       POST /api/setup/test     {section, values} -> {ok, detail|error}
+       POST /api/setup/config   the config.json layout -> writes the file 0600
+       POST /api/setup/apply    re-executes the process
+       GET  /api/config         polled after apply, to know we are back up
+     Contract: docs/contracts.md. -->
+<style>
+/* ---------------------------------------------------------------- tokens
+   Same ink ramp, accent and panel treatment as the wall (templates/index.html)
+   so the wizard and the screens read as one product. */
+:root{
+  --bg:#02050b; --bg2:#050b16;
+  --panel:rgba(9,16,28,.82); --panel2:rgba(12,21,36,.7);
+  --line:rgba(125,160,200,.18); --line2:rgba(125,160,200,.30);
+  --ink1:#e8f0f9; --ink2:#9db3cc; --ink3:#7e93ab; --ink4:#6d84a0;
+  --accent:#5ad7ff; --ok:#37f5a0; --warn:#ffb347; --bad:#ff5a6a; --violet:#9b8cff;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{background:
+    radial-gradient(1200px 700px at 78% -10%,rgba(90,215,255,.09),transparent 62%),
+    radial-gradient(900px 620px at 8% 108%,rgba(155,140,255,.08),transparent 60%),
+    linear-gradient(180deg,var(--bg2),var(--bg) 40%);
+  background-attachment:fixed;
+  color:var(--ink1);font:13px/1.55 var(--mono);-webkit-font-smoothing:antialiased}
+a{color:var(--accent)}
+.wrap{max-width:880px;margin:0 auto;padding:34px 20px 90px}
+
+/* ---------------------------------------------------------------- header */
+header{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+h1{margin:0;font-size:22px;font-weight:600;letter-spacing:.24em}
+h1 span{color:var(--accent)}
+.ver{color:var(--ink4);font-size:10px;letter-spacing:.14em;text-transform:uppercase;margin-bottom:4px}
+.lede{color:var(--ink2);font-size:12px;margin:10px 0 0;max-width:62ch}
+.lede b{color:var(--ink1);font-weight:600}
+
+/* ---------------------------------------------------------------- notes */
+.note{margin:16px 0;padding:11px 13px;border:1px solid var(--line);border-left:2px solid var(--accent);
+  border-radius:4px;background:var(--panel2);color:var(--ink2);font-size:12px}
+.note.ok{border-left-color:var(--ok)}
+.note.warn{border-left-color:var(--warn)}
+.note.bad{border-left-color:var(--bad);color:#ffc4ca}
+.note b{color:var(--ink1)}
+
+/* ---------------------------------------------------------------- gate */
+#gate{max-width:520px;margin:12vh auto;padding:26px 24px;border:1px solid var(--line);
+  border-radius:6px;background:var(--panel);box-shadow:0 18px 60px rgba(0,0,0,.5)}
+#gate h2{margin:0 0 6px;font-size:14px;letter-spacing:.2em;font-weight:600}
+#gate p{color:var(--ink3);font-size:11.5px;margin:0 0 16px}
+#gate code{color:var(--accent);background:rgba(90,215,255,.08);padding:1px 5px;border-radius:3px}
+
+/* ---------------------------------------------------------------- groups */
+.grouphd{margin:30px 0 10px;display:flex;align-items:baseline;gap:10px}
+.grouphd h2{margin:0;font-size:10px;letter-spacing:.3em;text-transform:uppercase;color:var(--ink3);font-weight:600}
+.grouphd i{flex:1;height:1px;background:var(--line);font-style:normal}
+/* a list section's own settings, inside the section — visually a sub-heading,
+   never one of the three top-level groups */
+.subhd{margin:18px 0 9px;display:flex;align-items:baseline;gap:10px}
+.subhd h3{margin:0;font-size:9.5px;letter-spacing:.24em;text-transform:uppercase;color:var(--ink4);font-weight:600}
+.subhd i{flex:1;height:1px;background:var(--line);font-style:normal}
+
+/* ---------------------------------------------------------------- section */
+.sec{border:1px solid var(--line);border-radius:6px;background:var(--panel);margin:0 0 12px;overflow:hidden}
+.sec.req{border-color:rgba(90,215,255,.36);box-shadow:0 0 0 1px rgba(90,215,255,.08)}
+.sec>summary{cursor:pointer;list-style:none;padding:12px 15px;display:flex;align-items:center;gap:10px;
+  user-select:none}
+.sec>summary::-webkit-details-marker{display:none}
+.sec>summary::before{content:"▸";color:var(--ink4);font-size:11px;transition:transform .15s}
+.sec[open]>summary::before{transform:rotate(90deg)}
+.sec>summary:hover{background:rgba(125,160,200,.05)}
+.sec .t{font-size:12.5px;font-weight:600;letter-spacing:.1em;color:var(--ink1)}
+.sec .n{color:var(--ink4);font-size:10.5px;letter-spacing:.06em;flex:1;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.body{padding:2px 15px 15px;border-top:1px solid var(--line)}
+.help{color:var(--ink3);font-size:11.5px;margin:11px 0 13px;max-width:70ch}
+
+/* ---------------------------------------------------------------- pills */
+.pill{font-size:8.5px;letter-spacing:.16em;text-transform:uppercase;padding:2px 7px;border-radius:9px;
+  border:1px solid currentColor;flex:0 0 auto;font-weight:600}
+.pill.required{color:var(--accent)}
+.pill.optional{color:var(--ink4)}
+.pill.set{color:var(--ok)}
+.pill.env{color:var(--violet)}
+
+/* ---------------------------------------------------------------- fields */
+.f{display:grid;grid-template-columns:190px 1fr;gap:10px 14px;align-items:start;margin:0 0 11px}
+.f>label{color:var(--ink2);font-size:11.5px;padding-top:7px;display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.f>label em{font-style:normal;color:var(--bad);font-size:13px;line-height:1}
+.f .fh{grid-column:2;color:var(--ink4);font-size:10.5px;margin:-4px 0 0;max-width:68ch}
+input[type=text],input[type=password],input[type=url],input[type=number],textarea,select{
+  width:100%;background:rgba(2,6,14,.72);color:var(--ink1);border:1px solid var(--line);
+  border-radius:4px;padding:7px 9px;font:12px/1.4 var(--mono);outline:none}
+textarea{min-height:60px;resize:vertical}
+input:focus,textarea:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(90,215,255,.12)}
+input:disabled,textarea:disabled,select:disabled{color:var(--ink4);background:rgba(2,6,14,.4);cursor:not-allowed}
+input::placeholder,textarea::placeholder{color:#4c5f78}
+.chk{display:flex;align-items:center;gap:9px;padding-top:5px;color:var(--ink2);font-size:12px}
+.chk input{width:15px;height:15px;accent-color:var(--accent)}
+
+/* ---------------------------------------------------------------- list rows */
+.rows{display:flex;flex-direction:column;gap:9px}
+.row{border:1px solid var(--line);border-radius:5px;padding:11px 12px 3px;background:rgba(3,8,17,.5);position:relative}
+.row .rh{display:flex;align-items:center;gap:8px;margin:-2px 0 9px;color:var(--ink4);
+  font-size:9.5px;letter-spacing:.18em;text-transform:uppercase}
+.row .rh b{color:var(--ink2);font-weight:600}
+.row .f{grid-template-columns:150px 1fr;margin-bottom:9px}
+.empty{color:var(--ink4);font-size:11.5px;padding:9px 0 12px;font-style:italic}
+
+/* ---------------------------------------------------------------- buttons */
+button{font:11px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;cursor:pointer;
+  border-radius:4px;padding:8px 14px;border:1px solid var(--line2);background:rgba(125,160,200,.06);
+  color:var(--ink2);transition:background .12s,color .12s,border-color .12s}
+button:hover:not(:disabled){background:rgba(125,160,200,.14);color:var(--ink1);border-color:var(--ink3)}
+button:disabled{opacity:.42;cursor:default}
+button.primary{border-color:rgba(90,215,255,.5);color:#04212c;background:var(--accent);font-weight:600}
+button.primary:hover:not(:disabled){background:#86e3ff;color:#04212c}
+button.go{border-color:rgba(55,245,160,.5);color:#042117;background:var(--ok);font-weight:600}
+button.go:hover:not(:disabled){background:#63ffbb;color:#042117}
+button.mini{padding:5px 9px;font-size:10px;letter-spacing:.1em}
+button.danger{border-color:rgba(255,90,106,.4);color:#ffb0b8}
+.acts{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:12px;
+  padding-top:12px;border-top:1px solid var(--line)}
+.acts .sp{flex:1}
+
+/* ---------------------------------------------------------------- results */
+.res{font-size:11.5px;padding:8px 10px;border-radius:4px;margin-top:10px;display:none;
+  white-space:pre-wrap;word-break:break-word}
+.res.on{display:block}
+.res.ok{color:#a9ffdb;background:rgba(55,245,160,.09);border:1px solid rgba(55,245,160,.3)}
+.res.bad{color:#ffc4ca;background:rgba(255,90,106,.09);border:1px solid rgba(255,90,106,.3)}
+.res.busy{color:var(--ink3);background:rgba(125,160,200,.07);border:1px solid var(--line)}
+
+/* ---------------------------------------------------------------- footer bar */
+#bar{position:sticky;bottom:0;margin-top:26px;padding:13px 15px;border:1px solid var(--line);
+  border-radius:6px;background:rgba(6,12,22,.95);backdrop-filter:blur(6px);
+  display:flex;align-items:center;gap:11px;flex-wrap:wrap;box-shadow:0 -8px 30px rgba(0,0,0,.45)}
+#bar .sp{flex:1}
+#barmsg{font-size:11.5px;color:var(--ink3)}
+#barmsg.ok{color:#a9ffdb}#barmsg.bad{color:#ffc4ca}
+
+/* ---------------------------------------------------------------- done */
+#done{display:none;text-align:center;padding:40px 20px}
+#done.on{display:block}
+#done h2{font-size:15px;letter-spacing:.24em;margin:0 0 8px}
+#done p{color:var(--ink2);font-size:12px}
+#done .links{display:flex;gap:12px;justify-content:center;margin-top:20px;flex-wrap:wrap}
+#done a.btn{text-decoration:none;display:inline-block;border:1px solid rgba(90,215,255,.5);
+  color:var(--accent);border-radius:4px;padding:11px 20px;font-size:11px;letter-spacing:.18em;
+  text-transform:uppercase}
+#done a.btn:hover{background:rgba(90,215,255,.1)}
+.spin{display:inline-block;width:10px;height:10px;border:2px solid rgba(90,215,255,.25);
+  border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite;
+  vertical-align:-1px;margin-right:6px}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (max-width:640px){
+  .f,.row .f{grid-template-columns:1fr;gap:4px}
+  .f .fh{grid-column:1}
+  .f>label{padding-top:2px}
+}
+</style>
+</head>
+<body>
+
+<!-- ===================== token gate ===================== -->
+<div id="gate" style="display:none">
+  <h2>SETUP TOKEN</h2>
+  <p>The server printed it on the console at start (<code>[setup] token: …</code>)
+     and stored it next to <code>config.json</code> as <code>setup-token</code>.
+     It is kept in this browser only.</p>
+  <input type="password" id="tokin" placeholder="paste the token" autocomplete="off" spellcheck="false">
+  <div class="res bad" id="gateerr"></div>
+  <div class="acts" style="border:0;padding-top:14px">
+    <button class="primary" id="tokgo">Unlock</button>
+  </div>
+</div>
+
+<!-- ===================== the form ===================== -->
+<div class="wrap" id="app" style="display:none">
+  <header>
+    <h1>GAL<span>AXY</span></h1>
+    <div class="ver" id="ver">setup</div>
+  </header>
+  <p class="lede">
+    <b>Only Proxmox is required.</b> Everything else is optional — each source you
+    leave blank simply does not draw its layer, and the screens degrade instead of
+    breaking. Fill in what you have, <b>Test</b> it, <b>Save</b>, then <b>Apply</b>.
+  </p>
+  <div class="note" id="where"></div>
+  <div class="note warn" id="envnote" style="display:none"></div>
+  <div class="note bad" id="pending" style="display:none"></div>
+
+  <div id="secs"></div>
+
+  <div id="bar">
+    <button class="primary" id="save">Save configuration</button>
+    <button class="go" id="apply" disabled>Apply &amp; restart</button>
+    <span class="sp"></span>
+    <span id="barmsg"></span>
+  </div>
+</div>
+
+<!-- ===================== after apply ===================== -->
+<div class="wrap"><div id="done">
+  <h2 id="donet">RESTARTING</h2>
+  <p id="donep"><span class="spin"></span>waiting for the back end to answer /api/config…</p>
+  <div class="links" id="donelinks" style="display:none">
+    <a class="btn" href="/">Open the wall</a>
+    <a class="btn" href="/nexus">Open the nexus</a>
+    <a class="btn" href="/setup">Back to setup</a>
+  </div>
+</div></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var TKEY = 'galaxy.setupToken';
+  /* Set the moment a save succeeds, cleared once the process has actually
+     restarted. See checkPending(): the schema this page renders is the state
+     the RUNNING process booted with, so a reload before Apply shows stale
+     values and saving them again would overwrite the file. */
+  var PKEY = 'galaxy.setupPendingApply';
+  var MASK = '••••';          // what the API sends for a stored secret
+  var $ = function (id) { return document.getElementById(id); };
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+  function el(tag, cls, html) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (html != null) e.innerHTML = html;
+    return e;
+  }
+
+  /* ---------------------------------------------------------------- api
+     Every call carries the token. A 401 is the one error we handle
+     structurally: drop the stored token and go back to the gate. */
+  var token = '';
+  function api(path, opts) {
+    opts = opts || {};
+    opts.headers = Object.assign({ 'X-Setup-Token': token }, opts.headers || {});
+    opts.cache = 'no-store';
+    return fetch(path, opts).then(function (r) {
+      if (r.status === 401) { relock('That token was rejected.'); throw new Error('401'); }
+      /* a 500 from Flask is an HTML page, not JSON — never let that surface as
+         a JSON parse error, the status and the first line are what matters */
+      return r.text().then(function (txt) {
+        var j = null;
+        try { j = JSON.parse(txt); } catch (e) {
+          j = { ok: false, error: 'HTTP ' + r.status + ' · the server returned ' +
+                (txt.slice(0, 80).replace(/\s+/g, ' ') || 'an empty body') };
+        }
+        return { status: r.status, body: j, raw: txt };
+      });
+    });
+  }
+  function relock(msg) {
+    try { localStorage.removeItem(TKEY); } catch (e) {}
+    token = '';
+    $('app').style.display = 'none';
+    $('done').className = '';
+    $('gate').style.display = '';
+    if (msg) { var g = $('gateerr'); g.textContent = msg; g.className = 'res bad on'; }
+  }
+
+  /* ---------------------------------------------------------------- model
+     SCHEMA is the server's answer, verbatim. STATE mirrors it as editable
+     values: STATE[sectionId] is {} for a plain section and [] for a list,
+     plus STATE[sectionId + '_settings'] for a list's own fields. Nothing
+     below ever names a field: the shapes come from item_fields / fields. */
+  var SCHEMA = null, STATE = {}, DIRTY = false, ORIG = {};
+
+  function initState() {
+    STATE = {};
+    SCHEMA.sections.forEach(function (s) {
+      if (s.list) {
+        STATE[s.id] = (s.items || []).map(function (it) {
+          var row = {};
+          s.item_fields.forEach(function (f) { row[f.key] = it[f.key] !== undefined ? it[f.key] : f.default; });
+          return row;
+        });
+        var set = {};
+        (s.fields || []).forEach(function (f) { set[f.key] = f.value !== undefined ? f.value : f.default; });
+        STATE[s.id + '_settings'] = set;
+        ORIG[s.id + '_settings'] = JSON.stringify(set);   // see body(): only send these when edited
+      } else {
+        var v = {};
+        (s.fields || []).forEach(function (f) { v[f.key] = f.value !== undefined ? f.value : f.default; });
+        STATE[s.id] = v;
+      }
+    });
+  }
+
+  /* A section counts as REQUIRED when the server says so — either with an
+     explicit `required` flag or by opening its own help text with the word.
+     Never a hardcoded id: add a second mandatory source server-side and this
+     page promotes it without an edit. */
+  function isRequired(s) {
+    return s.required === true || /^required\b/i.test(String(s.help || ''));
+  }
+  /* "has something in it", for the summary pill */
+  function filled(v) {
+    if (v == null || v === '') return false;
+    if (Array.isArray(v)) return v.length > 0;
+    if (typeof v === 'object') return Object.keys(v).length > 0;
+    if (typeof v === 'boolean') return v;
+    return true;
+  }
+  function sectionFilled(s) {
+    if (s.list) return (STATE[s.id] || []).length > 0;
+    var v = STATE[s.id] || {};
+    return (s.fields || []).some(function (f) {
+      return f.type !== 'bool' && filled(v[f.key]) && v[f.key] !== f.default;
+    });
+  }
+
+  /* ---------------------------------------------------------------- inputs
+     One renderer per TYPE, not per field. `get`/`set` convert between the
+     control's string and the JSON the API expects. */
+  function mkInput(f, value, onchange, locked) {
+    var t = f.type, wrap = null, input;
+
+    if (t === 'bool') {
+      wrap = el('div', 'chk');
+      input = el('input'); input.type = 'checkbox'; input.checked = !!value;
+      var lab = el('span', null, esc(f.label));
+      wrap.appendChild(input); wrap.appendChild(lab);
+      input.addEventListener('change', function () { onchange(input.checked); });
+    } else if (t === 'json') {
+      input = el('textarea');
+      input.value = (value == null || value === '') ? '' :
+        (typeof value === 'string' ? value : JSON.stringify(value, null, 1));
+      input.placeholder = f.placeholder || '{ }';
+      input.addEventListener('input', function () {
+        var raw = input.value.trim();
+        if (!raw) { input.style.borderColor = ''; onchange({}); return; }
+        try { var j = JSON.parse(raw); input.style.borderColor = ''; onchange(j); }
+        catch (e) { input.style.borderColor = 'var(--bad)'; }
+      });
+    } else if (t === 'select' || (f.options && f.options.length)) {
+      input = el('select');
+      (f.options || []).forEach(function (o) {
+        var op = el('option'); op.value = String(o); op.textContent = String(o);
+        if (String(o) === String(value)) op.selected = true;
+        input.appendChild(op);
+      });
+      input.addEventListener('change', function () { onchange(input.value); });
+    } else if (t === 'csv') {
+      input = el('input'); input.type = 'text';
+      input.value = Array.isArray(value) ? value.join(', ') : (value == null ? '' : String(value));
+      input.placeholder = f.placeholder || 'comma, separated';
+      input.addEventListener('input', function () {
+        onchange(input.value.split(',').map(function (x) { return x.trim(); }).filter(Boolean));
+      });
+    } else {
+      input = el('input');
+      input.type = t === 'password' ? 'password' : t === 'int' ? 'number' : t === 'url' ? 'url' : 'text';
+      input.value = value == null ? '' : String(value);
+      input.placeholder = f.placeholder || '';
+      input.autocomplete = 'off'; input.spellcheck = false;
+      input.addEventListener('input', function () {
+        var v = input.value;
+        if (t === 'int') { onchange(v === '' ? null : Number(v)); return; }
+        onchange(v);
+      });
+      /* A masked secret is the stored one. Clear it on focus so a click does
+         not leave the dots looking editable; blurring an untouched field puts
+         the mask back, and sending the mask back preserves the stored value. */
+      if (f.secret) {
+        input.addEventListener('focus', function () { if (input.value === MASK) { input.value = ''; } });
+        input.addEventListener('blur', function () {
+          if (input.value === '') { input.value = MASK; onchange(MASK); }
+        });
+      }
+    }
+    if (locked) { input.disabled = true; input.title = 'set by an environment variable — env wins over config.json'; }
+    return { input: input, wrap: wrap || input };
+  }
+
+  function fieldRow(f, getv, setv, compact) {
+    var locked = !!f.from_env;
+    var g = el('div', 'f');
+    var lab = el('label');
+    if (f.type === 'bool') {
+      // the checkbox carries its own label text; keep the left column for pills
+      lab.innerHTML = '';
+    } else {
+      lab.innerHTML = esc(f.label || f.key);
+    }
+    if (f.required) lab.appendChild(el('em', null, '*'));
+    if (locked) lab.appendChild(el('span', 'pill env', 'env'));
+    g.appendChild(lab);
+
+    var m = mkInput(f, getv(), function (v) { setv(v); markDirty(); }, locked);
+    g.appendChild(m.wrap);
+    var help = f.help || (locked ? '' : '');
+    if (locked) help = (f.help ? f.help + ' ' : '') + 'Locked: ' + (f.env || 'an environment variable') +
+                       ' is set, and the environment always wins over config.json.';
+    if (help && !compact) g.appendChild(el('div', 'fh', esc(help)));
+    return g;
+  }
+
+  /* ---------------------------------------------------------------- list rows */
+  function renderList(s, host) {
+    var rowsEl = el('div', 'rows');
+    function draw() {
+      rowsEl.innerHTML = '';
+      var items = STATE[s.id];
+      if (!items.length) {
+        rowsEl.appendChild(el('div', 'empty', 'none configured' +
+          (isRequired(s) ? ' — add at least one' : '')));
+      }
+      items.forEach(function (row, i) {
+        var r = el('div', 'row');
+        var hd = el('div', 'rh');
+        hd.innerHTML = '<b>' + esc(s.title) + ' ' + (i + 1) + '</b>';
+        var sp = el('span'); sp.style.flex = '1'; hd.appendChild(sp);
+        var rm = el('button', 'mini danger', 'remove');
+        rm.addEventListener('click', function () { items.splice(i, 1); markDirty(); draw(); });
+        hd.appendChild(rm);
+        r.appendChild(hd);
+        s.item_fields.forEach(function (f) {
+          r.appendChild(fieldRow(f,
+            function () { return row[f.key]; },
+            function (v) { row[f.key] = v; }, true));
+        });
+        rowsEl.appendChild(r);
+      });
+    }
+    draw();
+    host.appendChild(rowsEl);
+    var add = el('button', 'mini', '+ add ' + esc(s.title.toLowerCase().replace(/s$/, '')));
+    add.addEventListener('click', function () {
+      var row = {};
+      s.item_fields.forEach(function (f) { row[f.key] = f.default; });
+      STATE[s.id].push(row); markDirty(); draw();
+    });
+    host.appendChild(add);
+    if ((s.fields || []).length) {
+      host.appendChild(el('div', 'subhd', '<h3>' + esc(s.title) + ' settings</h3><i></i>'));
+      s.fields.forEach(function (f) {
+        host.appendChild(fieldRow(f,
+          function () { return STATE[s.id + '_settings'][f.key]; },
+          function (v) { STATE[s.id + '_settings'][f.key] = v; }));
+      });
+    }
+  }
+
+  /* ---------------------------------------------------------------- a section */
+  function renderSection(s, open) {
+    var d = el('details', 'sec' + (isRequired(s) ? ' req' : ''));
+    if (open) d.open = true;
+    var sum = el('summary');
+    sum.appendChild(el('span', 't', esc(s.title)));
+    var pill = el('span', 'pill ' + (isRequired(s) ? 'required' : 'optional'),
+                  isRequired(s) ? 'required' : 'optional');
+    sum.appendChild(pill);
+    var state = el('span', 'pill set', 'configured'); state.style.display = 'none';
+    sum.appendChild(state);
+    sum.appendChild(el('span', 'n', esc((s.help || '').replace(/^Required\.\s*/i, ''))));
+    d.appendChild(sum);
+
+    var body = el('div', 'body');
+    if (s.help) body.appendChild(el('div', 'help', esc(s.help)));
+
+    if (s.list) renderList(s, body);
+    else (s.fields || []).forEach(function (f) {
+      body.appendChild(fieldRow(f,
+        function () { return STATE[s.id][f.key]; },
+        function (v) { STATE[s.id][f.key] = v; }));
+    });
+
+    /* per-section Test, only where the server offers a probe */
+    var res = el('div', 'res');
+    if (s.test) {
+      var acts = el('div', 'acts');
+      var btn = el('button', 'mini', 'Test connection');
+      btn.addEventListener('click', function () {
+        btn.disabled = true;
+        res.className = 'res busy on';
+        res.innerHTML = '<span class="spin"></span>probing ' + esc(s.title) + '…';
+        var values = s.list ? STATE[s.id] : STATE[s.id];
+        api('/api/setup/test', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ section: s.id, values: values })
+        }).then(function (r) {
+          var b = r.body || {};
+          res.className = 'res ' + (b.ok ? 'ok' : 'bad') + ' on';
+          res.textContent = b.ok ? ('OK · ' + (b.detail || 'reachable')) : (b.error || 'failed');
+        }).catch(function (e) {
+          res.className = 'res bad on';
+          res.textContent = String(e && e.message || e);
+        }).then(function () { btn.disabled = false; });
+      });
+      acts.appendChild(btn);
+      acts.appendChild(el('span', 'sp'));
+      body.appendChild(acts);
+    }
+    body.appendChild(res);
+    d.appendChild(body);
+
+    /* the "configured" pill re-evaluates whenever this section is touched */
+    d.addEventListener('input', refreshPill);
+    d.addEventListener('change', refreshPill);
+    d.addEventListener('click', function () { setTimeout(refreshPill, 0); });
+    function refreshPill() { state.style.display = sectionFilled(s) ? '' : 'none'; }
+    refreshPill();
+    return d;
+  }
+
+  /* ---------------------------------------------------------------- render */
+  function group(title, sections, openFirst) {
+    if (!sections.length) return null;
+    var frag = document.createDocumentFragment();
+    frag.appendChild(el('div', 'grouphd', '<h2>' + esc(title) + '</h2><i></i>'));
+    sections.forEach(function (s, i) { frag.appendChild(renderSection(s, openFirst && i === 0)); });
+    return frag;
+  }
+
+  function render() {
+    var host = $('secs'); host.innerHTML = '';
+    var req = [], opt = [], adv = [];
+    SCHEMA.sections.forEach(function (s) {
+      if (isRequired(s)) req.push(s);
+      else if (s.hidden) adv.push(s);
+      else opt.push(s);
+    });
+    [['Required', req, true], ['Optional data sources', opt, false],
+     ['Advanced — rarely needed', adv, false]].forEach(function (g) {
+      var f = group(g[0], g[1], g[2]);
+      if (f) host.appendChild(f);
+    });
+
+    $('ver').textContent = 'v' + (SCHEMA.version || '?') +
+      (SCHEMA.demo ? ' · demo mode' : '') +
+      (SCHEMA.configured ? ' · configured' : ' · first run');
+    $('where').innerHTML = 'Writes <b>' + esc(SCHEMA.config_file) + '</b> with mode 0600. ' +
+      'Environment variables always win over that file — see <code>.env.example</code>.';
+
+    /* one honest warning if the environment has already pinned anything */
+    var locked = [];
+    SCHEMA.sections.forEach(function (s) {
+      (s.fields || []).forEach(function (f) { if (f.from_env) locked.push(s.title + ' · ' + f.label); });
+      if (s.from_env) locked.push(s.title + ' (whole section)');
+    });
+    checkPending();
+    if (locked.length) {
+      $('envnote').style.display = '';
+      $('envnote').innerHTML = '<b>' + locked.length + ' field' + (locked.length > 1 ? 's are' : ' is') +
+        '</b> set by environment variables and locked here: ' + esc(locked.slice(0, 6).join(', ')) +
+        (locked.length > 6 ? ' …' : '') + '. Unset them to edit from this page.';
+    }
+  }
+
+  /* ---------------------------------------------------------------- pending
+     save() writes config.json but the running process keeps the configuration
+     it booted with, so /api/setup/schema still answers with the OLD values
+     until Apply re-executes it. Reloading in between therefore shows stale
+     state — and saving that would clobber the file. Say so, and make the
+     overwrite deliberate. */
+  function checkPending() {
+    var pend = false;
+    try { pend = sessionStorage.getItem(PKEY) === '1'; } catch (e) {}
+    if (!pend) return;
+    $('apply').disabled = false;
+    $('save').disabled = true;
+    $('pending').style.display = '';
+    $('pending').innerHTML =
+      '<b>You have saved changes that are not applied yet.</b> This page is showing the ' +
+      'configuration the <i>running</i> process started with, not what is in the file — ' +
+      'so saving again from here would overwrite it. ' +
+      '<button class="mini" id="overr" style="margin-left:8px">Save anyway</button>';
+    $('overr').addEventListener('click', function () {
+      $('save').disabled = false;
+      $('pending').className = 'note warn';
+      $('pending').innerHTML = '<b>Overwrite armed.</b> Saving now replaces the file with what is on this page.';
+    });
+  }
+  function setPending(v) {
+    try { v ? sessionStorage.setItem(PKEY, '1') : sessionStorage.removeItem(PKEY); } catch (e) {}
+  }
+
+  /* ---------------------------------------------------------------- save */
+  function markDirty() { DIRTY = true; $('apply').disabled = true; msg(''); }
+  function msg(text, cls) { var m = $('barmsg'); m.textContent = text; m.className = cls || ''; }
+
+  /* exactly the config.json layout save() expects: <id> for a plain section or
+     a list's items, <id>_settings for a list's own fields. Untouched secrets go
+     back as the mask, which preserves the stored value.
+     `withListSettings` is the retry lever — see post() below. */
+  function body(withListSettings) {
+    var out = {};
+    SCHEMA.sections.forEach(function (s) {
+      if (s.list) {
+        out[s.id] = STATE[s.id];
+        /* a list's own settings only go up when the operator actually changed
+           them — see listSettingSections() for why that matters */
+        if (withListSettings && changedListSettings(s)) out[s.id + '_settings'] = STATE[s.id + '_settings'];
+      } else {
+        out[s.id] = STATE[s.id];
+      }
+    });
+    return out;
+  }
+  function changedListSettings(s) {
+    if (!s.list || !(s.fields || []).length) return false;
+    return JSON.stringify(STATE[s.id + '_settings']) !== ORIG[s.id + '_settings'];
+  }
+  function listSettingSections() {
+    return SCHEMA.sections.filter(changedListSettings);
+  }
+
+  function post(withListSettings) {
+    return api('/api/setup/config', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body(withListSettings))
+    });
+  }
+
+  $('save').addEventListener('click', function () {
+    var b = $('save'); b.disabled = true;
+    msg('saving…');
+    function done(j, partial) {
+      DIRTY = false;
+      setPending(true);
+      $('apply').disabled = false;
+      msg('saved to ' + (j.config_file || 'config.json') +
+          (partial ? ' — except ' + partial + '; everything else is written' : '') +
+          ' — now Apply to restart', partial ? '' : 'ok');
+    }
+    post(true).then(function (r) {
+      var j = r.body || {};
+      if (j.ok) { done(j, null); return; }
+      /* One documented back-end limitation: save() cannot merge a LIST
+         section's own settings (it runs them through the list validator and
+         gets a list back), which answers 500. Everything else saves fine, so
+         retry without them rather than losing the whole form, and say which
+         fields were skipped. */
+      if (r.status >= 500) {
+        var names = listSettingSections().map(function (s) { return s.title.toLowerCase() + ' settings'; });
+        return post(false).then(function (r2) {
+          var j2 = r2.body || {};
+          if (j2.ok) { done(j2, names.join(', ')); return; }
+          msg(j2.error || ('save failed (' + r2.status + ')'), 'bad');
+        });
+      }
+      msg(j.error || ('save failed (' + r.status + ')'), 'bad');
+    }).catch(function (e) { msg(String(e && e.message || e), 'bad'); })
+      .then(function () { b.disabled = false; });
+  });
+
+  /* ---------------------------------------------------------------- apply
+     The server re-executes itself, so the POST may never answer. Treat a
+     failed/hanging request as success-in-progress and decide by polling
+     /api/config, which only answers once the new process is serving. */
+  $('apply').addEventListener('click', function () {
+    $('app').style.display = 'none';
+    $('done').className = 'on';
+    var t0 = Date.now();
+    setPending(false);
+    api('/api/setup/apply', { method: 'POST' }).catch(function () { /* expected */ });
+    setTimeout(poll, 1500);
+
+    function poll() {
+      fetch('/api/config', { cache: 'no-store' }).then(function (r) {
+        return r.ok ? r.json() : Promise.reject(new Error(r.status));
+      }).then(function (cfg) {
+        $('donet').textContent = 'UP';
+        $('donep').innerHTML = esc(cfg.brand || 'GALAXY') + ' is serving again · ' +
+          (cfg.nodes || []).length + ' node' + ((cfg.nodes || []).length === 1 ? '' : 's') +
+          ' · v' + esc(cfg.version || '?');
+        $('donelinks').style.display = '';
+        var nx = $('donelinks').querySelector('a[href="/nexus"]');
+        if (nx && cfg.features && cfg.features.nexus === false) nx.style.display = 'none';
+      }).catch(function () {
+        if (Date.now() - t0 > 90000) {
+          $('donet').textContent = 'STILL RESTARTING';
+          $('donep').innerHTML = 'The back end has not answered for 90 s. Check the service log, then ' +
+            '<a href="/setup">reload setup</a>.';
+          return;
+        }
+        setTimeout(poll, 1200);
+      });
+    }
+  });
+
+  window.addEventListener('beforeunload', function (e) {
+    if (DIRTY) { e.preventDefault(); e.returnValue = ''; }
+  });
+
+  /* ---------------------------------------------------------------- boot */
+  function start() {
+    api('/api/setup/schema').then(function (r) {
+      SCHEMA = r.body;
+      if (!SCHEMA || !SCHEMA.sections) throw new Error('unexpected schema');
+      try { localStorage.setItem(TKEY, token); } catch (e) {}
+      $('gate').style.display = 'none';
+      $('app').style.display = '';
+      initState();
+      render();
+    }).catch(function (e) {
+      if (String(e && e.message) !== '401') relock('Could not load the schema: ' + e);
+    });
+  }
+
+  $('tokgo').addEventListener('click', function () {
+    token = $('tokin').value.trim();
+    if (!token) { $('gateerr').textContent = 'Paste the token first.'; $('gateerr').className = 'res bad on'; return; }
+    start();
+  });
+  $('tokin').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('tokgo').click(); });
+
+  try { token = localStorage.getItem(TKEY) || ''; } catch (e) { token = ''; }
+  if (token) start(); else $('gate').style.display = '';
+})();
+</script>
+</body>
+</html>

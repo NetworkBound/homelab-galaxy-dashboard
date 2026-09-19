@@ -1,0 +1,59 @@
+# Dual-screen kiosk: ONE Xorg server with TWO screens on two GPUs.
+#   screen 0 (:0.0) -> the wall display  (index.html)
+#   screen 1 (:0.1) -> the second screen (/nexus, e.g. a 4K TV)
+# Copy to /etc/X11/xorg.conf and replace the BusIDs (`lspci | grep -i vga`,
+# then `PCI:<bus>:<dev>:<fn>` in decimal). Single-GPU setups: drop screen1.
+
+Section "ServerFlags"
+  Option "AutoAddGPU" "false"
+EndSection
+
+Section "ServerLayout"
+  Identifier "layout"
+  Screen 0 "screen0"
+  Screen 1 "screen1" RightOf "screen0"
+EndSection
+
+# --- Screen 0: primary kiosk monitor -------------------------------------
+Section "Device"
+  Identifier "gpu0"
+  Driver "nvidia"
+  BusID "PCI:10:0:0"                        # <- placeholder, your first GPU
+  Option "AllowEmptyInitialConfiguration" "true"
+  Option "ProbeAllGpus" "false"
+  Option "ConnectedMonitor" "DFP"
+  Option "TripleBuffer" "true"
+  Option "metamodes" "1920x1080_60 +0+0 {ForceFullCompositionPipeline=On, ForceCompositionPipeline=On}"
+EndSection
+Section "Screen"
+  Identifier "screen0"
+  Device "gpu0"
+  DefaultDepth 24
+  SubSection "Display"
+    Depth 24
+  EndSubSection
+EndSection
+
+# --- Screen 1: second screen (TV) ----------------------------------------
+# Let the driver read the panel's real EDID: do NOT add ConnectedMonitor /
+# CustomEDID overrides here. A stale override written before the TV was plugged
+# in masks the real port and produces "no signal" that is very hard to diagnose.
+# If the panel comes up in the wrong mode on a cold boot, kiosk-fix-modes.sh
+# re-probes it after X is running.
+Section "Device"
+  Identifier "gpu1"
+  Driver "nvidia"
+  BusID "PCI:11:0:0"                        # <- placeholder, your second GPU
+  Option "AllowEmptyInitialConfiguration" "true"
+  Option "ProbeAllGpus" "false"
+  Option "TripleBuffer" "true"
+  Option "metamodes" "3840x2160_60 +0+0 {ForceFullCompositionPipeline=On, ForceCompositionPipeline=On}"
+EndSection
+Section "Screen"
+  Identifier "screen1"
+  Device "gpu1"
+  DefaultDepth 24
+  SubSection "Display"
+    Depth 24
+  EndSubSection
+EndSection

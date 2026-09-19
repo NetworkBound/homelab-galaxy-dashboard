@@ -1,0 +1,10 @@
+[Unit]
+Description=Periodic kiosk display mode guard (re-probe EDID, pin 16:9 modes)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+Unit=kiosk-fix-modes.service
+
+[Install]
+WantedBy=timers.target

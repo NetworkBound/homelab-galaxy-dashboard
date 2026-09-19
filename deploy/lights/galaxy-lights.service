@@ -1,0 +1,26 @@
+[Unit]
+Description=Galaxy dashboard room lights (Govee LAN + Hue bridge follow /api/lightstate)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Any host on the LAN that can reach the dashboard, the Govee device (UDP 4003,
+# answers on 4002) and the Hue bridge. Runs fine on the dashboard host itself.
+# Put the values in /etc/galaxy-lights/env (mode 0600):
+#   DASHBOARD_URL=http://10.0.0.51:8080
+#   GOVEE_IP=10.0.0.105
+#   HUE_BRIDGE=10.0.0.171
+#   HUE_KEY_FILE=/etc/galaxy-lights/hue-key
+#   HUE_LIGHTS=1
+EnvironmentFile=/etc/galaxy-lights/env
+ExecStart=/usr/bin/python3 /usr/local/bin/galaxy-lights.py run
+Restart=always
+RestartSec=3
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

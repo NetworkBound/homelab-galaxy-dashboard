@@ -7,7 +7,7 @@
  *
  * Renders into an existing element with id "np" if the page provides one;
  * otherwise it self-mounts a scrollable HUD column (left edge, below the
- * fleet panel). Tuned for 1200x900: 10-11px monospace, 2-line max per row.
+ * add-ons panel). Tuned for 1200x900: 10-11px monospace, 2-line max per row.
  */
 (function () {
   "use strict";

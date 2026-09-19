@@ -13,8 +13,10 @@ WorkingDirectory=/opt/homelab-galaxy-dashboard
 # Credentials live here, mode 0600, owned by the service account.
 EnvironmentFile=/etc/homelab-galaxy-dashboard/env
 
+# /api/setup/apply re-executes this same process (os.execv): the PID survives,
+# systemd sees nothing. Restart=always still covers a crash.
 ExecStart=/opt/homelab-galaxy-dashboard/.venv/bin/python app.py
-Restart=on-failure
+Restart=always
 RestartSec=5
 
 # The dashboard is read-only against every backend; give it a read-only system too.
@@ -26,8 +28,9 @@ ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes
 RestrictSUIDSGID=yes
-# The SQLite history store is the only thing it writes.
-ReadWritePaths=/var/lib/homelab-galaxy-dashboard
+# It writes the SQLite history store, the display-mode file and the inventory
+# cache (DATA_DIR), plus config.json + setup-token when the wizard is used.
+ReadWritePaths=/var/lib/homelab-galaxy-dashboard /etc/homelab-galaxy-dashboard
 
 StandardOutput=journal
 StandardError=journal

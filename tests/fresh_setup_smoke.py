@@ -68,6 +68,8 @@ def main():
             "LISTEN_HOST": "127.0.0.1",
             "LISTEN_PORT": "18080",
             "METRICS_DB": os.path.join(td, "metrics.db"),
+            "CONFIG_FILE": os.path.join(td, "config.json"),
+            "DATA_DIR": td,
             "ENABLE_GPU": "false",
             "ENABLE_GPU_RENDER": "false",
         })

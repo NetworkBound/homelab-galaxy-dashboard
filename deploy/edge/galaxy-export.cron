@@ -1,0 +1,5 @@
+# /etc/cron.d/galaxy-export — on the origin / CrowdSec host.
+# Both exporters are cheap (a log scan and two cscli calls) and run every minute
+# so the dashboard's "viewers" and "blocked" numbers are at most 60 s old.
+* * * * * root /usr/local/bin/galaxy-audience-export.py >/dev/null 2>&1
+* * * * * root /usr/local/bin/galaxy-cs-export.sh >/dev/null 2>&1

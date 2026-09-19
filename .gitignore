@@ -25,3 +25,17 @@ venv/
 *.bak
 *.bak.*
 *.orig
+
+# Written by the setup wizard / at runtime
+config.json
+setup-token
+.mode.json
+.mode.json.tmp
+.inventory.json
+.inventory.json.tmp
+data/
+static/doom/
+
+# Tool caches
+.ruff_cache/
+.pytest_cache/

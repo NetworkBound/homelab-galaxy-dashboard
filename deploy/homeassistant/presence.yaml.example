@@ -1,0 +1,79 @@
+# Home Assistant package: room presence + room-light intent for the Galaxy dashboard.
+# Copy into <config>/packages/galaxy_presence.yaml (packages: !include_dir_named packages)
+# and replace the entity ids and the dashboard address.
+#
+# What it does:
+#   * POSTs /api/presence {"active": true|false} whenever the room's occupancy
+#     sensor changes, on HA start, AND every 2 minutes (a time_pattern sweep).
+#     The sweep matters: the dashboard treats an "inactive" reading older than
+#     PRESENCE_STALE_S as stale and fails open, so HA must keep re-asserting
+#     "empty" or the wall wakes back up on its own. A positive report opens a
+#     PRESENCE_GRACE_S (900 s) window; a PIR does not re-trigger for someone
+#     standing still, so short sensor holds must not drop the wall mid-visit.
+#   * A button press wakes the wall for an hour ("hold": 3600).
+#   * The room-light switch/automation tells the lights driver whether it may
+#     write to the bulbs at all (/api/lightenable) -- a colour frame would
+#     otherwise wake a bulb that was deliberately switched off.
+
+rest_command:
+  galaxy_presence:
+    url: "http://10.0.0.51:8080/api/presence"
+    method: POST
+    content_type: "application/json"
+    payload: '{"active": {{ active | lower }}}'
+    timeout: 5
+  galaxy_presence_wake:
+    url: "http://10.0.0.51:8080/api/presence"
+    method: POST
+    content_type: "application/json"
+    payload: '{"active": true, "hold": {{ hold | default(3600) }}}'
+    timeout: 5
+  galaxy_lightenable:
+    url: "http://10.0.0.51:8080/api/lightenable"
+    method: POST
+    content_type: "application/json"
+    payload: '{"enabled": {{ enabled | lower }}}'
+    timeout: 5
+
+automation:
+  - id: galaxy_room_presence
+    alias: "Galaxy: room presence -> dashboard"
+    mode: queued
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.server_room_occupancy     # <- your motion / occupancy sensor
+        to: ["on", "off"]
+      - platform: homeassistant
+        event: start
+      - platform: time_pattern
+        minutes: "/2"
+    action:
+      - service: rest_command.galaxy_presence
+        data:
+          active: "{{ is_state('binary_sensor.server_room_occupancy', 'on') }}"
+
+  - id: galaxy_button_wakes_the_wall
+    alias: "Galaxy: button wakes the dashboards for an hour"
+    mode: queued
+    trigger:
+      - platform: state
+        entity_id: event.server_room_button                 # <- a smart button's event entity
+        not_from: ["unknown", "unavailable"]
+    action:
+      - service: rest_command.galaxy_presence_wake
+        data:
+          hold: 3600
+
+  - id: galaxy_lights_intent
+    alias: "Galaxy: room-light switch -> lights driver intent"
+    mode: queued
+    trigger:
+      - platform: state
+        entity_id: input_boolean.server_room_lights           # <- whatever means "the room may be lit"
+        to: ["on", "off"]
+      - platform: homeassistant
+        event: start
+    action:
+      - service: rest_command.galaxy_lightenable
+        data:
+          enabled: "{{ is_state('input_boolean.server_room_lights', 'on') }}"

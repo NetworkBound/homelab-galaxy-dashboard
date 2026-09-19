@@ -34,14 +34,17 @@ fi
 
 # --- directories -----------------------------------------------------------
 install -d -o root       -g root       -m 0755 "${INSTALL_DIR}"
-install -d -o root       -g "${APP_USER}" -m 0750 "${CONFIG_DIR}"
+# The setup wizard writes config.json here (as the service account), so the
+# directory belongs to it; the env file stays root-owned and group-readable.
+install -d -o "${APP_USER}" -g "${APP_USER}" -m 0750 "${CONFIG_DIR}"
 install -d -o "${APP_USER}" -g "${APP_USER}" -m 0750 "${STATE_DIR}"
 
 # --- application code ------------------------------------------------------
 echo "==> Copying application"
-for item in app.py config.py pollers.py topology.py gpu_render.py \
-            requirements.txt templates static; do
+for item in app.py config.py pollers.py topology.py probe.py edge.py threats.py showtime.py \
+            gpu_render.py demo.py setup.py addons.py requirements.txt templates static addons demo; do
     [[ -e "${SRC_DIR}/${item}" ]] || continue
+    rm -rf "${INSTALL_DIR:?}/${item}"
     cp -r "${SRC_DIR}/${item}" "${INSTALL_DIR}/"
 done
 
@@ -67,12 +70,13 @@ fi
 chown root:"${APP_USER}" "${CONFIG_DIR}/env"
 chmod 0640 "${CONFIG_DIR}/env"
 
-# Point the history store at the state dir unless the operator already changed it.
+# Point runtime state at the state dir and the wizard's file at the config dir,
+# unless the operator already set them.
 if grep -qs '^METRICS_DB=metrics.db$' "${CONFIG_DIR}/env"; then
     sed -i "s|^METRICS_DB=metrics.db$|METRICS_DB=${STATE_DIR}/metrics.db|" "${CONFIG_DIR}/env"
-elif ! grep -qs '^METRICS_DB=' "${CONFIG_DIR}/env"; then
-    echo "METRICS_DB=${STATE_DIR}/metrics.db" >> "${CONFIG_DIR}/env"
 fi
+grep -qs '^DATA_DIR='    "${CONFIG_DIR}/env" || echo "DATA_DIR=${STATE_DIR}" >> "${CONFIG_DIR}/env"
+grep -qs '^CONFIG_FILE=' "${CONFIG_DIR}/env" || echo "CONFIG_FILE=${CONFIG_DIR}/config.json" >> "${CONFIG_DIR}/env"
 
 # --- systemd ---------------------------------------------------------------
 echo "==> Installing systemd unit"
@@ -83,16 +87,20 @@ systemctl daemon-reload
 if [[ ${NEEDS_CONFIG} -eq 1 ]]; then
     cat <<EOF
 
-==> Installed, but NOT started.
+==> Installed, but NOT started. Two ways to configure it:
 
-    Edit your configuration first:
-
-        sudoedit ${CONFIG_DIR}/env
-
-    At minimum fill in the PVE_0_* block. Then:
+    a) The browser wizard. Start the service, read the token, open /setup:
 
         sudo systemctl enable --now homelab-dashboard
-        sudo systemctl status homelab-dashboard
+        sudo journalctl -u homelab-dashboard | grep 'setup. token'
+        # then http://<this host>:8080/setup -> saves ${CONFIG_DIR}/config.json (0600)
+
+    b) The environment file (fill in the PVE_0_* block):
+
+        sudoedit ${CONFIG_DIR}/env
+        sudo systemctl enable --now homelab-dashboard
+
+    Either way: sudo systemctl status homelab-dashboard
 
 EOF
 else

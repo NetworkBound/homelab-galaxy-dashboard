@@ -79,7 +79,14 @@ def main():
 
     hits = []
     if a.stdin:
-        hits += scan_text(sys.stdin.read(), a.label, False)
+        # Read bytes, not text. `git cat-file -p` pipes every blob in history
+        # through here, including images, and decoding a PNG as UTF-8 aborted
+        # the whole sweep with a traceback -- which the caller could only read
+        # as "scan failed". Binary and oversized input is skipped by the same
+        # rule the path scan below already applies.
+        raw = sys.stdin.buffer.read()
+        if b"\0" not in raw[:4096] and len(raw) <= 2_000_000:
+            hits += scan_text(raw.decode("utf-8", "replace"), a.label, False)
     for p in a.paths:
         pp = pathlib.Path(p)
         if not pp.is_file() or pp.name.lower().endswith(SKIP_EXT):

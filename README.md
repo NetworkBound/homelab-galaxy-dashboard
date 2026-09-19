@@ -43,6 +43,21 @@ two-screen NOC wall.
 
 ![Nexus, the estate from orbit](docs/screenshots/nexus-overview.png)
 
+### Any number of nodes
+
+The scene is built from whatever `/api/config` reports, so one node or six all
+work — galaxies are laid out along an arc, each with its own accent colour, its
+own card, and its own stars. Nothing about "two nodes" is baked in.
+
+![Three Proxmox nodes, three galaxies](docs/screenshots/nexus-three-nodes.png)
+
+Try it yourself without touching your cluster — demo mode reads its fixtures
+from a directory you can point anywhere:
+
+```bash
+DEMO=1 DEMO_FIXTURES=/path/to/your/fixtures python3 app.py
+```
+
 ## Set it up in a browser
 
 No YAML archaeology required. Start it with nothing configured:

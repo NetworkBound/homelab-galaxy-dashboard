@@ -1,0 +1,23 @@
+# Keep the repository's language stats and pull-request diffs about the code
+# people actually read. Everything marked here is still in the repo and still
+# runs -- it is only collapsed by default in diffs and excluded from the
+# language bar.
+
+# Third-party libraries shipped for offline use.
+static/vendor/**            linguist-vendored=true
+
+# CI plumbing and its scanners.
+.github/**                  linguist-generated=true
+
+# Anonymised API captures. Large, machine-written, and reviewed by running the
+# demo rather than by reading the JSON.
+demo/fixtures/*.json        linguist-generated=true -diff
+
+# Baked Blender output.
+static/assets/*.png         binary
+static/assets/*.jpg         binary
+static/assets/rocket.json   linguist-generated=true -diff
+docs/screenshots/*.png      binary
+
+# Tests: part of the build, not the story.
+tests/**                    linguist-generated=true

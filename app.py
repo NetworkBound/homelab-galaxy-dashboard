@@ -506,6 +506,8 @@ def api_topology():
 
 @app.route("/api/all")
 def api_all():
+    if not config.DEMO and request.headers.get("X-API-Key") != os.environ.get("DASH_API_KEY", ""):
+        return jsonify({"error": "unauthorized"}), 401
     g = DATA["guests"]
     return jsonify({"guests": g, "storage": DATA["storage"], "nodes": DATA["nodes"], "pools": DATA["pools"],
         "unifi": DATA["unifi"], "zabbix": DATA["zabbix"], "cameras": DATA["cameras"], "sources": DATA["sources"],

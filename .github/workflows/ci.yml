@@ -53,7 +53,7 @@ jobs:
 
       - name: Byte-compile every module
         run: |
-          python3 -m compileall -q app.py config.py pollers.py topology.py probe.py edge.py threats.py \
+          python3 -m compileall -q app.py auth.py config.py pollers.py topology.py probe.py edge.py threats.py \
             showtime.py gpu_render.py demo.py setup.py addons.py addons tests deploy/lights/galaxy-lights.py \
             deploy/edge/galaxy-audience-export.py
 

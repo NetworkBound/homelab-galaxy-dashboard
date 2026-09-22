@@ -275,10 +275,21 @@ Cloudflare analytics or the origin-log exporter for real unique viewers.
 - Outbound TLS verification is currently disabled for backend requests, which is
   what makes Proxmox's self-signed certificate work. Treat the network path
   between the dashboard and its backends as trusted.
-- **There is no authentication in front of the dashboard itself.** It shows a
-  read-only picture of your infrastructure. Put it behind your reverse proxy,
-  SSO or a trusted VLAN. Do not expose it to the internet. The setup wizard is
-  token-gated, but that protects the settings, not the view.
+- **The dashboard has no login of its own unless you give it one.** It shows a
+  read-only picture of your whole infrastructure, so put it behind your reverse
+  proxy, SSO or a trusted VLAN, and do not expose it to the internet. That
+  advice is unchanged and is still the real answer.
+- **Optional shared key: `DASH_API_KEY`.** Set it (env, or `/setup` -> Access
+  control) and every page, API route and stream requires it; leave it unset and
+  nothing changes, which is what every existing install gets on upgrade. It is
+  one shared key, not user accounts — defence in depth behind the proxy, not a
+  replacement for it. Details in
+  [`docs/configuration.md`](docs/configuration.md#access-control).
+- Bound to `0.0.0.0` with no key and not in demo mode, the app prints a loud
+  warning at startup naming exactly what is on offer. If you see it, you meant
+  to see it or you have a problem.
+- The setup wizard keeps its own separate `SETUP_TOKEN` gate either way: that
+  protects the settings, not the view.
 
 ## Contributing
 

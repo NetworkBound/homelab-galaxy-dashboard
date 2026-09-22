@@ -53,6 +53,28 @@ same keys in lower case grouped by section, e.g.
 
 `config.json` may hold credentials, so the wizard writes it mode `0600`.
 
+## Access control (`auth.py`)
+
+Off unless `DASH_API_KEY` is set, and then it applies to **every** route
+(`before_request`), including pages, streams and `/static` — so a route added
+later is covered without being decorated. Exempt: `/login` itself, plus
+`/setup` and `/api/setup/*`, which carry their own token gate (below).
+
+- Credentials, in the order they are read: `X-API-Key: <key>`, `?key=<key>`,
+  then the `galaxy_session` cookie. An empty or absent value never
+  authenticates, whatever the configuration; comparison is `hmac.compare_digest`.
+- Any successful key presentation sets `galaxy_session` (`HttpOnly`,
+  `SameSite=Lax`, `Secure` over HTTPS, 30 days). Its value is
+  `HMAC-SHA256(key, "galaxy-session-v1")`, so it proves the key without
+  carrying it and survives a restart. The front end needs this: `fetch()` and
+  `EventSource` send no headers.
+- Refused requests answer `401`. A browser navigation (`Accept: text/html`)
+  gets the `/login` form as the body; anything else gets
+  `{"error": "unauthorized", "detail": "..."}`.
+- `POST /login` takes `key` (form or JSON) plus an optional same-site `next`;
+  it answers `303` to `next` for a form post, `{"ok": true}` for JSON, and
+  `404` when no key is configured. `GET /login` is the form.
+
 ## Setup wizard (`setup.py`)
 
 - `GET /setup` — the page. Enabled unless `SETUP_UI=false`.

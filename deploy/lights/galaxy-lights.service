@@ -9,6 +9,7 @@ Type=simple
 # answers on 4002) and the Hue bridge. Runs fine on the dashboard host itself.
 # Put the values in /etc/galaxy-lights/env (mode 0600):
 #   DASHBOARD_URL=http://10.0.0.51:8080
+#   DASH_API_KEY=            (only if the dashboard has a key set)
 #   GOVEE_IP=10.0.0.105
 #   HUE_BRIDGE=10.0.0.171
 #   HUE_KEY_FILE=/etc/galaxy-lights/hue-key

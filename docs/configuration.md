@@ -198,11 +198,17 @@ An indexed list set in the environment replaces the whole list from
 rendered as rows in the fleet panel. `ADDONS_DIR` points the add-on loader at
 another directory (default `addons/`; see `addons/README.md`).
 
+### Access control (optional)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `DASH_API_KEY` | *empty* | Shared key in front of every page, API route and stream. Empty = no gate (the historical behaviour). See [Access control](#access-control) below. |
+
 ### Local behaviour
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `LISTEN_HOST` | `0.0.0.0` | Bind address. Set to `127.0.0.1` if a reverse proxy fronts it. |
+| `LISTEN_HOST` | `0.0.0.0` | Bind address. Set to `127.0.0.1` if a reverse proxy fronts it. With no `DASH_API_KEY` set, `0.0.0.0` earns a loud warning at startup. |
 | `LISTEN_PORT` | `8080` | |
 | `POLL_INTERVAL` | `20` | **Reserved — not yet applied.** Each poller uses its own fixed cadence. |
 | `METRICS_DB` | `<DATA_DIR>/metrics.db` | SQLite history store path. |
@@ -228,6 +234,62 @@ new name appends a category (give it a palette colour too). Unmatched guests
 fall back to `infra`, so a guest is never dropped from the scene just because
 it is unrecognised.
 
+## Access control
+
+The dashboard draws a complete picture of an infrastructure — every guest with
+its id and address, the topology, alerts, cameras, storage — and historically
+had no gate of its own. The advice in the README has not changed: front it with
+a reverse proxy, SSO or a trusted VLAN. `DASH_API_KEY` is defence in depth
+behind that, and for the window before it is in place.
+
+```bash
+DASH_API_KEY=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
+```
+
+Set it in the environment or at `/setup` -> **Access control** (it is a secret
+field, so the wizard masks it like any other credential). Then:
+
+| Leave it empty | Set it |
+|---|---|
+| Nothing changes. No gate, exactly as before — an existing install upgrades without locking itself out. | Every page, API route, stream and `/static` asset needs the key. |
+
+**How a caller presents it**
+
+- `X-API-Key: <key>` — scripts, `curl`, the lights driver in `deploy/lights/`.
+- `?key=<key>` — for a kiosk browser you can only hand a URL. It lands in
+  access logs; prefer the form below where you have a keyboard.
+- The session cookie, set automatically after either of the above succeeds.
+
+```bash
+curl -H "X-API-Key: $DASH_API_KEY" http://dashboard:8080/api/all
+```
+
+**In a browser.** The front end fetches a dozen endpoints with a bare `fetch()`
+and subscribes to several `EventSource` streams; neither can send a header, so
+a header-only gate would lock the dashboard out of itself. Visit `/login` once,
+paste the key, and the browser gets a cookie (`HttpOnly`, `SameSite=Lax`,
+`Secure` when the request arrived over HTTPS, 30 days) that every later request
+carries by itself. Navigating to any page without it lands on the same form.
+The cookie holds an HMAC of the key rather than the key, and is derived rather
+than random, so it survives a restart — a wall display does not need a human
+after every deploy.
+
+**What stays open.** `/setup` and `/api/setup/*` keep their own `SETUP_TOKEN`
+gate and are not touched by this one, so a locked-out operator can still reach
+the wizard with the setup token.
+
+**Things that will need the key once you set one**
+
+- `deploy/lights/galaxy-lights.py` — set `DASH_API_KEY` in its environment too.
+- The kiosk unit's `ExecStartPre` readiness `curl`, and any uptime monitor
+  polling `/`: both see `401`. Point them at a URL carrying `?key=`, send the
+  header, or treat `401` as up.
+- Anything of your own that scrapes `/api/all`.
+
+**What this is not.** One shared key, no user accounts, no rate limiting, no
+audit trail. It keeps an unauthenticated scrape off the inventory; it is not a
+reason to put the dashboard on the internet.
+
 ## Security
 
 - Nothing here is logged. Pollers print the *name* of a failing backend and the
@@ -236,5 +298,9 @@ it is unrecognised.
   is written `0600` by the wizard. The installer in `deploy/` sets both up.
 - Prefer a dedicated read-only account per backend over reusing an admin login.
 - `/api/config` never contains a credential; `/api/setup/config` masks them.
-- The dashboard itself has **no authentication** beyond the setup token. Front
-  it with your reverse proxy or SSO; do not expose it to the internet.
+- The dashboard has **no login of its own unless you set `DASH_API_KEY`** (see
+  [Access control](#access-control)), and the setup token protects the settings,
+  not the view. Either way: front it with your reverse proxy or SSO, and do not
+  expose it to the internet.
+- With no key, not in demo mode, and bound to anything other than loopback, the
+  app prints a loud startup warning naming what is on offer.

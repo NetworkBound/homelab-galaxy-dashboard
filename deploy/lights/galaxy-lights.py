@@ -12,6 +12,7 @@ per-screen colour to /api/lightcolor). This daemon reads those and drives:
 Either light may be left unconfigured. Everything is environment-driven:
 
     DASHBOARD_URL=http://10.0.0.51:8080     # the dashboard
+    DASH_API_KEY=                           # only if the dashboard has a key set
     GOVEE_IP=10.0.0.105                     # Govee LAN control must be enabled in the app
     HUE_BRIDGE=10.0.0.171
     HUE_KEY_FILE=/etc/galaxy-lights/hue-key # chmod 600; create with hue-pair (press the link button)
@@ -50,6 +51,10 @@ DASHBOARD = os.environ.get("DASHBOARD_URL", "http://127.0.0.1:8080").rstrip("/")
 DASH = DASHBOARD + "/api/lightstate"
 LIGHTCOLOR = DASHBOARD + "/api/lightcolor"
 LIGHTENABLE = DASHBOARD + "/api/lightenable"
+# The dashboard's optional shared key (auth.py). Unset on a dashboard that has
+# no gate, which is the default; sent on every read when it is set.
+DASH_HEADERS = ({"X-API-Key": os.environ["DASH_API_KEY"].strip()}
+                if os.environ.get("DASH_API_KEY", "").strip() else {})
 VIDEO_BRI = float(os.environ.get("VIDEO_BRI", "0.78"))
 COLOR_STALE = 12.0          # a screen quiet this long falls back to the tour colour
 GOVEE_IP = os.environ.get("GOVEE_IP", "").strip()
@@ -171,7 +176,8 @@ def hue_is_on(key):
 
 
 def _get_json(url, timeout):
-    with urllib.request.urlopen(url, timeout=timeout) as r:
+    req = urllib.request.Request(url, headers=DASH_HEADERS)
+    with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode())
 
 

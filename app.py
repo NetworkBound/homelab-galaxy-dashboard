@@ -35,6 +35,7 @@ import urllib3
 from flask import Flask, Response, jsonify, redirect, render_template, request
 from jinja2 import TemplateNotFound
 
+import auth
 import config
 import pollers
 
@@ -83,6 +84,12 @@ app = Flask(__name__)
 # later edit to the pages is invisible until a restart.
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.jinja_env.auto_reload = True
+
+# The optional DASH_API_KEY gate, installed before a single route exists so it
+# covers whatever is registered afterwards — here, in demo.py, showtime.py,
+# threats.py or an add-on — without anyone having to remember it. A no-op when
+# no key is configured, which is every install that has not opted in. See auth.py.
+auth.install(app)
 
 remote_gpu_stats = pollers.remote_gpu_stats
 
@@ -955,4 +962,6 @@ if __name__ == "__main__":
             print("\nFix the variables above (or use /setup) and re-run.", flush=True)
             raise SystemExit(1)
         start_background_pollers()
+    # Last thing before the socket opens, so it is the last thing in the log.
+    auth.warn_if_exposed()
     app.run(host=config.LISTEN_HOST, port=config.LISTEN_PORT, threaded=True)

@@ -260,6 +260,17 @@ SECTIONS = [
            help="Needs a Frigate URL."),
          F("ENABLE_THREATS", "threats", "Threat feed", type="bool", default=True),
      ]},
+    {"id": "access", "title": "Access control",
+     "help": "Optional. The dashboard shows your whole infrastructure and has no login of its own; "
+             "the usual answer is a reverse proxy, SSO or a trusted VLAN in front of it. This is the "
+             "belt-and-braces version for when that is not enough — or not there yet.",
+     "fields": [
+         F("DASH_API_KEY", "api_key", "Dashboard key", secret=True,
+           help="Leave blank and nothing changes: no gate, exactly as before. Set it and every page, "
+                "API route and stream needs it — as an X-API-Key header, or once through /login, "
+                "which drops a session cookie so the browser keeps working. Use a long random value "
+                "(python3 -c 'import secrets;print(secrets.token_urlsafe(32))')."),
+     ]},
     {"id": "advanced", "title": "Advanced",
      "fields": [
          F("LISTEN_HOST", "listen_host", "Bind address", default="0.0.0.0"),
@@ -525,6 +536,9 @@ DEMO_ADDONS = get("DEMO_ADDONS")
 # Local behaviour
 # ---------------------------------------------------------------------------
 LISTEN_HOST, LISTEN_PORT = get("LISTEN_HOST"), get("LISTEN_PORT")
+# Optional shared key in front of every route (auth.py). Empty = no gate, which
+# is what every install before this had; setting it changes nothing else.
+DASH_API_KEY = get("DASH_API_KEY")
 DATA_DIR = get("DATA_DIR") or os.getcwd()
 METRICS_DB = get("METRICS_DB") or os.path.join(DATA_DIR, "metrics.db")
 HISTORY_DAYS, POLL_INTERVAL = get("HISTORY_DAYS"), get("POLL_INTERVAL")

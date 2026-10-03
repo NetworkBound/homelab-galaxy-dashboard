@@ -35,16 +35,44 @@ Now, in order of how much each one matters:
   integral of an exponential stellar disc seen from inside it (h_z = 300 pc),
   attenuated by a SECOND exponential disc of dust (h_dust = 125 pc). The entire
   appearance of the Milky Way follows from dust being 2.4x thinner than stars:
-  along b = 0 you look down the dust lane and it is opaque within a kiloparsec,
-  but a few degrees off-plane you climb out of the dust while still cutting
-  through plenty of stars. The surface brightness therefore peaks OFF the
-  midplane with a dark rift exactly ON it. A single-scale-height model gives a
-  smooth featureless streak, which is what most procedural skies look like.
-  Longitude weighting makes it bright and wide toward the galactic centre and
-  thin toward the anticentre, so the frame has an axis and a subject.
-* A DARK RIFT of discrete dust clouds on top, from domain-warped ridged noise
-  confined to low galactic latitude, applied as PER-CHANNEL extinction over the
-  band, the nebulae and the faint stars alike.
+  along b = 0 you look down the dust lane and it is thick for a kiloparsec, but a
+  few degrees off-plane you climb out of the dust while still cutting through
+  plenty of stars, so the surface brightness peaks OFF the midplane (at about
+  b = 3 deg, 5 deg toward the centre). A single-scale-height model gives a smooth
+  featureless streak, which is what most procedural skies look like. Longitude
+  weighting makes it bright and wide toward the centre and thin toward the
+  anticentre, so the frame has an axis and a subject.
+
+  The stars are EMBEDDED IN the dust, not behind it, and that is now solved
+  properly instead of as (disc integral) * exp(-tau_total). Multiplying the whole
+  integral by the total optical depth sends the midplane to exactly zero, and the
+  plate baked out as a black snake with a thin glowing rim rather than as a band
+  -- the dust was eating precisely the part that was supposed to glow. The
+  correct transfer, with the emissivity and the opacity both exponential in z,
+
+      I = (j0 h_dust / mu) e^-T Integral_0^1 u^(p-1) e^(Tu) du,   p = h_d/h_s
+
+  is tabulated once in `_slab_table`. It tends to the unobscured disc integral
+  j0 h_star/mu as T -> 0 and SATURATES at the source function j0/alpha0 as
+  T -> inf, which is why the real midplane is bright. The off-plane peak survives;
+  the midplane now sits 28% below it instead of at zero.
+* A DARK RIFT: a narrow (sigma 6 deg) lane of domain-warped ridged noise, plus six
+  named, discrete, SHARP-EDGED dark nebulae silhouetted on the band at A_V = 3.5
+  to 7. Smooth extinction is a continuum and can only read as haze; what makes the
+  real Milky Way look three-dimensional is that the Coalsack and the Pipe have
+  edges you can point at and are genuinely opaque. Their shape is therefore a hard
+  threshold on warped ridged noise and not a soft envelope. All of it is applied as
+  PER-CHANNEL extinction over the band, the nebulae and the faint stars alike --
+  but NOT over the brightest stars, which are in the foreground.
+* DEPTH: ~50 distant galaxies and two Magellanic-analogue satellites. A star is a
+  point at an unknowable distance; a resolvable disc is unmistakably far away, and
+  a few of them turn the sky from a wall into a volume. They respect the ZONE OF
+  AVOIDANCE (none within 16 deg of the plane, because that is where the dust is --
+  sprinkling them evenly across the band is the giveaway), they carry Sersic
+  profiles and random position angles so they never read as stars, and the
+  flattened ones get a dust lane down the major axis. The satellites are drawn as
+  resolved star clouds with an off-centre bar and one giant HII complex each,
+  because at this plate scale a nearby satellite would not be smooth.
 * A REAL STAR POPULATION. Counts follow the observed N(<m) ~ 10^(0.49 m), not the
   10^(0.6 m) of a homogeneous universe, so flux is sampled from P(F>f) ~ f^-1.225.
   Spectral types are drawn from the MAGNITUDE-limited mix (O 0.6 / B 19.6 / A 21.7
@@ -56,7 +84,14 @@ Now, in order of how much each one matters:
   entire stellar gamut only spans #ffb969 to #a5baff. Stars are splatted as
   ellipses stretched 1/cos(lat) in x so they stay round on the sphere, with a
   broad faint halo on the brighter half (the halo, not the core, is what makes a
-  star look like a star) and short diffraction spikes on the brightest fourteen.
+  star look like a star). The brightest twenty-two get a second, much wider halo
+  and real diffraction spikes: chains of overlapping gaussians laid along an
+  arbitrary direction, so they are sub-pixel accurate at any angle, with a 1/r
+  profile along the arm (which is why real spikes carry so far) and a reddening
+  outward (the diffraction angle scales with wavelength). All the arms share one
+  roll angle, because a spider rotates with the telescope. Writing integer pixels
+  along a row and a column, as the previous version did, can only draw an upright
+  cross and staircases visibly at 4K.
 * NEBULAE from two-level domain-warped RIDGED noise, not plain fBm -- plain fBm
   has no thin bright structures and can only ever be fog. Each complex carves a
   cavity out of its own density field and brightens the cavity SHELL, which is
@@ -89,7 +124,8 @@ Now:
   is Archimedean, not logarithmic, and its pitch runs from ~50 deg at the core to
   ~11 deg at the rim, which is why its inner arms always look over-open.
   Crucially, frac(psi) is also the signed ACROSS-ARM coordinate, which makes the
-  physically correct offsets nearly free.
+  physically correct offsets nearly free -- and round(psi) NAMES THE ARM, which is
+  what lets each arm carry its own amplitude and its own truncation radius.
 * Those offsets, in order across an arm: DUST LANE on the concave/inner edge (inside
   corotation the gas overtakes the arm from behind and shocks there), then the
   stellar ridge, then the HII knots a few hundred parsecs downstream.
@@ -101,12 +137,51 @@ Now:
   Pink blobs with white cores strung like beads along the outer edge of a dark
   reddish lane is the single most recognisable signature a spiral arm has.
 * Two separate resolved-star populations sampled from DIFFERENT fields: young blue
-  ones confined to the arms, old pale ones following the smooth bulge+disc. Both
-  are extincted by the same dust map. This matters more than it sounds: the
-  broadband arm/interarm colour difference in real galaxies is under 0.1 mag in
+  ones confined to the arms, old pale ones following the smooth bulge+disc and the
+  bar. Both are extincted by the same dust map. This matters more than it sounds:
+  the broadband arm/interarm colour difference in real galaxies is under 0.1 mag in
   B-V, so the "blue arms" read has to come from resolved young stars and HII, not
   from painting the arms blue. A smoothly blue arm on a yellow disc looks like a
-  poster.
+  poster. The plate ships at 1024 after a 2x box downscale, so the stars are
+  splatted at ~1.9 px here (about 1 px shipped) and there are correspondingly fewer
+  of them. At the old 1.2 px they were 0.6 px shipped, i.e. below the sampling
+  limit, so the "resolved" star field averaged into exactly the smooth coloured
+  veil it was supposed to replace -- the same failure arriving by a different road.
+* HII knots are CLUSTERED along the arm, with the weighting following the
+  star-formation rate per unit area (which peaks near 0.4 R25 and falls inward).
+  The observed two-point correlation of HII regions is strong out to ~500 pc, so a
+  real arm is beads in groups separated by long dark gaps; a uniform string of
+  beads is a giveaway. The few giant complexes that a steep luminosity function
+  guarantees get a wide faint skirt, because at a distance it is the skirt and not
+  the core that makes an arm look beaded.
+* A BAR, because about two thirds of nearby spirals have one and it is the first
+  thing the eye uses to tell a real galaxy from a pinwheel. Boxy isophotes (the
+  generalised-ellipse exponent is measured at 2.5-3.5 for strong bars, against 2.0
+  for an ellipse), a flat-topped light profile with a sharp end, two dust lanes on
+  the leading edges meeting at the nucleus in a shallow S, star-forming hotspots at
+  both ends and a nuclear ring of HII where the bar has driven the gas. The arm
+  phase is LOCKED so that psi is an integer at the bar end, which makes the arms
+  spring from the bar instead of floating free; inside the bar radius the spiral is
+  gated almost off, because that gas is on x1 orbits.
+* ASYMMETRY, three independent ways, because an m-fold pattern is exactly m-fold
+  symmetric and a two-armed one reads as a logo. (1) A tidal m=1 azimuthal shear
+  growing as r^2 -- the leading-order effect of a companion -- which winds one arm
+  tighter and unwinds the other, since sin(th - pa) has opposite sign at th and
+  th + pi. (2) Per-arm amplitude and truncation radius, keyed off round(psi); the
+  label switches at the interarm minimum where the stripe is ~0, so the switch is
+  invisible. (3) A one-sided tidal plume in the outer disc.
+* GLOBULAR CLUSTERS in the halo: a cored projected power law inverted analytically,
+  a log-normal luminosity function (the GCLF is gaussian in MAGNITUDE, peak
+  M_V = -7.4, sigma 1.2, so a handful are much brighter than the rest and they do
+  not read as a dot screen), marginally resolved, with a blue metal-poor
+  subpopulation. They matter out of all proportion to their light: they are the one
+  population living OUTSIDE the disc, so they are what says the galaxy is a
+  three-dimensional object rather than a decal.
+* The disc now ENDS IN AN ENVELOPE instead of stopping. The light profile is simply
+  carried further out, arms and flocculence and resolved stars and all, until the
+  alpha window takes over. An axisymmetric halo added on top was tried and
+  rejected: any profile faint enough not to lift the interarm floor is invisible
+  outside it, and the ring-shaped compromise read as a soap bubble.
 * Light profile is a Sersic n=2 bulge at R_e = 0.2h (a very stable observed ratio)
   plus a double-exponential Type II disc with the break at 2.5h and the outer scale
   length halved -- about 60% of real spirals are Type II, and it is what makes the
@@ -114,7 +189,13 @@ Now:
 * Structure is broken up the way real discs are: a weak m=3 component, m=1
   lopsidedness at the observed A1 ~ 0.13, high-pitch spurs downstream of the arms,
   grain-scale clumping, and radius-dependent flocculence so the outer disc goes
-  patchy while the inner disc stays grand-design.
+  patchy while the inner disc stays grand-design. The interarm FLOOR falls with
+  radius too: held constant it is what produced the featureless outer haze (teal in
+  the cyan plate, brown in the amber one), because out there the smooth disc is all
+  that is left and the stretch lifts it straight back to visible.
+* The three plates are three de Vaucouleurs CLASSES, not three colourways of one
+  shape -- SB(s)bc, SB(r)b and an interacting SABa. They are seen together in the
+  wide shots, where identical structure under different accents reads as a repeat.
 * Output is stretched by dividing out a fractional power of the smooth radial light
   profile before the tone curve. This is the standard astrophotographic stretch and
   it is the only way to fit a hot nucleus and faint outer arms into the same 8 bits.
@@ -143,6 +224,32 @@ Now:
   uv. That is what makes these seamless in longitude and undistorted at the poles;
   the old maps sampled 2D uv noise and had features squashed into arcs near the
   poles plus a visible wrap seam.
+* THE POLES. Sampling in 3D is necessary and was not sufficient; the caps still
+  baked out as mush. Three separate causes, all now fixed:
+    - Perlin noise is IDENTICALLY ZERO at every lattice vertex and the pattern
+      around one carries the lattice's own four-fold symmetry. Sphere fields are
+      sampled as (x*f, y*f, z*f) with f an integer, so the six axis directions --
+      which include both poles -- landed exactly on a vertex at every octave. That,
+      not "equirect mush", is why the ice giant's cap was a grey blob with a
+      visibly octagonal edge. `_LATTICE_OFF` displaces the whole field by an
+      irrational vector; one add, and it fixes the artefact everywhere at once.
+    - An equirect plate stores w samples around every parallel, but the parallel at
+      latitude b is only 2*pi*cos(b) long, so it carries 1/cos(b) times more
+      longitudinal detail than the sphere can hold -- 40x too much ten degrees out,
+      unbounded at the pole. Hardware aniso is capped at 8x here, so the excess
+      aliases, the isotropic mip fallback over-blurs, and three.js's degenerate
+      pole triangles smear whatever w colours sit in the top row into a pinwheel.
+      `polar_bandlimit` low-passes each row at k_max = (w/2) cos(lat), which is the
+      only filter that addresses it because the problem is anisotropic. The pole
+      rows keep only DC -- their own mean, which IS the pole colour.
+    - There was nothing to look at. The caps now carry a domain-warped two-regime
+      turbulent field and the circumpolar CYCLONE RING that Juno found: eight
+      storms plus a central one in the north, five in the south, near-touching, in
+      a polygonal ring, each with a two-armed spiral and a calm eye. Computed from
+      3D dot products against each storm's own axis and its own local frame, never
+      from lat/lon, which is the thing that goes singular there. Scaled up about 2x
+      from Jupiter's real 3.8 deg storms at colatitude 7 deg, for the same reason
+      the granulation and the jet amplitudes are: these bodies are 15-40 px.
 * Bands come from Jupiter's MEASURED zonal jet profile (the BAA/Rogers averaged jet
   table) rather than a sinusoid. This is not pedantry: a single sinusoid explains
   only about 26% of the variance in Jupiter's real zonal brightness profile. The
@@ -171,8 +278,11 @@ Now:
   peaks at the rim, near zero in the core, as the Great Red Spot's does), sits at
   22S in a shear gap, has aspect ~1.35 and is tinted terracotta rather than
   crimson, which is its actual colour.
-* Poleward of about 45 degrees the zonal structure is blended out into isotropic
-  mottle, because that is what the measured eddy aspect ratio does.
+* Poleward of about 50 degrees the zonal structure is blended out, because that is
+  what the measured eddy aspect ratio does, and the chromophores go with it: the
+  measured polar hoods are grey to bluish, and leaving the warm tint on under the
+  cap is what made the old one look like dirty cream. The cap gets a distinct
+  collar at its boundary, so it reads as a cap rather than as a fade-out.
 * The third body is a terrestrial world instead of a third giant: continents at
   genuinely continental scale, banded cloud, polar caps, and auroral ovals as
   OFFSET RINGS around the magnetic poles rather than caps. At 9-15 px on screen,
@@ -229,6 +339,18 @@ the real 15.8% while the cell-to-cell brightness variation is pushed well above 
 the brightness variation survives downsampling, the lane network does not. Baking
 the true granule scale produces shimmering noise, not granulation.
 
+That weighting was right and it was not what the code did. "Cell-to-cell brightness
+variation" was implemented as a plain fBm field with no relation to the Voronoi
+cells, so every granule was in fact the same brightness and the ONLY thing
+separating one from the next was the lane between them -- which is why the map still
+read as crazing on an egg at 140 px, the same golf-ball failure in a different
+costume. The cell index now comes back out of `voronoi_edge_equirect` and each
+granule is hashed its own value, and the lane-breaking noise runs at half a cell
+pitch instead of two, so the lane network is topologically broken rather than merely
+uneven. (Full-strength per-cell values alone were tried and read as flat stained
+glass; the shipped mix is a third cell-keyed, a sixth from the finer population and
+half smooth.)
+
 
 rocket.json  ({pos, nrm, col, glow, idx}, nose +Z)
 ---------------------------------------------------
@@ -244,10 +366,28 @@ of units across, so it is a few dozen pixels. Silhouette is everything and surfa
 detail is sub-pixel, so the budget goes on things that change the OUTLINE -- a long
 ogive nose with two deliberate hull steps (a shoulder and a waist, so it reads as
 built rather than turned), cranked-delta wings spanning four and a half hull radii,
-wing-tip pods, a tall dorsal fin, ventral strakes and a flared nozzle -- and on a
-handful of emissive points spread as WIDE as possible, because at small size the eye
-reads the constellation of bright dots before it reads any shape. Hence red and
-green navigation lights on the wing tips, 1.17 hull lengths apart.
+wing-tip pods, ventral strakes and a flared nozzle -- and on a handful of emissive
+points spread as WIDE as possible, because at small size the eye reads the
+constellation of bright dots before it reads any shape. Hence red and green
+navigation lights on the wing tips, 1.17 hull lengths apart.
+
+Three additions over the first pass, all of them outline and none of them surface,
+because at thirty pixels it still read as a generic delta:
+
+* CANARDS. The one thing they add is a SECOND span forward of the main one. An
+  outline that goes narrow-wide-narrow-wide-narrow along its length is read as a
+  built vehicle; one that goes narrow-wide-narrow is read as a dart. Twenty
+  triangles each.
+* A V-TAIL instead of a single dorsal fin. A shark fin is a strong silhouette from
+  the side and NOTHING from directly above or below, and these craft are flown
+  along curves that put the camera everywhere; a V always shows two edges. It also
+  widens the tail, which is how the eye tells front from back at this size, and it
+  carries a white strobe on each tip -- so with the wing-tip pair there are now
+  four emissive points at the four extremes of the outline.
+* TWIN OUTBOARD NACELLES on short pylons. The camera sits astern for the whole
+  outbound leg of every bridge run, and from there one bell on the axis is a dot
+  while three in a triangle is a shape. Mass outboard and low is also most of what
+  separates a hauler from a fighter in one glance.
 
 Emissive trim strips FOLLOW the hull curvature (built from the same lathe profile
 and pushed out radially) rather than being flat tangent plates, which read as
@@ -306,13 +446,18 @@ _M3 = np.uint32(0xC2B2AE35)
 
 
 def _hash3(ix, iy, iz, seed):
-    h = (ix.astype(np.uint32) * _M1) ^ (iy.astype(np.uint32) * _M2) ^ (iz.astype(np.uint32) * _M3)
-    h ^= np.uint32((int(seed) * 0x27D4EB2F) & 0xFFFFFFFF)
-    h ^= h >> np.uint32(15)
-    h *= _M2
-    h ^= h >> np.uint32(13)
-    h *= _M3
-    h ^= h >> np.uint32(16)
+    # uint32 wraparound IS the avalanche here, so the overflow is the algorithm and
+    # not a bug. numpy only warns about it for 0-d operands, which is why the bake
+    # log was noisy exactly for the fields that pass a constant z (fbm3(x, y, 0.3)).
+    # errstate changes no value; verified by md5 of the plates either way.
+    with np.errstate(over="ignore"):
+        h = (ix.astype(np.uint32) * _M1) ^ (iy.astype(np.uint32) * _M2) ^ (iz.astype(np.uint32) * _M3)
+        h ^= np.uint32((int(seed) * 0x27D4EB2F) & 0xFFFFFFFF)
+        h ^= h >> np.uint32(15)
+        h *= _M2
+        h ^= h >> np.uint32(13)
+        h *= _M3
+        h ^= h >> np.uint32(16)
     return h
 
 
@@ -335,9 +480,22 @@ def _fade(t):
     return t * t * t * (t * (t * np.float32(6.0) - np.float32(15.0)) + np.float32(10.0))
 
 
+# Perlin noise is IDENTICALLY ZERO at every lattice vertex, and the pattern around a
+# vertex carries the lattice's own four-fold symmetry. Sphere fields are sampled as
+# (x*f, y*f, z*f) with f usually an integer, so the six axis directions -- which include
+# BOTH POLES -- land exactly on a lattice vertex at every octave. That is why the ice
+# giant's polar cap was a grey blob with a visibly octagonal edge: it was not "equirect
+# mush", it was the noise lattice showing through at (0, +-f, 0). Displacing the whole
+# field by an irrational vector moves the poles off the lattice at every frequency and
+# costs one add. Verified: perlin3 at (0,9,0) is exactly 0.000000 without this.
+_LATTICE_OFF = (np.float32(0.3178), np.float32(0.5173), np.float32(0.7369))
+
+
 def perlin3(x, y, z, seed=0):
     """3D gradient (Perlin) noise, roughly [-1,1]. Inputs are float32 arrays of any shape."""
-    x = np.asarray(x, np.float32); y = np.asarray(y, np.float32); z = np.asarray(z, np.float32)
+    x = np.asarray(x, np.float32) + _LATTICE_OFF[0]
+    y = np.asarray(y, np.float32) + _LATTICE_OFF[1]
+    z = np.asarray(z, np.float32) + _LATTICE_OFF[2]
     xi = np.floor(x); yi = np.floor(y); zi = np.floor(z)
     xf = x - xi; yf = y - yi; zf = z - zi
     ix = xi.astype(np.int64); iy = yi.astype(np.int64); iz = zi.astype(np.int64)
@@ -491,6 +649,48 @@ def smoothstep(a, b, x):
     return t * t * (3.0 - 2.0 * t)
 
 
+def polar_bandlimit(img, keep=1.15, soft=0.35):
+    """Low-pass an equirect plate in LONGITUDE at the sphere's own cos(lat) Nyquist.
+
+    An equirect map stores w samples around every parallel, but the parallel at
+    latitude b is only 2*pi*cos(b) long. The plate therefore carries 1/cos(b) times
+    more longitudinal detail than the sphere can hold -- 40x too much ten degrees from
+    the pole, unbounded at the pole itself. Three consequences, all of them visible:
+
+    * The pole is a RANKED SINGULARITY in the uv parameterisation. three.js's
+      SphereGeometry fans degenerate triangles into it, each sampling a different u at
+      v = 0, so whatever w different colours sit in the top texel row get smeared into
+      a pinwheel at the exact pole.
+    * Hardware anisotropic filtering is capped (this runtime asks for 8x), so near the
+      pole the sample footprint is far wider in u than the hardware will integrate and
+      the excess detail aliases; the isotropic mip fallback over-blurs instead. Either
+      way it reads as mush, which is exactly the complaint.
+    * The texels are wasted: detail written there cannot survive to the screen.
+
+    Band-limiting each row to k_max = (w/2) * cos(lat) fixes all three at once, and it
+    is the only filter that does, because the problem is anisotropic and every
+    image-space blur is not. The pole rows keep only DC, i.e. their own mean -- which
+    IS the correct pole colour, being the limit of the average round a shrinking circle.
+    `keep` > 1 leaves the equator untouched rather than softening the whole plate.
+    """
+    a = np.asarray(img, np.float32)
+    flat = a.ndim == 2
+    if flat:
+        a = a[..., None]
+    h, w = a.shape[:2]
+    lat = (0.5 - (np.arange(h, dtype=np.float64) + 0.5) / h) * np.pi
+    kmax = np.maximum(keep * (w * 0.5) * np.cos(lat), 0.0)[:, None]
+    k = np.broadcast_to(np.arange(w // 2 + 1, dtype=np.float64)[None, :], (h, w // 2 + 1))
+    gain = 1.0 - smoothstep((1.0 - soft) * kmax, kmax + 1e-9, k)
+    gain[:, 0] = 1.0                                    # DC always survives
+    out = np.empty_like(a)
+    for r0 in range(0, h, 256):                         # chunked: a 4k plate's full
+        r1 = min(h, r0 + 256)                           # complex spectrum is ~200 MB
+        spec = np.fft.rfft(a[r0:r1].astype(np.float64), axis=1) * gain[r0:r1, :, None]
+        out[r0:r1] = np.fft.irfft(spec, n=w, axis=1).astype(np.float32)
+    return out[..., 0] if flat else out
+
+
 def srgb_encode(lin):
     lin = np.clip(lin, 0.0, 1.0)
     return np.where(lin <= 0.0031308, lin * 12.92, 1.055 * np.power(lin, 1.0 / 2.4) - 0.055)
@@ -619,6 +819,8 @@ def voronoi_edge_equirect(h, w, points, k=10, band_rows=16):
     distance, so the intergranular lanes come out at CONSTANT thickness, which is what
     the real photosphere shows.
 
+    Returns (edge distance, F1 distance, owning-seed index).
+
     Accelerated by processing the image in latitude bands and, per band, testing only
     the feature points that could reach it. Brute force over the whole sphere would be
     a 6e9-element intermediate; this keeps it under a hundred megabytes.
@@ -634,6 +836,7 @@ def voronoi_edge_equirect(h, w, points, k=10, band_rows=16):
     margin = 3.5 * np.sqrt(4.0 * np.pi / max(len(pts), 1))
     edge = np.empty((h, w), np.float32)
     f1 = np.empty((h, w), np.float32)
+    cid = np.empty((h, w), np.int64)
 
     for r0 in range(0, h, band_rows):
         r1 = min(h, r0 + band_rows)
@@ -669,7 +872,11 @@ def voronoi_edge_equirect(h, w, points, k=10, band_rows=16):
             best = np.minimum(best, dd)
         edge[r0:r1] = best.reshape(r1 - r0, w)
         f1[r0:r1] = np.linalg.norm(ca, axis=1).reshape(r1 - r0, w)
-    return edge, f1
+        # the owning seed's GLOBAL index, so callers can give every cell its own
+        # value. Without it the only thing distinguishing one granule from the next
+        # is the lane between them, and a continuous mesh of lanes reads as crazing.
+        cid[r0:r1] = sel[near[:, 0]].reshape(r1 - r0, w)
+    return edge, f1, cid
 
 
 def fbm3_two_regime(x, y, z, knee_octave=3, gain_low=0.88, gain_high=0.55,
@@ -1016,9 +1223,22 @@ def _disc_profile(r, h, r_break, h_out):
     return np.where(r < r_break, inner, outer)
 
 
-def _arm_phase(x, y, r, th, m, pitch_deg, seed, warp=1.0):
+def _arm_phase(x, y, r, th, m, pitch_deg, seed, warp=1.0, phase=0.0,
+               shear=0.0, shear_pa=0.0, r25=0.76):
+    """psi; frac(psi) is the signed across-arm coordinate, round(psi) names the arm.
+
+    `phase` rigidly rotates the pattern, which is how the arms get locked to the ends
+    of the bar. `shear` is a tidal term: an m=1 azimuthal distortion growing as r^2,
+    the leading-order effect of a companion on a disc. It winds one arm tighter and
+    unwinds the other, because sin(th - pa) has opposite sign at th and th + pi -- so
+    the two arms stop being related by a 180 deg rotation, which is the single most
+    obvious giveaway in a procedural spiral and the reason real galaxies never look
+    like one.
+    """
     tan_i = np.tan(np.radians(pitch_deg))
-    psi = (m * th) / TAU + np.log(np.maximum(r, 1e-4)) / (TAU * tan_i)
+    if shear:
+        th = th + shear * np.clip(r / r25, 0, 1.5) ** 2 * np.sin(th - shear_pa)
+    psi = (m * th) / TAU + np.log(np.maximum(r, 1e-4)) / (TAU * tan_i) + np.float32(phase)
     if warp > 0.0:
         amp = warp * (0.03 + 0.15 * np.clip(r / 0.8, 0, 1) ** 1.3)
         q = G.fbm3(x * 2.2, y * 2.2, np.float32(0.3), 4, seed=seed + 5)
@@ -1046,7 +1266,10 @@ PALETTES = {
 
 
 def build_disc(size, seed, pitch=15.0, arms=2, palette="cyan", floor=0.022,
-               lopsided=0.13, hii_n=1100, star_n=40000, stretch=0.55, gain=3.6):
+               lopsided=0.13, hii_n=1100, star_n=22000, stretch=0.55, gain=3.6,
+               bar=0.9, bar_pa=0.62, bar_len=0.33, bar_q=0.30, ring=0.0,
+               tidal=0.26, tidal_pa=2.1, arm_mix=(1.0, 0.72), arm_end=(1.00, 0.80),
+               n_gc=160, envelope=0.075):
     rng = np.random.default_rng(seed)
     ax = (np.arange(size, dtype=np.float32) + 0.5) / size * 2.0 - 1.0
     X, Y = np.meshgrid(ax, ax)
@@ -1062,20 +1285,77 @@ def build_disc(size, seed, pitch=15.0, arms=2, palette="cyan", floor=0.022,
 
     bulge = np.clip(np.exp(-bn * ((np.maximum(R, 1e-4) / re) ** 0.5 - 1.0)), 0, 30.0)
     disc = _disc_profile(R, h, r_break, h_out)
-    taper = 1.0 - G.smoothstep(0.56, 0.855, R)
+    # The disc is allowed to run a little further out than it used to (0.56-0.855
+    # before). The old taper put the last of the light at 0.72R and the plate simply
+    # STOPPED there, which is what made the edge read as cotton wool; carrying the real
+    # double-exponential disc -- arms, flocculence, resolved stars and all -- out to
+    # where the alpha window takes over is what an outer envelope actually looks like.
+    # An axisymmetric halo added on top was tried instead and rejected: any profile
+    # faint enough not to lift the interarm floor inside the arms is invisible outside
+    # them, and the ring-shaped compromise read as a soap bubble around the galaxy.
+    taper = 1.0 - G.smoothstep(0.600, 0.875, R)
+
+    # ------------------------------------------------------------ the bar
+    # About two thirds of nearby spirals are barred, and the bar is the first thing
+    # the eye uses to tell a real spiral from a procedural pinwheel. Three facts do
+    # all the work here:
+    #  * bar isophotes are BOXY, not elliptical: the generalised-ellipse exponent is
+    #    measured at c ~ 2.5-3.5 for strong bars, against 2.0 for an ellipse.
+    #  * the light profile along the major axis is FLAT-topped with a sharp end
+    #    (an "SB" / early-type bar), not a gaussian -- a gaussian reads as a smear.
+    #  * the two main arms spring FROM THE BAR ENDS, so the spiral pattern has to be
+    #    phase-locked to the bar rather than floating free, and the region inside the
+    #    bar radius is nearly empty of spiral structure.
+    a_bar = bar_len * R25
+    cpa, spa = np.float32(np.cos(bar_pa)), np.float32(np.sin(bar_pa))
+    xb = X * cpa + Y * spa
+    yb = -X * spa + Y * cpa
+    mb = (np.abs(xb / a_bar) ** 2.8 + np.abs(yb / (bar_q * a_bar)) ** 2.8) ** (1.0 / 2.8)
+    barl = np.clip(1.0 - mb ** 2.2, 0.0, 1.0) ** 0.95
+    barl = barl * (0.55 + 0.45 * (0.5 + 0.5 * G.fbm3(X * 9.0, Y * 9.0, np.float32(2.9),
+                                                     4, seed=seed + 1901)))
+    barl = barl * np.float32(bar)
 
     # ------------------------------------------------------------ arm field
-    psi = _arm_phase(X, Y, R, TH, arms, pitch, seed)
+    # phase chosen so psi is an integer at (a_bar, bar_pa): the arm ridge starts at the
+    # bar end. With m = 2 the other end is at psi + 1, also an integer, so both arms
+    # spring from the bar for free.
+    tan_i = np.tan(np.radians(pitch))
+    phase0 = -((arms * bar_pa) / TAU + np.log(a_bar) / (TAU * tan_i))
+    psi = _arm_phase(X, Y, R, TH, arms, pitch, seed, phase=phase0,
+                     shear=tidal, shear_pa=tidal_pa, r25=R25)
     rr = np.clip(R / R25, 0, 1)
-    sig_arm = 0.150 - 0.072 * rr                      # 60 deg azimuthal inner -> 30 deg outer
-    ridge = _stripe(psi, sig_arm)
+    sig_arm = 0.150 - 0.086 * rr                      # 60 deg azimuthal inner -> 26 deg outer
 
-    psi3 = _arm_phase(X, Y, R, TH, 3, pitch * 1.35, seed + 4400)
+    # round(psi) names the arm, so each arm can carry its own amplitude and its own
+    # truncation radius. Without this the m-fold pattern is exactly m-fold symmetric,
+    # and a two-armed one reads as a logo. The boundary between the two labels sits at
+    # the interarm minimum, where the stripe is ~0, so the switch is invisible.
+    kid = np.mod(np.rint(psi), arms).astype(np.int32)
+    amp_k = np.asarray(arm_mix, np.float32)[np.minimum(kid, len(arm_mix) - 1)]
+    end_k = np.asarray(arm_end, np.float32)[np.minimum(kid, len(arm_end) - 1)]
+    ridge = _stripe(psi, sig_arm) * amp_k * (1.0 - G.smoothstep(end_k * 0.74, end_k, rr))
+
+    psi3 = _arm_phase(X, Y, R, TH, 3, pitch * 1.35, seed + 4400, phase=phase0 * 0.5)
     ridge = ridge + 0.20 * _stripe(psi3, sig_arm * 1.25)
 
     psi_s = _arm_phase(X, Y, R, TH, 14, 62.0, seed + 777, warp=0.4)
     spur = _stripe(psi_s, 0.20) * np.clip((psi - np.round(psi)) * -6.0, 0, 1)
     ridge = ridge * (1.0 + 0.50 * spur * rr)
+
+    # the interbar region: inside the bar the gas is on x1 orbits, not in arms
+    bar_gate = 0.22 + 0.78 * G.smoothstep(0.70 * a_bar, 1.18 * a_bar, R)
+    ridge = ridge * (bar_gate if bar > 0 else 1.0)
+
+    # Inner ring at the bar end: an SB(r) family member rather than SB(s). Very common
+    # and strongly recognisable, so it is a per-disc switch and not all three use it.
+    # It has to stay WEAK. At 0.40 it closed into a bright oval that merged with the
+    # already-broad arms at this pitch, and the plate baked out as a doughnut with a
+    # hole -- the two-armed structure the ring was supposed to decorate disappeared
+    # entirely. At 0.18 it reads as a ring and the arms still read as arms.
+    if ring > 0.0:
+        ridge = ridge + ring * np.exp(-((R - 1.13 * a_bar) / (0.115 * a_bar)) ** 2) * \
+            (0.65 + 0.35 * np.cos(2.0 * (TH - bar_pa)))
 
     ridge = ridge * (1.0 + lopsided * np.cos(TH - 0.9 + 1.4 * R))
     # Clumping must live at GRAIN scale. At freq 7 the blobs are a third of the disc
@@ -1086,20 +1366,37 @@ def build_disc(size, seed, pitch=15.0, arms=2, palette="cyan", floor=0.022,
     # inner arms to a broken, patchy outer disc. Applied globally (as a first cut
     # did) it deletes whole inner arm sections and the galaxy reads as irregular.
     floc = 0.5 + 0.5 * G.fbm3(X * 4.4, Y * 4.4, np.float32(7.7), 4, seed=seed + 1223)
-    ridge = ridge * (1.0 - 0.55 * rr ** 1.6 * (1.0 - floc))
+    ridge = ridge * (1.0 - 0.60 * rr ** 1.6 * (1.0 - floc))
 
     # No global max-normalisation: dividing by the image-wide maximum (owned by the
     # bright inner arms) collapses the whole outer disc onto the interarm floor and
     # produces a uniform grey pancake.
     arm = np.clip(ridge / 1.05, 0.0, 1.0) ** 1.15
-    armlight = floor + (1.0 - floor) * arm
+    # The interarm FLOOR has to fall with radius. Held constant it is what produces
+    # the featureless outer haze (teal in the old cyan plate, brown in the amber one):
+    # out there the smooth disc is all that is left, the stretch lifts it back to a
+    # visible level, and the result is a flat wash with arms somewhere inside it. Real
+    # outer discs are mostly empty between the arms.
+    armlight = floor * (1.0 - 0.60 * rr ** 1.8) + (1.0 - floor) * arm
 
     # ------------------------------------------------------------ smooth light
+    # Grain-scale patchiness in the SMOOTH light too, and only outward: the arm field
+    # was already broken up this way but the underlying disc was not, so the outer disc
+    # kept a perfectly smooth substrate under a patchy arm pattern.
+    grain = 0.5 + 0.5 * G.fbm3(X * 19.0, Y * 19.0, np.float32(8.3), 4, seed=seed + 4409)
+    patchy = 1.0 - 0.42 * rr ** 2.0 * (1.0 - grain)
+
     ref = 0.22 * bulge + 0.78 * disc * taper           # azimuthally smooth reference
-    smooth = 0.22 * bulge + 0.78 * disc * taper * armlight
+    smooth = (0.22 * bulge + 0.78 * disc * taper * armlight * patchy +
+              0.32 * barl * (0.30 + 0.70 * np.exp(-(R / (1.05 * a_bar)) ** 2)))
 
     # ------------------------------------------------------------ colour
-    bv = 0.92 - 0.56 * rr - 0.18 * arm
+    # The smooth disc's radial colour gradient is deliberately WEAKER than it was.
+    # Pushed hard it paints the whole outer disc one saturated accent hue, which is
+    # the poster look the docstring warns about arriving by the back door -- the blue
+    # is supposed to come from the resolved young population and the HII knots, and
+    # now that those actually survive the downscale they can carry it.
+    bv = 0.92 - 0.50 * rr - 0.16 * arm
     t_lo, t_hi = _teff(0.92), _teff(0.28)
     u = np.clip((_teff(bv) - t_lo) / (t_hi - t_lo), 0, 1) ** 0.8
     c_warm, c_cool = (np.asarray(c, np.float32) for c in PALETTES[palette])
@@ -1115,6 +1412,19 @@ def build_disc(size, seed, pitch=15.0, arms=2, palette="cyan", floor=0.022,
                                             seed=seed + 613), 0, 1)
     av = (4.6 * lane ** 1.6 + 1.2 * lane3 ** 1.6) * clump
     av = av + 0.22 * np.clip(G.fbm3(X * 3.2, Y * 3.2, np.float32(9.0), 5, seed=seed + 97), 0, 1)
+    if bar > 0.0:
+        # The bar's own two dust lanes, on the LEADING edge of each half and meeting
+        # at the nucleus in a shallow S. They are the shock where gas on x1 orbits
+        # piles up before falling inward, they are nearly straight, and they are the
+        # second thing (after the boxy ends) that identifies a bar at a glance.
+        t = np.clip(xb / a_bar, -1.0, 1.0)
+        yc = -0.52 * bar_q * a_bar * np.tanh(3.2 * t) * np.sqrt(np.clip(1.0 - t * t, 0, 1))
+        lane_w = 0.340 * bar_q * a_bar
+        blane = np.exp(-0.5 * ((yb - yc) / lane_w) ** 2) * (1.0 - G.smoothstep(0.52, 0.92, np.abs(t)))
+        # clumpy along their length: a lane of constant opacity reads as an inked line
+        blane = blane * (0.30 + 1.05 * np.clip(G.fbm3(X * 13.0, Y * 13.0, np.float32(3.7),
+                                                      4, seed=seed + 1033) + 0.5, 0, 1))
+        av = av + 0.85 * bar * blane * (0.70 + 0.50 * clump)
     av = av * np.clip(_disc_profile(R, h * 1.5, r_break * 1.15, h_out) /
                       _disc_profile(np.float32(0.02), h * 1.5, r_break * 1.15, h_out), 0, 1)
     av = np.clip(av, 0, 4.2)
@@ -1144,8 +1454,30 @@ def build_disc(size, seed, pitch=15.0, arms=2, palette="cyan", floor=0.022,
         return np.power(10.0, -0.4 * a * EXT_RGB[None, :]).astype(np.float32)
 
     # ------------------------------------------------------------ HII knots
-    hii_field = (_stripe(psi - 0.050, sig_arm * 0.55) * disc * taper *
-                 np.clip(R / (0.22 * R25), 0, 1))
+    # Three corrections to where these go, all of them visible at full size:
+    #  * They are CLUSTERED along the arm, not strung at uniform density. The observed
+    #    two-point correlation of HII regions along an arm is strong out to ~500 pc,
+    #    so real arms are beads in groups with long dark gaps between the groups; a
+    #    uniform string of beads is the giveaway the previous cut had.
+    #  * The weighting runs with the star-formation rate per unit area, which peaks
+    #    around 0.3-0.5 R25 and falls inward -- and inside a bar the gas is already
+    #    gone, so the interbar region should be nearly empty.
+    #  * The BAR ENDS are hotspots: the bar dumps gas where it meets the arms, which
+    #    is why barred spirals have a bright knot at each end of the bar.
+    group = 0.5 + 0.5 * G.fbm3(X * 11.0, Y * 11.0, np.float32(6.7), 4, seed=seed + 3301)
+    group = np.clip(group * 1.9 - 0.72, 0, 1) ** 1.2
+    sfr = np.exp(-((rr - 0.42) / 0.40) ** 2)
+    hii_field = (_stripe(psi - 0.050, sig_arm * 0.55) * disc * taper * sfr *
+                 (0.22 + 1.6 * group) * (bar_gate if bar > 0 else 1.0))
+    if bar > 0.0:
+        bend = np.exp(-(((np.abs(xb) - a_bar) / (0.30 * a_bar)) ** 2 +
+                        (yb / (0.52 * bar_q * a_bar)) ** 2))
+        hii_field = hii_field + 2.2 * bar * bend * disc
+        # nuclear ring: gas the bar has driven all the way in, now forming stars
+        hii_field = hii_field + 1.1 * bar * np.exp(-((R - 0.20 * a_bar) / (0.052 * a_bar)) ** 2)
+    if ring > 0.0:
+        hii_field = hii_field + 0.9 * ring * np.exp(
+            -((R - 1.13 * a_bar) / (0.085 * a_bar)) ** 2) * (0.3 + 0.7 * group)
     pts = _sample_field(hii_field, hii_n, rng)
     if len(pts):
         py, px = pts[:, 0], pts[:, 1]
@@ -1159,28 +1491,94 @@ def build_disc(size, seed, pitch=15.0, arms=2, palette="cyan", floor=0.022,
         cr = np.maximum(d * 0.10, size / 1500.0)
         G.splat_gauss(img, px, py, cr, cr, lum * 1.6,
                       np.array([0.95, 0.97, 1.00], np.float32)[None, :] * tr)
+        # The handful of giant complexes (30 Dor / NGC 604 analogues) that a steep
+        # luminosity function guarantees. Their haloes, not their cores, are what make
+        # an arm look beaded at a distance, so each gets a wide faint skirt.
+        top = np.argsort(-lum)[:max(3, len(pts) // 90)]
+        G.splat_gauss(img, px[top], py[top], d[top] * 1.9, d[top] * 1.9, lum[top] * 0.22,
+                      np.array([1.00, 0.34, 0.46], np.float32)[None, :] * tr[top])
 
     # ------------------------------------------------------------ resolved stars
     # TWO populations sampled from DIFFERENT fields. Drawing both from the arm field
     # strung the old yellow stars into gold beads along the arms, which is exactly
     # backwards: only the young population is arm-confined, the old disc+bulge
     # population is azimuthally smooth.
-    rad = max(0.52, size / 1700.0)
-    young = _sample_field(disc * taper * arm ** 1.8, int(star_n * 0.72), rng)
+    # The plates ship at 1024 after a 2x box downscale, so a star splatted at 1.2 px
+    # here is 0.6 px there: below the sampling limit, where a "resolved star field"
+    # stops being resolved and averages into a smooth veil. That veil -- a broad,
+    # structureless teal haze over the whole outer disc -- was the weakest part of the
+    # previous plate, and it was the exact failure the docstring warns about, arriving
+    # by a different route. Fewer, wider, brighter stars: ~1.9 px here, ~1 px shipped,
+    # so individual stars survive the downscale and the outer disc reads as resolved.
+    rad = max(0.80, size / 1080.0)
+    # Weighted OUTWARD by (1 + 2.2 rr^2). Sampling the arm light alone puts almost
+    # every young star in the bright inner arms, where they are lost against an
+    # already-bright substrate; the outer disc, where a resolved star is the only
+    # thing there is, got almost none. Before this the plate's apparent radius
+    # visibly shrank against the previous bake -- the old outer teal veil was gone
+    # and nothing had replaced it. Real discs are the other way round anyway: the
+    # young population is the one that extends furthest.
+    young = _sample_field(disc * taper * arm ** 1.8 * (1.0 + 2.2 * rr ** 2),
+                          int(star_n * 0.72), rng)
     if len(young):
-        c = np.minimum(c_cool * 0.45 + 0.72, 1.0)[None, :] * extinct(young, 0.85)
+        c = np.minimum(c_cool * 0.70 + 0.40, 1.0)[None, :] * extinct(young, 0.85)
         c = c * (0.85 + 0.30 * rng.random((len(young), 1)))
-        amp = (1.0 - rng.random(len(young))) ** 3.4 * 0.42
+        amp = (1.0 - rng.random(len(young))) ** 3.0 * 0.72
         G.splat_gauss(img, young[:, 1], young[:, 0],
                       np.full(len(young), rad), np.full(len(young), rad), amp, c)
-    old = _sample_field(0.55 * (bulge / bulge.max()) ** 0.75 + disc * taper,
-                        int(star_n * 0.28), rng)
+    old = _sample_field(0.55 * (bulge / bulge.max()) ** 0.75 + disc * taper +
+                        0.9 * barl, int(star_n * 0.28), rng)
     if len(old):
         c = (c_warm * 0.26 + 0.66)[None, :] * extinct(old, 0.85)
         c = c * (0.85 + 0.30 * rng.random((len(old), 1)))
-        amp = (1.0 - rng.random(len(old))) ** 3.8 * 0.20
+        amp = (1.0 - rng.random(len(old))) ** 3.4 * 0.36
         G.splat_gauss(img, old[:, 1], old[:, 0],
                       np.full(len(old), rad), np.full(len(old), rad), amp, c)
+
+    # ------------------------------------------------------------ globular clusters
+    # The halo is not empty, and clusters are the only thing in it bright enough to
+    # draw. They matter here out of proportion to their light: they are the one
+    # population that lives OUTSIDE the disc, so they are what tells the eye the
+    # galaxy has a third dimension instead of being a decal.
+    #   * projected number density n(R) ~ R (1 + (R/rc)^2)^-3/2, cored at rc ~ 0.1 R25,
+    #     inverted analytically below rather than rejection-sampled.
+    #   * the globular cluster luminosity function is gaussian in MAGNITUDE (peak
+    #     M_V = -7.4, sigma 1.2), i.e. log-normal in flux -- so a handful are much
+    #     brighter than the rest, which is what stops them reading as a dot screen.
+    #   * slightly extended (they are ~10 pc objects, marginally resolved at this
+    #     plate scale) and old/yellow, with a small blue metal-poor outer subpopulation.
+    if n_gc > 0:
+        rc, rmax = 0.10 * R25, 0.80
+        smax = rmax / rc
+        wmin = 1.0 / np.sqrt(1.0 + smax * smax)
+        w = 1.0 - rng.random(n_gc) * (1.0 - wmin)
+        gr = rc * np.sqrt(np.maximum(1.0 / (w * w) - 1.0, 0.0))
+        gth = rng.random(n_gc) * TAU
+        gx = (gr * np.cos(gth) * 0.5 + 0.5) * size
+        gy = (gr * np.sin(gth) * 0.5 + 0.5) * size
+        gm = rng.normal(-7.4, 1.2, n_gc)
+        gf = np.clip(10.0 ** (-0.4 * (gm + 7.4)), 0.05, 9.0) * 0.30
+        grad = np.full(n_gc, rad * 1.75) * (1.0 + 0.30 * rng.random(n_gc))
+        metalpoor = rng.random(n_gc) < 0.45
+        gc_col = np.where(metalpoor[:, None],
+                          (c_cool * 0.16 + 0.80)[None, :], (c_warm * 0.30 + 0.70)[None, :])
+        G.splat_gauss(img, gx, gy, grad, grad, gf, gc_col)
+        G.splat_gauss(img, gx, gy, grad * 3.2, grad * 3.2, gf * 0.085, gc_col)
+
+    # ------------------------------------------------------------ tidal plume
+    # One-sided, so it reads as a drawn-out tail rather than as a halo. Added AFTER
+    # the stretch and the tone curve: folding it into the pre-stretch light does not
+    # work, because the stretch divides by ref^0.55 and out past the disc `ref` is
+    # pinned to its 1e-4 floor, which multiplies anything living there by ~180. A 2%
+    # pre-stretch halo came back as a solid pancake with alpha 1.0 all the way to the
+    # window (measured: interarm median 0.004 -> 0.102). Added here the amplitude is
+    # exactly what the number says.
+    plume = (np.exp(-((R - 0.70) / 0.195) ** 2) * G.smoothstep(0.52, 0.66, R) *
+             np.clip(np.cos(TH - tidal_pa), 0, 1) ** 2.0 *
+             (0.35 + 0.65 * (0.5 + 0.5 * G.fbm3(X * 3.1, Y * 3.1, np.float32(5.3), 4,
+                                                seed=seed + 2207))))
+    halo_col = (c_warm * 0.22 + c_cool * 0.30 + 0.52)[None, None, :]
+    img = img + (envelope * 2.6 * tidal * plume)[..., None] * halo_col
 
     # ------------------------------------------------------------ nucleus
     nuc = np.exp(-(R / 0.017) ** 1.35)
@@ -1370,6 +1768,53 @@ def add_vortex(lat, lon, v_lat, v_lon, a, b, spin, tilt=0.0):
     return lat + ndy, lon + ndx / coslat, d, w
 
 
+def polar_cyclones(X, Y, Z, hemi, n, colat, radius, seed, spin=1.0):
+    """A ring of circumpolar cyclones plus one on the axis, Juno-style.
+
+    Jupiter's poles are not blank: each carries a polygonal ring of cyclones (eight
+    north, five south) around a central one, each a few thousand km across. It is the
+    single most recognisable thing about a giant planet's pole and it is the obvious
+    thing to put where the zonal bands have been blended out.
+
+    Everything here is computed from 3D dot products against each cyclone's own axis,
+    never from lat/lon, because lat/lon is exactly what degenerates at the pole: an
+    `add_vortex`-style displacement in longitude goes singular there and smears the
+    storms into a pinwheel. The azimuth around each cyclone comes from its own local
+    frame, so the spiral arms stay round right over the axis.
+    """
+    rng = np.random.default_rng(seed)
+    out = np.zeros_like(X)
+    axis = np.array([0.0, float(hemi), 0.0], np.float32)
+    centres = [axis]
+    for i in range(n):
+        a = 2 * np.pi * i / n + float(rng.uniform(0, 2 * np.pi)) * 0.0 + 0.21 * hemi
+        a += float(rng.normal(0, 0.10))                      # the ring is a polygon, not a circle
+        cc = float(colat) * (1.0 + float(rng.normal(0, 0.09)))
+        centres.append(np.array([np.sin(cc) * np.cos(a), hemi * np.cos(cc),
+                                 np.sin(cc) * np.sin(a)], np.float32))
+    up = np.array([1.0, 0.0, 0.0], np.float32)
+    for j, c in enumerate(centres):
+        c = c / np.linalg.norm(c)
+        e1 = np.cross(c, up)
+        nrm = np.linalg.norm(e1)
+        if nrm < 1e-3:
+            e1 = np.cross(c, np.array([0.0, 0.0, 1.0], np.float32))
+            nrm = np.linalg.norm(e1)
+        e1 = e1 / nrm
+        e2 = np.cross(c, e1)
+        ca = np.clip(X * c[0] + Y * c[1] + Z * c[2], -1, 1)
+        ang = np.arccos(ca)
+        r = float(radius) * (0.78 + 0.5 * float(rng.random())) * (1.25 if j == 0 else 1.0)
+        env = np.exp(-(ang / r) ** 2.2)
+        phi = np.arctan2(X * e2[0] + Y * e2[1] + Z * e2[2],
+                         X * e1[0] + Y * e1[1] + Z * e1[2])
+        # two-armed spiral wound the cyclonic way for this hemisphere
+        arm = 0.5 + 0.5 * np.cos(2.0 * phi + hemi * spin * 7.0 * np.log(np.maximum(ang, 1e-3) / r))
+        eye = np.exp(-(ang / (r * 0.26)) ** 2)
+        out = out + env * (0.40 + 0.60 * arm) * (1.0 - 0.55 * eye)
+    return np.clip(out, 0.0, 1.6)
+
+
 def latlon_to_dir(lat, lon):
     cl = np.cos(lat)
     return (cl * np.sin(lon)).astype(np.float32), np.sin(lat).astype(np.float32), \
@@ -1457,20 +1902,44 @@ def bake_gas_giant(w, h, seed, kind="gas"):
     # and 10-12% in the active belts -- without it the bands read as painted stripes
     lum = 0.58 + 0.28 * zone + 0.105 * det * (0.5 + 1.1 * (1.0 - zone))
     lum = lum + 0.18 * core * (1.0 - 0.35 * zone)
-    # poleward of ~45 deg the measured eddy aspect ratio collapses to 1.2-1.3: the
-    # polar regions are isotropic mottle, not bands. Blend the zonal structure out.
-    polar = G.smoothstep(0.62, 1.15, np.abs(LAT))
-    mott = G.fbm3_two_regime(X * 9.0, Y * 9.0, Z * 9.0, seed=seed + 4242)
-    lum = lum * (1.0 - polar) + (0.60 + 0.16 * mott) * polar
-    lum = lum * (1.0 - 0.17 * np.abs(np.sin(LAT)) ** 3)          # polar hoods
+    # Poleward of ~50 deg the measured eddy aspect ratio collapses to 1.2-1.3, so the
+    # zonal structure is blended out. What replaces it used to be a single octave of
+    # low-contrast mottle, which is why the poles read as a grey smudge -- and because
+    # it was sampled at an INTEGER frequency it also sat on a Perlin lattice vertex at
+    # the pole (see _LATTICE_OFF), giving the cap its octagonal edge. Now: a
+    # domain-warped two-regime field (folded filaments, as Juno sees) plus the
+    # circumpolar cyclone ring, and a tighter hood boundary so the cap has an EDGE.
+    polar = G.smoothstep(0.86, 1.12, np.abs(LAT))
+    pw = G.warp3(X * 2.7, Y * 2.7, Z * 2.7, amount=0.55, freq=1.3, seed=seed + 4243)
+    mott = G.fbm3_two_regime(pw[0] * 3.3, pw[1] * 3.3, pw[2] * 3.3, seed=seed + 4242)
+    mott = 0.62 * mott + 0.38 * G.ridged3(pw[0] * 6.1, pw[1] * 6.1, pw[2] * 6.1, 5,
+                                          seed=seed + 4244)
+    # Jupiter's real ring is eight cyclones of 3.8 deg diameter at colatitude 7 deg,
+    # which at the 15-40 px these bodies occupy is nothing at all. Scaled up by ~2x in
+    # both ring radius and storm size -- the same knowing exaggeration the granulation
+    # and jet amplitudes already carry -- while keeping the count, the near-touching
+    # spacing and the central storm, which is what the feature actually reads as.
+    cyc = (polar_cyclones(X, Y, Z, +1.0, 8 if not ice else 5, 0.26, 0.052, seed + 70) +
+           polar_cyclones(X, Y, Z, -1.0, 5 if not ice else 4, 0.24, 0.058, seed + 71))
+    cap = (0.56 if not ice else 0.70) + 0.24 * mott + 0.34 * cyc - 0.10 * cyc ** 2
+    lum = lum * (1.0 - polar) + cap * polar
+    # the hood itself: a thin darker/brighter collar right at the boundary, which is
+    # what actually makes the cap read as a cap rather than as a fade-out
+    collar = np.exp(-((np.abs(LAT) - 0.99) / 0.085) ** 2)
+    lum = lum * (1.0 - (0.13 if not ice else -0.08) * collar)
+    lum = lum * (1.0 - 0.14 * np.abs(np.sin(LAT)) ** 3)          # polar hoods
     lum = np.clip(lum, 0.10, 1.0)
 
     # ---- chroma: belts carry the chromophores. Kept deliberately weak.
-    warm = np.clip(1.0 - zone + 0.30 * det, 0, 1)
+    # The chromophores are a mid-latitude phenomenon: measured polar hoods are grey to
+    # bluish, so the warm tint is faded out under the same `polar` mask that removed
+    # the bands. Leaving it on is what made the old cap look like dirty cream.
+    warm = np.clip(1.0 - zone + 0.30 * det, 0, 1) * (1.0 - 0.80 * polar)
     hue = np.stack([1.0 + 0.11 * warm, np.ones_like(warm), 1.0 - 0.15 * warm], -1)
+    hue = hue * (1.0 - polar[..., None] * np.array([0.045, 0.012, -0.030], np.float32))
     # hero storm reads terracotta (#A5744C), R:G:B ~ 1.00:0.70:0.46 -- not crimson
     hue = hue * (1.0 + tintf[..., None] * np.array([0.10, -0.16, -0.34], np.float32))
-    return np.clip(lum[..., None] * hue, 0, 1).astype(np.float32)
+    return np.clip(G.polar_bandlimit(lum[..., None] * hue), 0, 1).astype(np.float32)
 
 
 # ============================================================ aurora / terrestrial
@@ -1527,7 +1996,7 @@ def bake_aurora_world(w, h, seed):
     hue = np.stack([1.0 - 0.05 * land - 0.14 * aur,
                     np.ones_like(lum),
                     1.0 + 0.10 * (1.0 - land) - 0.10 * aur], -1)
-    return np.clip(lum[..., None] * hue, 0, 1).astype(np.float32)
+    return np.clip(G.polar_bandlimit(lum[..., None] * hue), 0, 1).astype(np.float32)
 
 
 # ============================================================ star
@@ -1569,36 +2038,52 @@ def bake_star(w, h, seed, n_gran=1100, n_super=60, n_spots=4):
     # visible concentric spiral arcs in the cell arrangement, which read as machining
     # marks. Real granulation has two size populations and no long-range order.
     pts = G.fibonacci_sphere(n_gran, rng, jitter=0.42 * cell)
-    edge, f1 = G.voronoi_edge_equirect(h, w, pts, k=10)
+    edge, _f1, cid = G.voronoi_edge_equirect(h, w, pts, k=10)
     lane = (1.0 - G.smoothstep(0.0, 0.17 * cell, edge)) ** 1.6
 
     n2 = n_gran * 4
     cell2 = np.sqrt(4.0 * np.pi / n2)
     pts2 = G.fibonacci_sphere(n2, rng, jitter=0.42 * cell2)
-    edge2, f1b = G.voronoi_edge_equirect(h, w, pts2, k=9)
+    edge2, _f1b, cid2 = G.voronoi_edge_equirect(h, w, pts2, k=9)
     lane2 = (1.0 - G.smoothstep(0.0, 0.18 * cell2, edge2)) ** 1.6
 
     # Lanes must BREAK. A continuous mesh of equal-strength lanes across the whole
     # sphere reads as crazing on pottery, which is what the first cut looked like;
     # modulating the lane depth with noise and giving each granule its own brightness
     # is what turns the mesh back into a field of separate convection cells.
-    brk = 0.5 + 0.5 * G.fbm3(X * 26.0, Y * 26.0, Z * 26.0, 4, seed=seed + 991)
-    cellbright = G.fbm3(X * 11.0, Y * 11.0, Z * 11.0, 3, seed=seed + 55)
+    # `brk` breaks the lanes, and it has to do so at a scale SMALLER than a cell.
+    # At frequency 26 its wavelength was ~2.2 cell pitches, so it made patches of
+    # strong and weak lanes instead of gaps in individual lane segments, and the
+    # network stayed topologically continuous -- which is the crazing.
+    brk = 0.5 + 0.5 * G.fbm3(X * 62.0, Y * 62.0, Z * 62.0, 4, seed=seed + 991)
+    # PER-GRANULE brightness, hashed off the Voronoi cell index. The previous
+    # "cellbright" was a plain fBm field with no relation to the cells at all, so
+    # every granule had the same brightness and the only thing separating one from
+    # the next was the lane -- which is exactly why the map read as crazing on an
+    # egg rather than as convection cells, despite the weighting having been chosen
+    # to avoid that. Pure per-cell values at full strength were tried and read as
+    # flat stained glass, so it is a blend: a third cell-keyed, a sixth from the
+    # finer population, half smooth.
+    z0 = np.zeros_like(cid)
+    cb1 = G.hash01(cid, z0, z0, seed + 5501) * 2.0 - 1.0
+    cb2 = G.hash01(cid2, np.zeros_like(cid2), np.zeros_like(cid2), seed + 5502) * 2.0 - 1.0
+    cellbright = (0.34 * cb1 + 0.16 * cb2 +
+                  0.52 * G.fbm3(X * 11.0, Y * 11.0, Z * 11.0, 3, seed=seed + 55))
     # Weighting matters more than the lane geometry here. At 140 px on screen the
     # granule pitch is ~4 px, so a strong lane mesh reads as crazing on an egg -- the
     # cell-to-cell BRIGHTNESS variation survives downsampling, the lane network does
     # not. So the lanes are deliberately underweighted relative to the real Sun and
     # the per-granule brightness is pushed well above it.
     mottle = G.fbm3(X * 3.2, Y * 3.2, Z * 3.2, 4, seed=seed + 1717)
-    granule = (1.0 - 0.28 * lane * (0.45 + 0.85 * brk)
-                   - 0.09 * lane2 * (0.35 + 0.9 * (1.0 - brk)))
-    granule = granule + 0.62 * cellbright + 0.30 * mottle
+    granule = (1.0 - 0.20 * lane * (0.10 + 1.30 * brk)
+                   - 0.07 * lane2 * (0.10 + 1.30 * (1.0 - brk)))
+    granule = granule + 0.62 * cellbright + 0.28 * mottle
     gran = (granule - granule.mean()) / (granule.std() + 1e-6)
     inten = 1.0 + 0.105 * gran
 
     # ---- supergranular magnetic network: boundaries only, brightening only
     sp = G.fibonacci_sphere(n_super, rng, jitter=0.18 * np.sqrt(4 * np.pi / n_super))
-    se, _ = G.voronoi_edge_equirect(h, w, sp, k=8)
+    se, _, _ = G.voronoi_edge_equirect(h, w, sp, k=8)
     cells = np.sqrt(4.0 * np.pi / n_super)
     network = 1.0 - G.smoothstep(0.0, 0.055 * cells, se)
     aL = np.abs(LAT)
@@ -1651,7 +2136,7 @@ def bake_star(w, h, seed, n_gran=1100, n_super=60, n_spots=4):
     # faint global warm/cool: hotter granule tops slightly bluer, lanes slightly warmer
     t = np.clip((base - 0.6) / 0.9, 0, 1)
     rgb = rgb * np.stack([1.0 + 0.05 * (1 - t), np.ones_like(t), 1.0 - 0.09 * (1 - t)], -1)
-    return np.clip(rgb, 0, 1).astype(np.float32)
+    return np.clip(G.polar_bandlimit(rgb), 0, 1).astype(np.float32)
 
 # ==========================================================================
 # the sky
@@ -1670,6 +2155,38 @@ def _upsample(a, fy, fx):
     up = np.concatenate([out[:1], out[:-1]], 0)
     dn = np.concatenate([out[1:], out[-1:]], 0)
     return up * 0.25 + out * 0.5 + dn * 0.25
+
+
+# Milky Way scale heights, kpc. Everything about how the band looks follows from
+# the dust layer being H_STAR / H_DUST = 2.4x thinner than the stellar one, so the
+# ratio is derived from the two numbers here and used by both the transfer table and
+# the band itself; it is not a constant written down twice.
+H_STAR, H_DUST = 0.300, 0.125
+_SLAB_P = H_DUST / H_STAR
+_SLAB_T = np.concatenate([np.linspace(0.0, 4.0, 161), np.geomspace(4.2, 400.0, 180)])
+
+
+def _slab_table():
+    """e^-T * int_0^1 u^(p-1) e^(Tu) du, tabulated.
+
+    The substitution u = t^(1/p) turns the integrable singularity at u = 0 into
+    (1/p) * int_0^1 exp(T t^(1/p)) dt, which 64-node Gauss-Legendre nails exactly;
+    doing it on u directly loses several digits near T = 0 where the answer matters
+    most (it is the unobscured limit 1/p).
+    """
+    x, wq = np.polynomial.legendre.leggauss(64)
+    t = 0.5 * (x + 1.0)
+    wq = 0.5 * wq
+    e = np.exp(np.outer(_SLAB_T, t ** (1.0 / _SLAB_P)) - _SLAB_T[:, None])
+    return ((e * wq[None, :]).sum(1) / _SLAB_P).astype(np.float32)
+
+
+_SLAB_F = _slab_table()
+
+
+def _embedded_slab(tau, hd_over_mu):
+    """Surface brightness of an exponential emitter inside an exponential absorber."""
+    return hd_over_mu * np.interp(np.clip(tau, 0, 400.0), _SLAB_T, _SLAB_F).astype(np.float32)
 
 
 def _galactic_frame(pole_lat=0.48, pole_lon=1.15):
@@ -1705,45 +2222,91 @@ def build_sky(w, h, seed, n_stars=55000, field_div=2):
     # SMALLER than the stellar scale height (300 pc). Looking along b = 0 you stare
     # down the dust lane and it is opaque within about a kiloparsec; a few degrees
     # off the plane you climb out of the dust while still cutting through plenty of
-    # stars. So the surface brightness peaks OFF the midplane (about +6 deg toward
-    # the centre) with a dark rift exactly ON it. A single-scale-height model gives
-    # a smooth featureless streak and is the reason most procedural skies look wrong.
-    H_STAR, H_DUST = 0.300, 0.125                   # kpc
+    # stars. So the surface brightness peaks OFF the midplane -- at about +3 deg,
+    # +5 deg toward the centre -- with a shallow depression ON it. A single-scale-
+    # height model gives a smooth featureless streak and is the reason most
+    # procedural skies look wrong.
     KAPPA = 0.8 / 1.0857                            # A_V 0.8 mag/kpc -> tau/kpc
     sb = np.maximum(np.abs(np.sin(gb)), 3e-3)
     # longitude weighting: bright and wide toward the centre, thin toward the anticentre
     lonw = (1.0 + 2.0 * np.clip(np.cos(gl), 0, None) ** 1.5 +
             0.45 * np.exp(-((np.abs(gl) - 1.40) / 0.44) ** 2))      # + a Cygnus star cloud
-    disc = H_STAR / sb
     bulge = 1.8 * np.exp(-0.5 * ((gl / 0.157) ** 2 + (gb / 0.113) ** 2))
     # NOTE: the emissivity gets the full longitude weighting but the optical depth
     # only its square root. Applying `lonw` to both puts the band maximum at
     # sin(b) = KAPPA*H_DUST*lonw = 18 deg and leaves the inner band black; the
     # real maximum is at about +6 deg toward the centre.
     tau = KAPPA * H_DUST / sb * np.sqrt(lonw)
-    band = (disc * lonw + bulge) * np.exp(-np.clip(tau, 0, 30.0))
+    # EMITTERS EMBEDDED IN THE ABSORBER, not behind it. The previous form was
+    # (stellar integral) * exp(-tau_total), i.e. every photon crossing the full dust
+    # column -- which drives the midplane to exactly zero and is why the band baked
+    # out as a black snake with a thin glowing rim instead of as a band. The stars are
+    # IN the dust layer, so the nearby ones arrive unextincted and the correct
+    # transfer saturates instead of vanishing:
+    #     I = int_0^inf j0 e^(-z/Hs) exp(-tau(s)) ds,  tau(s) = T (1 - e^(-s mu/Hd))
+    #       = (j0 Hd / mu) e^-T int_0^1 u^(p-1) e^(Tu) du,   p = Hd/Hs = 0.417
+    # which tends to j0 Hs/mu when T -> 0 (the unobscured disc integral) and to the
+    # source function j0/alpha0 when T -> inf. The two scale heights still do all the
+    # work and the peak is still OFF the plane -- at b ~ 3 deg -- but the midplane now
+    # sits 14% below that peak rather than at zero, which is what the real band does.
+    # The rift is then what it is in the sky: discrete foreground clouds, below.
+    band = _embedded_slab(tau, H_DUST / sb) * lonw + bulge * np.exp(-np.clip(tau, 0, 30.0))
 
     # unresolved starlight is clumpy, and clumpier in the plane
     clump = 0.55 + 0.75 * (0.5 + 0.5 * G.fbm3(X * 3.4, Y * 3.4, Z * 3.4, 6, seed=seed + 12))
     band = band * clump
-    band = np.power(np.maximum(band, 0.0), 1.55)
+    band = np.power(np.maximum(band, 0.0), 1.40)
 
     # ---------------------------------------------------------------- dark rift
     wx, wy, wz = G.warp3(X * 2.2, Y * 2.2, Z * 2.2, amount=0.75, freq=0.8, seed=seed + 300)
     rift = G.ridged3(wx * 1.9, wy * 1.9, wz * 1.9, 6, seed=seed + 41)
     rift = np.clip(rift * 1.85 - 0.72, 0, 1) ** 1.5
     # dust lives IN the disc: confine it to low galactic latitude
-    rift = rift * np.exp(-(gb / 0.22) ** 2)
+    # The Great Rift is a LANE three to five degrees wide, not a swath. Confined to
+    # sigma = 12.6 deg (as it was) it covers the entire bright core of the band, and
+    # since the band peaks at |b| ~ 6 deg the result is that the dust eats exactly the
+    # part that was supposed to glow -- the band read as a black snake with a thin
+    # halo rather than as a glowing band with a crack in it.
+    rift = rift * np.exp(-(gb / 0.105) ** 2)
     rift = rift + 0.22 * np.clip(G.billow3(X * 5.5, Y * 5.5, Z * 5.5, 5, seed=seed + 66) * 1.6 - 0.5,
-                                 0, 1) * np.exp(-(gb / 0.32) ** 2)
-    # discrete clouds (Great Rift, Coalsack, Pipe) on top of the smooth dust disc
-    av = np.clip(rift * 2.4, 0, 3.0)
+                                 0, 1) * np.exp(-(gb / 0.165) ** 2)
+    av = np.clip(rift * 1.75, 0, 3.0)
+
+    # ---------------------------------------------------------------- dark nebulae
+    # Named, discrete, SHARP-EDGED clouds silhouetted on the band, on top of the
+    # smooth dust disc above. The smooth rift is a continuum of extinction and it can
+    # only ever read as haze; what makes the real Milky Way look three-dimensional is
+    # that the Coalsack and the Pipe have edges you can point at, and that they are
+    # opaque -- A_V of 5-20 mag, i.e. nothing gets through at all, not a dimming.
+    # Their boundaries are genuinely sharp because a molecular cloud is pressure
+    # confined, so the shape is a hard threshold on warped ridged noise rather than a
+    # soft envelope, and the envelope only decides WHERE the threshold can be crossed.
+    for (cl_, cb_, sz, elong, cpa, avmax, so) in (
+            (0.58, -0.030, 0.058, 2.9, 0.42, 7.0, 1),      # a Pipe/Snake-like lane
+            (0.30, 0.062, 0.034, 1.3, -0.3, 5.0, 2),
+            (-0.26, -0.012, 0.040, 1.7, 0.9, 6.0, 3),
+            (1.48, -0.042, 0.044, 2.2, -0.75, 5.0, 4),     # a Coalsack
+            (-1.34, 0.026, 0.062, 3.4, 0.22, 4.0, 5),
+            (2.60, 0.038, 0.031, 1.5, 1.15, 3.5, 6)):
+        dgl = np.mod(gl - cl_ + np.pi, TAU) - np.pi
+        du = (dgl * np.cos(cb_) * np.cos(cpa) + (gb - cb_) * np.sin(cpa)) / (sz * elong)
+        dv = (-dgl * np.cos(cb_) * np.sin(cpa) + (gb - cb_) * np.cos(cpa)) / sz
+        er = np.sqrt(du * du + dv * dv)
+        if er.min() > 2.2:
+            continue
+        env = np.exp(-er ** 2.1)
+        s3 = seed + 7700 + so * 53
+        qx, qy, qz = G.warp3(X * 4.5, Y * 4.5, Z * 4.5, amount=0.55, freq=3.0, seed=s3)
+        lob = G.ridged3(qx * 5.2, qy * 5.2, qz * 5.2, 6, seed=s3 + 7)
+        av = av + avmax * G.smoothstep(0.54, 0.655, env * (0.52 + 0.80 * lob))
+
+    av = np.clip(av, 0, 12.0)
     trans = np.power(10.0, -0.4 * av[..., None] * EXT_RGB[None, None, :])
 
     # band colour: cool blue-white away from the centre, warm toward the bulge
     bandcol = (np.array([0.52, 0.62, 0.86], np.float32)[None, None, :] +
                np.array([0.46, 0.22, -0.30], np.float32)[None, None, :] * bulge[..., None])
-    img = band[..., None] * bandcol * 0.030
+    img = band[..., None] * bandcol * 0.034
 
     # ---------------------------------------------------------------- nebulae
     # placed in or near the plane, because that is where the gas is
@@ -1801,6 +2364,9 @@ def build_sky(w, h, seed, n_stars=55000, field_div=2):
     img = np.clip(_upsample(img, field_div, field_div), 0, None)
     if img.shape[0] != h or img.shape[1] != w:
         img = img[:h, :w]
+
+    # ---------------------------------------------------------------- deep field
+    distant_galaxies(img, pole, e1, e2, rng, w, h, n=int(52 * (w / 4096.0) ** 0.6))
 
     # ---------------------------------------------------------------- stars
     # Direction: a disc-concentrated population plus an isotropic one. Sampling the
@@ -1864,9 +2430,14 @@ def build_sky(w, h, seed, n_stars=55000, field_div=2):
     if big.any():
         G.splat_gauss(img, sx[big], sy[big], rx[big] * 3.4, ry[big] * 3.4,
                       amp[big] * 0.055, scol[big], wrap_x=True)
-    # diffraction spikes on the brightest few dozen only
-    order = np.argsort(-flux)[:14]
-    _spikes(img, sx[order], sy[order], rad[order], amp[order], scol[order], coslat[order])
+    # The brightest handful get drawn as RESOLVED objects rather than as splats: a
+    # wider halo on top of the core (the halo is what the eye reads as brightness once
+    # the core has clipped) and four diffraction spikes at a shared angle.
+    order = np.argsort(-flux)[:22]
+    G.splat_gauss(img, sx[order], sy[order], rx[order] * 8.5, ry[order] * 8.5,
+                  amp[order] * 0.010, scol[order], wrap_x=True)
+    _spikes(img, sx[order], sy[order], rad[order], amp[order], scol[order], coslat[order],
+            arms=4, roll=0.37)
 
     return np.clip(img, 0.0, None)
 
@@ -1892,27 +2463,192 @@ def _sample_disc_dirs(n, pole, e1, e2, rng):
     return (d / np.linalg.norm(d, axis=1, keepdims=True)).astype(np.float32)
 
 
-def _spikes(img, xs, ys, rad, amp, cols, coslat):
-    """Four-point diffraction spikes. Only worth it on the very brightest stars --
-    put them on everything and the sky turns into a snowflake field."""
+def _spikes(img, xs, ys, rad, amp, cols, coslat, arms=4, roll=0.0):
+    """Diffraction spikes on the brightest stars only.
+
+    Two things were wrong with doing this by writing integer pixels along a row and a
+    column, which is what the previous version did. It can only draw at 0 and 90
+    degrees, so every bright star carried the same upright cross and the frame looked
+    stamped; and a one-pixel-wide hard write has no anti-aliasing at all, so at 4K the
+    spikes were visibly staircased. Here each arm is a chain of overlapping gaussians
+    laid along an arbitrary direction, which is sub-pixel accurate at any angle and
+    costs a few thousand tiny splats for the whole sky.
+
+    The physics that matters for the look: the spike is the Fourier transform of the
+    aperture's support vanes, so a four-vane spider gives four arms at 90 degrees and
+    the pattern rotates rigidly with the telescope -- the arms all share one angle,
+    they are not random per star. Intensity falls roughly as 1/r along the arm rather
+    than as a gaussian, which is why real spikes stay visible so far out; and because
+    the diffraction angle scales with wavelength, the arms redden outward. All three
+    are cheap and all three are what sells it.
+    """
     H, W = img.shape[:2]
+    base = np.arange(arms, dtype=np.float32) * (np.pi / arms) + roll
     for i in range(len(xs)):
-        L = float(rad[i]) * 15.0
-        n = int(L)
-        if n < 3:
+        L = float(rad[i]) * 17.0
+        if L < 4.0:
             continue
-        t = np.arange(-n, n + 1, dtype=np.float32)
-        fall = np.exp(-np.abs(t) / (L * 0.42)) * float(amp[i]) * 0.10
-        c = np.asarray(cols[i], np.float32)
-        for horiz in (True, False):
-            if horiz:
-                px = np.mod((xs[i] + t / max(coslat[i], 0.05)).astype(int), W)
-                py = np.full(len(t), int(ys[i]))
-            else:
-                px = np.full(len(t), int(xs[i]) % W)
-                py = (ys[i] + t).astype(int)
-            m = (py >= 0) & (py < H)
-            np.add.at(img, (py[m], px[m]), fall[m, None] * c[None, :])
+        cl = max(float(coslat[i]), 0.04)
+        sig = max(0.52, float(rad[i]) * 0.34)
+        step = sig * 0.80
+        n = int(L / step)
+        if n < 4:
+            continue
+        t = (np.arange(1, n + 1, dtype=np.float32)) * step
+        # 1/r core with an outer cut-off, and a mild reddening with distance out
+        fall = (1.0 / (1.0 + (t / (L * 0.16)) ** 1.35)) * np.exp(-(t / L) ** 3)
+        fall = fall * float(amp[i]) * 0.055 * (step / max(sig, 1e-3))
+        c0 = np.asarray(cols[i], np.float32)
+        red = np.clip(t / L, 0, 1)[:, None] * np.array([0.35, -0.05, -0.30], np.float32)
+        c = np.clip(c0[None, :] * (1.0 + red), 0, None)
+        for a in base:
+            ca, sa = float(np.cos(a)), float(np.sin(a))
+            for sgn in (+1.0, -1.0):
+                px = xs[i] + sgn * t * ca / cl
+                py = ys[i] + sgn * t * sa
+                keep = (py >= -3) & (py < H + 3)
+                if not keep.any():
+                    continue
+                G.splat_gauss(img, px[keep], py[keep],
+                              np.full(keep.sum(), sig / cl), np.full(keep.sum(), sig),
+                              fall[keep], c[keep], cutoff=2.6, wrap_x=True)
+
+
+def _splat_ellipse(img, cx, cy, a, b, pa, amp, colour, index=1.0, cutoff=3.2, dust=0.0,
+                   kx=1.0):
+    """One rotated elliptical blob with an r^(1/index) Sersic-ish profile.
+
+    splat_gauss only does axis-aligned ellipses, which is fine for stars (where the
+    stretch is always along u) and useless for galaxies, whose whole read is that each
+    one is a little ellipse at its OWN random angle. `dust` cuts a dark lane along the
+    major axis, which is the only cue that makes a highly flattened one read as an
+    edge-on disc rather than as a smudge.
+    """
+    H, W = img.shape[:2]
+    ext = int(np.ceil(max(a, b) * cutoff)) + 1
+    extx = min(int(np.ceil(ext / max(kx, 1e-3))), W // 2)
+    y0, y1 = max(0, int(cy) - ext), min(H, int(cy) + ext + 1)
+    if y1 <= y0:
+        return
+    xs = np.arange(int(cx) - extx, int(cx) + extx + 1)
+    yy, xx = np.meshgrid(np.arange(y0, y1, dtype=np.float32),
+                         xs.astype(np.float32), indexing="ij")
+    # kx = cos(lat): work in sphere metric so the blob stays round/elliptical ON THE
+    # SPHERE while being drawn stretched across the equirect plate.
+    dx, dy = (xx - cx) * kx, yy - cy
+    ct, st = np.cos(pa), np.sin(pa)
+    u = (dx * ct + dy * st) / a
+    v = (-dx * st + dy * ct) / b
+    r = np.sqrt(u * u + v * v)
+    prof = np.exp(-7.67 * (np.maximum(r, 1e-3) ** (1.0 / index) - 1.0) * 0.55)
+    prof = prof * np.exp(-(r / cutoff) ** 4)
+    if dust > 0.0:
+        prof = prof * (1.0 - dust * np.exp(-(((-dx * st + dy * ct) / (b * 0.30)) ** 2)))
+    patch = prof[..., None] * (np.asarray(colour, np.float32) * np.float32(amp))
+    np.add.at(img, (slice(y0, y1), np.mod(xs, W)), patch)
+
+
+def _dir_to_px(d, w, h):
+    lat = np.arcsin(np.clip(d[1], -1, 1))
+    lon = np.arctan2(d[0], d[2])
+    return (lon / np.pi * 0.5 + 0.5) * w, (0.5 - lat / np.pi) * h, max(np.cos(lat), 1e-3)
+
+
+def _gal_dir(gl, gb, pole, e1, e2):
+    return (np.cos(gb) * np.cos(gl) * e1 + np.cos(gb) * np.sin(gl) * e2 + np.sin(gb) * pole)
+
+
+def distant_galaxies(img, pole, e1, e2, rng, w, h, n=52):
+    """Faint external galaxies, plus two satellite irregulars.
+
+    These are the cheapest depth cue there is: a star is a point at an unknowable
+    distance, but a resolvable disc is unmistakably far away, and once a few are in
+    frame the rest of the sky reads as a volume rather than as a wall.
+
+    Three observational facts shape the placement and the look:
+      * the ZONE OF AVOIDANCE. Galaxy counts fall to zero within about 10 deg of the
+        galactic plane, because that is where the dust is. Sprinkling them uniformly
+        -- including across the band -- is the giveaway, so nothing is drawn below
+        |b| = 16 deg and the count is weighted to the galactic poles.
+      * the mix is mostly early types and small spirals at 2-6 px, with a steep size
+        distribution, so a handful are large enough to show a shape and the rest are
+        just non-stellar fuzz. Non-stellar is the whole point: they must NOT look
+        like stars, so every one gets a Sersic profile and a random position angle.
+      * flattened ones get a dust lane down the major axis, which is the only thing
+        that makes an edge-on disc read as a disc rather than as a scratch.
+    """
+    for _ in range(n):
+        for _try in range(24):
+            v = rng.normal(size=3)
+            d = (v / np.linalg.norm(v)).astype(np.float32)
+            sb = float(d @ pole)
+            if abs(sb) > 0.27:
+                break
+        if abs(float(d @ pole)) <= 0.27:
+            continue
+        cx, cy, cl = _dir_to_px(d, w, h)
+        scale = w / 4096.0
+        a = min(1.6 + 6.5 * (1.0 - rng.random()) ** (-1.0 / 2.4) - 1.6, 26.0) * scale + 1.3 * scale
+        q = float(np.clip(rng.beta(2.2, 2.0), 0.14, 1.0))
+        pa = float(rng.uniform(0, np.pi))
+        spiral = rng.random() < 0.58
+        index = 1.0 if spiral else 4.0
+        col = (np.array([0.84, 0.88, 1.00], np.float32) if spiral
+               else np.array([1.00, 0.88, 0.72], np.float32))
+        col = col * (0.85 + 0.3 * rng.random())
+        amp = (0.004 + 0.030 * (1.0 - rng.random()) ** 2.2) * (1.0 if spiral else 1.35)
+        dust = 0.55 if (spiral and q < 0.30) else 0.0
+        _splat_ellipse(img, cx, cy, a, max(a * q, 0.8 * scale), pa, amp, col,
+                       index=index, dust=dust, kx=cl)
+        if spiral and a > 7 * scale and q > 0.45:
+            # a brighter nucleus on the ones big enough to show one
+            G.splat_gauss(img, np.array([cx]), np.array([cy]),
+                          np.array([max(a * 0.16, 0.7) / cl]), np.array([max(a * 0.16, 0.7)]),
+                          np.array([amp * 2.4]), col[None, :], wrap_x=True)
+
+    # ------------------------------------------------- satellite irregulars
+    # Magellanic analogues: resolved, barred, and carrying one giant HII complex each
+    # (the 30 Doradus of this sky). They are the single most recognisable thing that
+    # can sit off the band, and unlike the distant galaxies they are drawn as actual
+    # STARS, because at this plate scale a nearby satellite is resolved and a smooth
+    # blob would read as a thumbprint.
+    scale = w / 4096.0
+    for (gl_, gb_, size, elong, pa, nst, knots, bright) in (
+            (-2.05, -0.62, 0.150, 1.45, 0.7, 5200, 11, 1.00),
+            (-2.52, -0.86, 0.090, 1.20, -0.4, 1900, 5, 0.72)):
+        cd = _gal_dir(gl_, gb_, pole, e1, e2)
+        cx, cy, cl = _dir_to_px(cd, w, h)
+        rpx = size * (w / (2 * np.pi))
+        nst = int(nst * scale ** 2 * 4)
+        ct, st = np.cos(pa), np.sin(pa)
+        u = rng.normal(0, 0.52, nst) * elong
+        v = rng.normal(0, 0.52, nst)
+        # an off-centre bar, which is what makes an irregular read as irregular
+        barm = rng.random(nst) < 0.30
+        u[barm] = rng.normal(0.12, 0.34, barm.sum()) * elong
+        v[barm] = rng.normal(-0.05, 0.11, barm.sum())
+        px = cx + (u * ct - v * st) * rpx / cl
+        py = cy + (u * st + v * ct) * rpx
+        f = (1.0 - rng.random(nst)) ** 2.6
+        sc = np.clip(np.array([0.80, 0.86, 1.00], np.float32)[None, :] *
+                     (0.80 + 0.45 * rng.random((nst, 1))), 0, 1)
+        srad = np.full(nst, max(0.60, 0.62 * scale))
+        G.splat_gauss(img, px, py, srad / cl, srad, 0.020 * bright * f, sc, wrap_x=True)
+        _splat_ellipse(img, cx, cy, rpx * 0.95 * elong, rpx * 0.95, pa,
+                       0.0075 * bright, np.array([0.78, 0.84, 1.00], np.float32),
+                       index=1.0, kx=cl)
+        ku = rng.normal(0, 0.45, knots) * elong
+        kv = rng.normal(0, 0.45, knots)
+        kpx = cx + (ku * ct - kv * st) * rpx / cl
+        kpy = cy + (ku * st + kv * ct) * rpx
+        kr = np.maximum((0.9 + 2.6 * rng.random(knots)) * scale, 0.9)
+        kr[0] *= 2.4                                       # the 30 Dor of this satellite
+        ka = 0.030 * bright * (0.4 + rng.random(knots))
+        ka[0] *= 2.8
+        G.splat_gauss(img, kpx, kpy, kr / cl, kr, ka,
+                      np.broadcast_to(np.array([1.00, 0.42, 0.52], np.float32), (knots, 3)),
+                      wrap_x=True)
+    return img
 
 
 def normalise_sky(img, target_mean=0.085, p999_cap=0.62, hot_frac=0.0006):
@@ -2020,6 +2756,41 @@ def _wing_edge_outline():
     return [
         (0.245, 0.190), (0.100, 0.365), (0.010, 0.460), (-0.190, 0.600),
         (-0.224, 0.598), (-0.030, 0.452), (0.068, 0.358), (0.216, 0.186),
+    ]
+
+
+def _canard_outline():
+    """A small swept foreplane just aft of the payload collar.
+
+    The single thing this adds is a SECOND span in the outline, forward of the main
+    one. At thirty pixels the craft is two or three bright marks and a dark shape, and
+    a shape that goes narrow-wide-narrow-wide-narrow along its length is read as a
+    built vehicle; one that just goes narrow-wide-narrow is read as a dart. It costs
+    twenty triangles.
+    """
+    return [
+        (0.560, 0.100),
+        (0.505, 0.180),
+        (0.430, 0.255),
+        (0.372, 0.258),
+        (0.392, 0.176),
+        (0.432, 0.100),
+    ]
+
+
+def _nacelle_profile():
+    """Outboard engine pod: ogive front, parallel body, boat-tail into its own bell."""
+    return [
+        (0.100, 0.0000),
+        (0.072, 0.0225),
+        (0.020, 0.0410),
+        (-0.090, 0.0530),
+        (-0.360, 0.0530),
+        (-0.470, 0.0495),
+        (-0.545, 0.0410),
+        (-0.580, 0.0330),     # throat
+        (-0.640, 0.0450),
+        (-0.690, 0.0545),     # lip
     ]
 
 
@@ -2132,17 +2903,45 @@ def build_rocket():
         nv = M.transform(nv, translate=(0.585 * sx, -0.075, -0.172))
         m.add(nv, nf, GREEN if sx > 0 else RED, 2.8, crease=None)
 
-    # -------------------------------------------------------------- dorsal fin
-    fv, ff = M.plate(_fin_outline(0.360, -0.150, -0.510, 0.190), 0.026, "v",
-                     offset=(0.0, 0.118, 0.0))
-    fv, ff = M.orient_outward(fv, ff)
-    fc = np.array([_lerp(HULL_MID, HULL_LIGHT, t)
-                   for t in np.clip((fv[:, 1] - 0.118) / 0.360, 0, 1)])
-    m.add(fv, ff, np.clip(fc, 0, 1), 0.0, crease=None)
-    cv, cf = M.plate([(-0.330, 0.455), (-0.268, 0.442), (-0.262, 0.472), (-0.336, 0.480)],
-                     0.028, "v")
-    cv, cf = M.orient_outward(cv, cf)
-    m.add(cv, cf, TRIM, 2.2, crease=None)
+    # -------------------------------------------------------------- V-tail
+    # Two canted fins instead of one dorsal shark fin. A single fin is a strong
+    # silhouette from the side and NOTHING from directly above or below, and these
+    # craft are flown along curves that put the camera everywhere; a V always shows
+    # two edges. It also widens the tail, which is what the eye uses to tell front
+    # from back at thirty pixels.
+    for sx in (+1, -1):
+        fv, ff = M.plate(_fin_outline(0.330, -0.140, -0.545, 0.180), 0.024, "v",
+                         offset=(0.0, 0.106, 0.0))
+        fv = M.transform(fv, rot=[(2, np.radians(29.0) * sx)])
+        fv, ff = M.orient_outward(fv, ff)
+        hh = np.clip((np.hypot(fv[:, 0], fv[:, 1]) - 0.106) / 0.330, 0, 1)
+        fc = np.array([_lerp(HULL_MID, HULL_LIGHT, t) for t in hh])
+        m.add(fv, ff, np.clip(fc, 0, 1), 0.0, crease=None)
+        cv, cf = M.plate([(-0.350, 0.420), (-0.288, 0.406), (-0.282, 0.436),
+                          (-0.358, 0.447)], 0.026, "v")
+        cv = M.transform(cv, rot=[(2, np.radians(29.0) * sx)])
+        cv, cf = M.orient_outward(cv, cf)
+        m.add(cv, cf, TRIM, 2.2, crease=None)
+        # white strobe at each fin tip: with the wing-tip red/green these put four
+        # emissive points at the four extremes of the silhouette
+        a34 = np.radians(29.0) * sx
+        tipx = -np.sin(a34) * 0.430
+        tipy = np.cos(a34) * 0.430
+        tv, tf = M.lathe([(-0.290, 0.0), (-0.310, 0.016), (-0.340, 0.012)], 8,
+                         close_start=True, close_end=True)
+        tv, tf = M.orient_outward(tv, tf)
+        tv = M.transform(tv, translate=(tipx, tipy, 0.0))
+        m.add(tv, tf, (1.0, 0.96, 0.90), 2.6, crease=None)
+
+    # -------------------------------------------------------------- canards
+    for sx in (+1, -1):
+        kv, kf = M.plate(_canard_outline(), 0.022, "h")
+        kv = M.transform(kv, rot=[(2, np.radians(9.0))])            # slight dihedral
+        kv = M.transform(kv, mirror_x=(sx < 0), translate=(0.0, 0.004, 0.0))
+        kv, kf = M.orient_outward(kv, kf)
+        kc = np.where((kv[:, 1] > 0.004)[:, None],
+                      np.array(HULL_LIGHT)[None, :], np.array(HULL_DARK)[None, :])
+        m.add(kv, kf, np.clip(kc, 0, 1), 0.0, crease=None)
 
     # -------------------------------------------------------------- ventral strakes
     for sx in (+1, -1):
@@ -2195,6 +2994,47 @@ def build_rocket():
     ti = np.clip((iv[:, 2] + 0.955) / 0.292, 0, 1)
     ic = np.array([_lerp(THROAT, PLUME, x) for x in ti])
     m.add(iv, if_, ic, 1.3 + 2.2 * ti, crease=None)
+
+    # -------------------------------------------------------------- outboard nacelles
+    # Two pod engines on short pylons under the wings. The craft is seen from behind
+    # for the whole outbound leg of every bridge run, and from there one bell on the
+    # axis is a dot: three bells in a triangle, the outer two a third of the span
+    # apart, is a shape. They also put mass outboard and low, which is most of what
+    # separates a hauler from a fighter in one glance.
+    nprof = _nacelle_profile()
+    for sx in (+1, -1):
+        nx = 0.330 * sx
+        ny = -0.115
+        nv, nf = M.lathe(nprof, 14)
+        nv, nf = M.orient_outward(nv, nf)
+        nv = M.transform(nv, translate=(nx, ny, -0.090))
+        t = np.clip((nv[:, 2] + 0.780) / 0.880, 0, 1)
+        nc = np.array([_lerp(HULL_DARK, HULL_MID, ti) for ti in t])
+        nc = nc * (0.70 + 0.70 * np.clip((nv[:, 1] - ny + 0.053) / 0.106, 0, 1))[:, None]
+        m.add(nv, nf, np.clip(nc, 0, 1), 0.0, crease=36.0)
+
+        # hot throat, visible only from astern
+        iv, if2 = M.lathe([(-0.690, 0.052), (-0.648, 0.042), (-0.600, 0.030),
+                           (-0.572, 0.020)], 14, close_end=True)
+        iv, if2 = M.orient_outward(iv, if2)
+        if2 = M.flip(if2)
+        iv = M.transform(iv, translate=(nx, ny, -0.090))
+        ti = np.clip((iv[:, 2] + 0.780) / 0.118, 0, 1)
+        m.add(iv, if2, np.array([_lerp(THROAT, PLUME, x) for x in ti]),
+              1.1 + 1.9 * ti, crease=None)
+
+        # pylon up to the wing underside
+        pyv, pyf = M.plate([(0.010, -0.030), (-0.250, -0.030), (-0.250, -0.118),
+                            (0.010, -0.118)], 0.020, "v", offset=(nx, 0.0, -0.090))
+        pyv, pyf = M.orient_outward(pyv, pyf)
+        m.add(pyv, pyf, HULL_DARK, 0.0, crease=None)
+
+        # a trim strip along the nacelle spine so the pod reads as powered
+        ns, nsf = M.hull_strip(nprof, np.pi / 2, 0.42, dr=1.06, nseg=4,
+                               zrange=(-0.46, 0.02))
+        ns, nsf = M.orient_outward(ns, nsf)
+        ns = M.transform(ns, translate=(nx, ny, -0.090))
+        m.add(ns, nsf, TRIM, 1.5, crease=None)
 
     # -------------------------------------------------------------- collar rings
     for (z0, z1, r, gl) in ((0.185, 0.060, 0.1395, 1.5), (-0.380, -0.402, 0.1215, 1.2)):
@@ -2264,11 +3104,27 @@ def _downscale(a, fy, fx):
 
 
 # ============================================================ assets
+# Three discs, three different structural families rather than three colourways of
+# one. They are seen together in the wide shots, so identical structure under
+# different accents is read as a repeat; a de Vaucouleurs class each is not.
 DISCS = [
-    # file            seed        palette   pitch  arms  lopsided
-    ("galaxy_nb.png", 20260927, "cyan", 15.0, 2, 0.13),
-    ("galaxy_gpu.png", 771,      "amber", 19.5, 2, 0.16),
-    ("galaxy_edge.png", 4242,    "violet", 12.0, 2, 0.11),
+    # SB(s)bc: strong boxy bar, grand-design arms off its ends, mild tidal shear
+    ("galaxy_nb.png", 20260927, {
+        "palette": "cyan", "pitch": 15.0, "arms": 2, "lopsided": 0.13,
+        "bar": 1.00, "bar_pa": 0.62, "bar_len": 0.34, "ring": 0.0,
+        "tidal": 0.26, "tidal_pa": 2.1, "arm_mix": (1.00, 0.80), "arm_end": (1.00, 0.88)}),
+    # SB(r)b: shorter bar inside a bright inner ring, more open arms, nearly symmetric
+    ("galaxy_gpu.png", 771, {
+        "palette": "amber", "pitch": 19.5, "arms": 2, "lopsided": 0.10,
+        "bar": 0.85, "bar_pa": -0.45, "bar_len": 0.29, "ring": 0.18,
+        "tidal": 0.12, "tidal_pa": -0.6, "arm_mix": (1.00, 0.86), "arm_end": (1.00, 0.94)}),
+    # SABa, interacting: weak bar, tightly wound, strongly tidally distorted, one arm
+    # drawn out into a plume and the other truncated
+    ("galaxy_edge.png", 4242, {
+        "palette": "violet", "pitch": 12.0, "arms": 2, "lopsided": 0.11,
+        "bar": 0.42, "bar_pa": 1.95, "bar_len": 0.24, "ring": 0.0,
+        "tidal": 0.40, "tidal_pa": 0.85, "arm_mix": (1.00, 0.64), "arm_end": (1.00, 0.76),
+        "envelope": 0.090}),
 ]
 
 PLANETS = [
@@ -2283,19 +3139,34 @@ def bake_sky(out, size, also=None):
     h = size // 2
     img = build_sky(size, h, seed=20260928, n_stars=int(55000 * (size / 4096.0) ** 2 + 6000),
                     field_div=2)
+    # Same cos(lat) longitude band-limit as the planets. The sky sphere has poles too,
+    # and the star splats are stretched by 1/cos(lat) with a hard clamp, so within a
+    # few degrees of the pole they were being drawn far too narrow -- the top and
+    # bottom rows of the plate carried a visible dotted seam.
+    img = np.clip(polar_bandlimit(img, keep=1.30, soft=0.30), 0, None)
     img = normalise_sky(img)
     lum = img @ LUMW
     print(f"  sky lum: mean {lum.mean():.4f}  median {np.median(lum):.4f}  p99 {np.percentile(lum, 99):.4f}  p99.9 {np.percentile(lum, 99.9):.4f}  max {lum.max():.4f}  frac>0.78 {100.0 * (lum > 0.78).mean():.4f}%", flush=True)
+    # The number that actually matters: this plate is NEVER shown raw. The runtime
+    # tints it by 0x333333 on a BackSide sphere and then grades the whole frame with
+    # ACES at exposure 1.45, and bloom triggers at 0.78 AFTER that. Measuring the
+    # plate alone says nothing about whether the sky will bloom.
+    gl = runtime_grade(img * (0x33 / 255.0)) @ LUMW
+    print(f"  sky through runtime (tint 0x333333 -> ACES@1.45 -> sat 1.12): "
+          f"mean {gl.mean():.4f}  median {np.median(gl):.4f}  p99 {np.percentile(gl, 99):.4f}  "
+          f"p99.9 {np.percentile(gl, 99.9):.4f}  max {gl.max():.4f}  "
+          f"over bloom 0.78: {int((gl > 0.78).sum())} px ({100.0 * (gl > 0.78).mean():.5f}%)",
+          flush=True)
     _save(os.path.join(out, "sky.jpg"), img)
     if also:
         _save(os.path.join(also, "sky.jpg"), img)
 
 
 def bake_discs(out, size, also=None, also_size=1024):
-    for (name, seed, pal, pitch, arms, lop) in DISCS:
+    for (name, seed, kw) in DISCS:
         k = size / 2048.0
-        img, R = build_disc(size, seed=seed, pitch=pitch, arms=arms, palette=pal,
-                            lopsided=lop, hii_n=int(1100 * k), star_n=int(40000 * k))
+        img, R = build_disc(size, seed=seed, hii_n=int(1300 * k), star_n=int(22000 * k),
+                            n_gc=int(170 * min(k, 1.0) ** 0.5), **kw)
         rgb, a = finish_disc(img, R)
         rgba = np.concatenate([rgb, a[..., None]], -1)
         _save(os.path.join(out, name), rgba)

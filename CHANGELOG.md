@@ -123,6 +123,20 @@ came out of that:
   the one Flask already had, and an honest note that `nvidia-ml-py` installs
   whether or not you have a GPU.
 
+### Looks — the universe, rebuilt from physics
+
+- **The baked assets are regenerated from physical models rather than layered
+  noise**, and the generator (`blender/galaxy_assets.py`) is pure NumPy, so a
+  fresh bake needs no Blender install. The three galaxy discs are now distinct
+  de Vaucouleurs classes with a real bar, dust lanes that spring from the bar
+  ends, resolved stars, HII regions and globular clusters; the gas-giant poles
+  are circumpolar cyclones instead of the octagonal grey cap that axis-aligned
+  Perlin noise produced; the star surface has per-granule brightness instead of
+  uniform cells; and the Milky Way sky uses an embedded-source transfer so the
+  band glows rather than baking to a black streak. Every texture stays under
+  1 MB, and two independent bakes are bit-identical, so the result is
+  reproducible.
+
 ### Docs
 
 - The README quickstart said `http://localhost:8080`; the app binds `0.0.0.0`.

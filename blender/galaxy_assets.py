@@ -3113,9 +3113,11 @@ DISCS = [
         "palette": "cyan", "pitch": 15.0, "arms": 2, "lopsided": 0.13,
         "bar": 1.00, "bar_pa": 0.62, "bar_len": 0.34, "ring": 0.0,
         "tidal": 0.26, "tidal_pa": 2.1, "arm_mix": (1.00, 0.80), "arm_end": (1.00, 0.88)}),
-    # SB(r)b: shorter bar inside a bright inner ring, more open arms, nearly symmetric
+    # SB(r)b: shorter bar inside a bright inner ring, nearly symmetric. Pitch was 19.5:
+    # at that opening the two arms barely completed a half turn and the plate read as
+    # a crescent at full size; 16 wraps them far enough to read as a two-armed S.
     ("galaxy_gpu.png", 771, {
-        "palette": "amber", "pitch": 19.5, "arms": 2, "lopsided": 0.10,
+        "palette": "amber", "pitch": 16.0, "arms": 2, "lopsided": 0.10,
         "bar": 0.85, "bar_pa": -0.45, "bar_len": 0.29, "ring": 0.18,
         "tidal": 0.12, "tidal_pa": -0.6, "arm_mix": (1.00, 0.86), "arm_end": (1.00, 0.94)}),
     # SABa, interacting: weak bar, tightly wound, strongly tidally distorted, one arm

@@ -73,6 +73,10 @@ class Feed:
             data[k] = v
         data["topology"] = _load("topology.json")
         self.base_topology = copy.deepcopy(data["topology"])
+        try:                 # SNMP-polled switches (snmp.py); absent from older or custom fixture sets
+            data["snmp"] = _load("snmp.json")
+        except FileNotFoundError:
+            pass
         st = _load("showtime.json")
         # the anonymiser renamed the media server and the GPU host in the snapshot;
         # the API keys the screens read are `emby` and `frigate.gpu` (showtime.py)
@@ -157,6 +161,10 @@ class Feed:
             m, bm = n.get("meta") or {}, bn.get("meta") or {}
             if bm.get("rtt") is not None:
                 m["rtt"] = round(max(0.1, _wobble(bm["rtt"], 0.25)), 2)
+            for p, bp in zip(m.get("ports") or [], bm.get("ports") or [], strict=False):
+                for k in ("rx_bps", "tx_bps"):      # SNMP switch ports breathe too; unmeasured stays None
+                    if bp.get(k) is not None:
+                        p[k] = round(_wobble(bp[k], 0.3), 1)
         T["ts"] = now
         # GPUs breathe
         for i, g in enumerate((D.get("gpu") or {}).get("gpus") or []):

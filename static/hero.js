@@ -1,7 +1,15 @@
 /* hero.js — daylight-legible palette + a HERO layout that gives the 3D scene
    the whole wall back.  v7: audience + threats strip cells.
+   v8: AUDIENCE panel (#h-aud, right rail of the hero layout) - real unique
+   visitors on the public sites from edge.audience (origin log, monitors + bots
+   excluded and shown as excluded), with a 60-minute sparkline accumulated from
+   the polls the page already makes, per-country chips and the per-host split.
+   netscene_exo.js dispatches 'galaxy:viewer' for each real arrival; the panel
+   shows it for 90 s. Tunnel request counters are NEVER called viewers: with
+   edge.audience down the panel says "requests only" in so many words.
    ---------------------------------------------------------------------------
-   Reads:   window.CONFIG  brand (top-bar wordmark), features.cameras
+   Reads:   window.CONFIG  brand (top-bar wordmark), domain (host chips are
+                           shown relative to it), features.cameras / .audience
             /api/all       via renderNewPanels: zabbix, unifi, topology.nodes,
                            edge.cloudflare / .crowdsec / .audience / .threats,
                            cameras, ts_age
@@ -137,12 +145,12 @@
     '#herobot{bottom:calc(var(--sy) - 4px);justify-content:center;gap:18px}',
 
     /* identity */
-    '#hbrand{display:flex;align-items:baseline;gap:12px;white-space:nowrap}',
-    '#hbrand .wm{font-size:21px;font-weight:700;letter-spacing:.6px;color:#fff;',
+    '#hbrand{display:flex;align-items:baseline;gap:9px;white-space:nowrap}',
+    '#hbrand .wm{font-size:22px;font-weight:700;letter-spacing:.6px;color:#fff;',
     '  text-shadow:0 0 22px rgba(90,215,255,.45)}',
     '#hbrand .wm i{font-style:normal;color:var(--accent)}',
-    '#hbrand .clk{font-size:13px;color:var(--ink2);letter-spacing:1px}',
-    '#hbrand .chip{font-size:9px;letter-spacing:1.1px;color:var(--ink3);',
+    '#hbrand .clk{font-size:15px;color:var(--ink2);letter-spacing:1px}',
+    '#hbrand .chip{font-size:10px;letter-spacing:1.1px;color:var(--ink3);',
     '  border:1px solid var(--edge);border-radius:3px;padding:2px 7px;text-transform:uppercase}',
     '#hbrand .chip.ok{color:var(--ok);border-color:rgba(62,207,142,.4)}',
     '#hbrand .chip.bad{color:var(--down);border-color:rgba(255,90,106,.45)}',
@@ -151,19 +159,21 @@
     /* headline numbers */
     '#hstats{display:flex;gap:26px;align-items:flex-end}',
     '#hstats div{text-align:center}',
-    '#hstats b{display:block;font-size:21px;font-weight:600;color:var(--ink1);line-height:1.05}',
-    '#hstats span{font-size:8px;letter-spacing:1.5px;color:var(--ink3);text-transform:uppercase}',
+    /* v8: sized for a wall read from across a room (measured at 1920x1080:
+       the six headline numbers + the strip still fit on one line each) */
+    '#hstats b{display:block;font-size:32px;font-weight:600;color:var(--ink1);line-height:1.05}',
+    '#hstats span{font-size:11px;letter-spacing:1.5px;color:var(--ink3);text-transform:uppercase}',
     '#hstats b.warn{color:var(--warn)} #hstats b.bad{color:var(--down)}',
 
     /* bottom vitals */
     '#herobot div{display:flex;align-items:baseline;gap:7px;white-space:nowrap}',
-    '#herobot span{font-size:8.5px;letter-spacing:1.5px;color:var(--ink3);text-transform:uppercase}',
-    '#herobot b{font-size:13px;font-weight:600;color:var(--ink1)}',
+    '#herobot span{font-size:11px;letter-spacing:1.5px;color:var(--ink3);text-transform:uppercase}',
+    '#herobot b{font-size:18px;font-weight:600;color:var(--ink1)}',
     '#herobot b.ok{color:var(--ok)} #herobot b.warn{color:var(--warn)} #herobot b.bad{color:var(--down)}',
-    '#herobot i{font-style:normal;color:var(--ink4);font-size:11px}',
+    '#herobot i{font-style:normal;color:var(--ink4);font-size:13.5px}',
 
     /* the tour caption sits above the bottom strip once #data is gone */
-    'body.hero #cin{bottom:calc(var(--sy) + 34px)!important}',
+    'body.hero #cin{bottom:calc(var(--sy) + 44px)!important}',
 
     /* record-safe: the camera thumbnails are far more identifying than any IP
        on this screen - they are the outside of the house. Hero mode hides them
@@ -175,9 +185,63 @@
     'body.privacy #hbrand:after{content:"REC-SAFE";font-size:8px;letter-spacing:1.6px;',
     '  color:var(--warn);border:1px solid rgba(255,179,71,.5);border-radius:3px;padding:2px 6px}',
 
+    /* ---------- 3. audience panel (v8) ----------
+       Right-rail twin of showtime's AI FABRIC box (same .st grammar: a small
+       overline with a hairline, a .62 plate, mono numerals). Gold is the one
+       colour reserved for "a real person" here and in the 3D scene. */
+    '#h-aud{position:fixed;z-index:8;pointer-events:none;right:calc(var(--sx,112px) - 4px);top:29%;width:360px;display:none;',
+    '  font:13px/1.4 ui-monospace,Menlo,Consolas,monospace;color:#dcefff;font-variant-numeric:tabular-nums;letter-spacing:.2px;',
+    '  transition:opacity .6s ease}',
+    'body.hero #h-aud{display:block}',
+    'body.st-ops #h-aud,body.st-alert #h-aud{top:auto;bottom:calc(var(--sy,64px) + 44px)}',
+    'body.st-night #h-aud{opacity:.55}',
+    'body[data-doom]:not([data-doom^="phase=off"]) #h-aud{opacity:0!important}',
+    'body.cin-nohud #h-aud{opacity:0}',
+    '#h-aud .h{font-size:10.5px;letter-spacing:1.8px;text-transform:uppercase;color:var(--ink3);margin-bottom:5px;display:flex;align-items:center;gap:8px}',
+    '#h-aud .h:after{content:"";flex:1;height:1px;background:linear-gradient(90deg,rgba(125,160,200,.18),transparent)}',
+    '#h-aud .h i{font-style:normal;color:#ffd166}',
+    '#h-aud.fallback .h i{color:var(--warn)}',
+    '#h-aud .box{background:rgba(6,11,22,.62);border:1px solid rgba(125,160,200,.18);border-radius:5px;padding:8px 10px 7px;',
+    '  box-shadow:0 8px 28px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.04)}',
+    '#h-aud .top{display:flex;align-items:flex-end;gap:10px}',
+    '#h-aud .n{font-size:54px;line-height:.95;font-weight:700;color:#ffd166;text-shadow:0 0 26px rgba(255,209,102,.45);min-width:44px;',
+    '  transform-origin:left bottom}',
+    '#h-aud .n.zero,#h-aud.fallback .n{color:var(--ink2);text-shadow:none}',
+    '#h-aud .n.up{animation:h-audpop 1.1s ease-out 1}',
+    '@keyframes h-audpop{0%{transform:scale(1);text-shadow:0 0 18px rgba(255,209,102,.35)}',
+    '  28%{transform:scale(1.22);text-shadow:0 0 34px rgba(255,209,102,.95),0 0 10px rgba(255,255,255,.7)}',
+    '  100%{transform:scale(1);text-shadow:0 0 18px rgba(255,209,102,.35)}}',
+    '#h-aud.hit .box{animation:h-audhit 1.6s ease-out 1}',
+    '@keyframes h-audhit{0%{border-color:rgba(255,209,102,.75);box-shadow:0 8px 28px rgba(0,0,0,.45),0 0 26px rgba(255,209,102,.28),inset 0 0 18px rgba(255,209,102,.10)}',
+    '  100%{border-color:rgba(125,160,200,.18);box-shadow:0 8px 28px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.04)}}',
+    '#h-aud .t{flex:1;min-width:0;padding-bottom:1px}',
+    '#h-aud .t b{display:block;font-size:14px;letter-spacing:1.5px;text-transform:uppercase;color:#fff;font-weight:700}',
+    '#h-aud .t span{display:block;font-size:11px;color:var(--ink3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    '#h-aud .hr{text-align:right;padding-bottom:1px;white-space:nowrap}',
+    '#h-aud .hr b{display:block;font-size:20px;line-height:1.1;color:var(--ink1);font-weight:600}',
+    '#h-aud .hr span{font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink3)}',
+    '#h-aud .sp{margin:7px 0 2px}',
+    '#h-aud .sp svg{display:block;width:100%;height:30px;overflow:visible}',
+    '#h-aud .sp .cap{display:flex;justify-content:space-between;font-size:10px;letter-spacing:1.1px;text-transform:uppercase;color:var(--ink4);margin-top:2px}',
+    '#h-aud .sp .cap b{color:var(--ink3);font-weight:600}',
+    '#h-aud .cc{display:flex;flex-wrap:wrap;gap:4px 5px;margin-top:6px}',
+    '#h-aud .cc span{display:inline-flex;align-items:baseline;gap:5px;font-size:12px;letter-spacing:.8px;color:var(--ink2);',
+    '  border:1px solid rgba(125,160,200,.24);border-radius:3px;padding:1px 6px;line-height:1.5;white-space:nowrap}',
+    '#h-aud .cc span b{color:#fff;font-weight:600}',
+    '#h-aud .cc span.top{border-color:rgba(255,209,102,.55);color:#ffe3a3} #h-aud .cc span.top b{color:#ffd166}',
+    '#h-aud .cc span.more{border-style:dashed;color:var(--ink3)}',
+    '#h-aud .row{display:flex;gap:12px;font-size:11.5px;color:var(--ink3);margin-top:6px;white-space:nowrap}',
+    '#h-aud .row span{overflow:hidden;text-overflow:ellipsis;min-width:0}',
+    '#h-aud .row b{color:var(--ink1);font-weight:600}',
+    '#h-aud .ex{font-size:10.5px;letter-spacing:.8px;color:var(--ink4);margin-top:5px;padding-top:4px;border-top:1px solid rgba(125,160,200,.14);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    '#h-aud .new{font-size:11.5px;color:#ffd166;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;',
+    '  max-height:0;opacity:0;transition:opacity .5s ease,max-height .4s ease}',
+    '#h-aud .new.on{max-height:22px;opacity:1}',
+
     '@media (max-width:1599px){',
-    '  #hbrand .wm{font-size:17px} #hstats b{font-size:17px} #hstats{gap:18px}',
-    '  #herobot{gap:20px} #herobot b{font-size:12px}',
+    '  #hbrand .wm{font-size:20px} #hstats b{font-size:24px} #hstats{gap:16px}',
+    '  #herobot{gap:20px} #herobot b{font-size:16px}',
+    '  #h-aud{width:300px}',
     '}'
   ].join('\n');
 
@@ -206,6 +270,7 @@
     H.bot.id = 'herobot';
     document.body.appendChild(H.bot);
     brandMark();
+    audMount();
   }
 
   /* The six headline numbers already exist and are already kept current by the
@@ -291,9 +356,11 @@
     h += cell('alerts', pr, pr ? 'bad' : 'ok');
     h += cell('wan', (u.rx != null ? u.rx : '–') + ' / ' + (u.tx != null ? u.tx : '–'), '', 'Mbps');
     if (med != null) h += cell('latency', med.toFixed(1), med > 60 ? 'bad' : med > 15 ? 'warn' : 'ok', 'ms');
-    h += cell('packet loss', lossy, lossy ? 'warn' : 'ok', lossy ? 'hosts' : '');
-    h += cell('nodes', nodes.length, '', down ? down + ' down' : 'all up');
-    if (disc) h += cell('discovered', disc, 'warn', 'unlisted');
+    /* v8: shorter cells - the strip's type grew for the wall and ten cells
+       have to fit one 1920 px line (measured: the long form ran 1812 px in a
+       1696 px row). Everything that moved out of a cell lives in the panel. */
+    h += cell('loss', lossy, lossy ? 'warn' : 'ok', lossy ? 'hosts' : '');
+    h += cell('nodes', nodes.length, '', (down ? down + ' down' : 'all up') + (disc ? ' \u00b7 ' + disc + ' new' : ''));
     /* the edge, from the new pollers (2026-09-14): Cloudflare tunnel + CrowdSec.
        Absent blocks stay absent; nothing here is invented. */
     var e = d.edge || {}, cf = e.cloudflare || {}, cs = e.crowdsec || {};
@@ -307,36 +374,20 @@
        (measured: with both, the strip ran 1812 px in a 1696 px row) */
     var au = e.audience || {};
     if (au.up) {
-      /* REAL unique viewers (Cloudflare zone analytics) */
-      var ccs = (au.by_country || []).slice(0, 3).map(function (c) { return c.cc; }).filter(Boolean).join(' ');
-      h += cell('audience', (au.viewers_5m || 0) + ' viewer' + ((au.viewers_5m || 0) === 1 ? '' : 's'), (au.viewers_5m || 0) > 0 ? 'ok' : '', '5 min' + (ccs ? ' · ' + ccs : ''));
+      /* REAL unique visitors (edge.audience); the countries + hosts are in the panel */
+      h += cell('audience', (au.viewers_5m || 0), (au.viewers_5m || 0) > 0 ? 'ok' : '', '5 min');
     } else if (cf.up) {
-      /* honest fallback: cloudflared tunnel counters are requests, never "viewers" */
-      h += cell('audience', (cf.active_streams || 0) + ' in-flight', (cf.err_per_min || 0) > 0 ? 'warn' : '', Math.round(cf.req_per_min || 0) + ' req/min · ' + (cf.locations || []).join(' '));
+      /* honest fallback: tunnel counters are requests, never "viewers" */
+      h += cell('audience', Math.round(cf.req_per_min || 0), (cf.err_per_min || 0) > 0 ? 'warn' : '', 'req/min');
     }
     var th = e.threats || {};
     if (th.up) {
       var tc = th.counts || {}, lvl = Math.max(0, Math.min(3, +th.level || 0));
-      var ev = (th.events || [])[0], li2 = '';
-      if (ev && ev.ts) {
-        var ag2 = Math.max(0, Date.now() / 1000 - ev.ts);
-        var agS2 = ag2 < 3600 ? Math.round(ag2 / 60) + 'm' : ag2 < 86400 ? Math.round(ag2 / 3600) + 'h' : Math.round(ag2 / 86400) + 'd';
-        var ttl = String(ev.title || '').replace(/^(crowdsecurity|LePresidente|[A-Za-z0-9]+)\//, '').replace(/_/g, ' ');
-        if (ttl.length > 14) ttl = ttl.slice(0, 13) + '…';
-        li2 = ' · ' + agS2 + (ev.cc ? ' ' + ev.cc : '') + ' ' + ttl;
-      }
       h += cell('threats', th.name || ['GREEN', 'YELLOW', 'RED', 'BLACK'][lvl], lvl >= 2 ? 'bad' : lvl === 1 ? 'warn' : 'ok',
-                (tc.secmon_critical || 0) + ' crit · ' + (tc.secmon_high || 0) + ' high · ' + (tc.banned || 0) + ' banned' + li2);
+                (tc.secmon_critical || 0) + ' crit · ' + (tc.secmon_high || 0) + ' high · ' + (tc.banned || 0) + ' banned');
     } else if (cs.up) {
       /* the unified feed is down: fall back to the round-2 crowdsec cell */
-      var la = null; (cs.top_attackers || []).forEach(function (a) { if (a && a.ts && (!la || a.ts > la.ts)) la = a; });
-      var li = '';
-      if (la) {
-        var ag = Math.max(0, Date.now() / 1000 - la.ts);
-        var agS = ag < 3600 ? Math.round(ag / 60) + 'm' : ag < 86400 ? Math.round(ag / 3600) + 'h' : Math.round(ag / 86400) + 'd';
-        li = ' · last ' + agS + ' · ' + (la.cn || '??') + ' · ' + String(la.scenario || '').replace(/^crowdsecurity\//, '');
-      }
-      h += cell('crowdsec', (cs.alerts_24h || 0) + ' atk/24h', (cs.alerts_1h || 0) > 0 ? 'warn' : '', (cs.banned || 0) + ' banned' + li);
+      h += cell('crowdsec', (cs.alerts_24h || 0) + ' atk/24h', (cs.alerts_1h || 0) > 0 ? 'warn' : '', (cs.banned || 0) + ' banned');
     }
     if (((window.CONFIG || {}).features || {}).cameras) h += cell('cams', (d.cameras || []).length, '', 'live');
     /* Staleness, and only when there is some. ts now advances only on a poll
@@ -350,6 +401,146 @@
                 age > STALE_BAD_S ? 'bad' : 'warn', d.ts_err || 'stale');
     }
     H.bot.innerHTML = h;
+  }
+
+  /* ---------------- audience panel (v8) ----------------
+     Who is on the public sites right now. Every number is a real unique
+     human visitor from edge.audience (origin log: real client IP + country;
+     monitors and bots excluded upstream and reported here as excluded).
+     Nothing from the tunnel's request counters is ever called a viewer: when
+     audience is down the panel switches to a clearly labelled req/min fallback
+     and says the visitor count is unavailable. Hidden entirely when the back
+     end reports features.audience = false (no audience source configured). */
+  var AUD = { el: null, hist: [], last5: null, newAt: 0, newTxt: '', html: '' };
+  var HIST_KEY = 'galaxy.aud.hist', HIST_MIN = 60;   // one bucket per minute, an hour deep
+
+  function esc(x) { return String(x == null ? '' : x).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  /* a public host relative to the configured domain: 'media.example.com' -> 'media' */
+  function shortHost(h) {
+    h = String(h || ''); var dom = String(((window.CONFIG || {}).domain) || '').toLowerCase();
+    if (dom && h.toLowerCase() === dom) return h;
+    if (dom && h.toLowerCase().slice(-(dom.length + 1)) === '.' + dom) return h.slice(0, -(dom.length + 1));
+    return h;
+  }
+
+  function audMount() {
+    if (AUD.el) return;
+    if (!(((window.CONFIG || {}).features) || {}).audience) return;
+    AUD.el = document.createElement('div'); AUD.el.id = 'h-aud';
+    AUD.el.innerHTML = '<div class="h">Audience \u00b7 <i>live visitors</i></div><div class="box"></div>';
+    document.body.appendChild(AUD.el);
+    /* the sparkline survives a kiosk reload: the page is the only sampler */
+    try {
+      var raw = JSON.parse(localStorage.getItem(HIST_KEY) || '[]');
+      if (Array.isArray(raw)) AUD.hist = raw.filter(function (p) { return Array.isArray(p) && p.length === 2 && isFinite(p[0]) && isFinite(p[1]); });
+    } catch (e) { AUD.hist = []; }
+    /* netscene_exo.js fires this once per poll that saw real arrivals */
+    window.addEventListener('galaxy:viewer', function (ev) {
+      var d = (ev && ev.detail) || {};
+      AUD.newAt = Date.now();
+      AUD.newTxt = '\u25B2 ' + (d.n > 1 ? d.n + ' new visitors' : 'new visitor') + (d.cc ? ' \u00b7 ' + esc(d.cc) : '')
+                 + (d.host ? ' \u00b7 ' + esc(shortHost(d.host)) : '');
+      audRender(true); audPop();
+    });
+  }
+  /* the arrival beat on the panel: the number scales + glows and the plate's
+     rim flashes gold, once, restarted per event (compositor-only motion) */
+  function audPop() {
+    var el = AUD.el, n = el && el.querySelector('.n'); if (!n) return;
+    n.classList.remove('up'); el.classList.remove('hit');
+    void n.offsetWidth;
+    n.classList.add('up'); el.classList.add('hit');
+  }
+  /* a real rise counts up through the intermediate values instead of snapping */
+  function audTick(from, to) {
+    var el = AUD.el; if (!el || !(to > from)) return;
+    var steps = Math.min(12, to - from), i = 0;
+    (function step() {
+      i++; var n = el.querySelector('.n'); if (!n) return;
+      n.textContent = i >= steps ? to : from + Math.round((to - from) * i / steps);
+      if (i < steps) setTimeout(step, 70);
+    })();
+  }
+
+  /* one series, 2 px line, soft fill, a dot on the live end; time runs left
+     to right over the last HIST_MIN minutes on a fixed x scale so a gap in
+     the record reads as a gap, not a compressed axis */
+  function audSpark(H, mNow, w, h) {
+    if (H.length < 2) return '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none"><line x1="0" y1="' + (h - 1) + '" x2="' + w + '" y2="' + (h - 1) + '" stroke="rgba(125,160,200,.25)" stroke-width="1"/></svg>';
+    var mx = 1, i; for (i = 0; i < H.length; i++) if (H[i][1] > mx) mx = H[i][1];
+    var m0 = mNow - HIST_MIN, pts = '', first = '', lx = 0, ly = 0;
+    for (i = 0; i < H.length; i++) {
+      var x = Math.max(0, Math.min(w, (H[i][0] - m0) / HIST_MIN * w)), y = (h - 2) - (H[i][1] / mx) * (h - 4);
+      x = +x.toFixed(1); y = +y.toFixed(1);
+      pts += (pts ? ' ' : '') + x + ',' + y; if (!first) first = x; lx = x; ly = y;
+    }
+    return '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">'
+      + '<polygon points="' + first + ',' + h + ' ' + pts + ' ' + lx + ',' + h + '" fill="rgba(255,209,102,.13)"/>'
+      + '<polyline points="' + pts + '" fill="none" stroke="#ffd166" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>'
+      + '<circle cx="' + lx + '" cy="' + ly + '" r="2.4" fill="#fff" stroke="#ffd166" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>';
+  }
+
+  function audience(d) {
+    if (!AUD.el || !d) return;
+    var e = d.edge || {}; AUD.au = e.audience || {}; AUD.cf = e.cloudflare || {};
+    var au = AUD.au;
+    if (au.up) {
+      var v5 = +au.viewers_5m || 0;
+      var ts = +au.ts || (Date.now() / 1000), m = Math.floor(ts / 60), H = AUD.hist, L = H[H.length - 1];
+      if (L && L[0] === m) { if (v5 > L[1]) L[1] = v5; }
+      else if (!L || m > L[0]) H.push([m, v5]);
+      while (H.length && H[0][0] < m - HIST_MIN) H.shift();
+      try { localStorage.setItem(HIST_KEY, JSON.stringify(H)); } catch (x) {}
+      AUD.up = AUD.last5 !== null && v5 > AUD.last5; AUD.from = AUD.last5;
+      AUD.last5 = v5; AUD.m = m;
+    } else { AUD.last5 = null; AUD.up = false; }
+    audRender(false);
+  }
+
+  function audRender(fromEvent) {
+    var el = AUD.el, au = AUD.au || {}, cf = AUD.cf || {}, h = '', i;
+    if (!el) return;
+    var box = el.querySelector('.box'), hd = el.querySelector('.h');
+    var showNew = AUD.newAt && (Date.now() - AUD.newAt) < 90000;
+    var ageS = showNew ? Math.round((Date.now() - AUD.newAt) / 1000) : 0;
+    if (au.up) {
+      var v5 = +au.viewers_5m || 0, v1 = +au.viewers_1h || 0;
+      var cs = (au.by_country || []).filter(function (c) { return c && c.cc; }).slice()
+        .sort(function (a, b) { return (+b.uniques || 0) - (+a.uniques || 0) || (+b.requests || 0) - (+a.requests || 0); });
+      var SHOW = 8, chips = '';
+      for (i = 0; i < cs.length && i < SHOW; i++) chips += '<span' + (i === 0 ? ' class="top"' : '') + '>' + esc(cs[i].cc) + ' <b>' + (+cs[i].uniques || 0) + '</b></span>';
+      if (cs.length > SHOW) chips += '<span class="more">+' + (cs.length - SHOW) + '</span>';
+      var hs = (au.by_host || []).filter(function (x) { return x && x.host; }).slice()
+        .sort(function (a, b) { return (+b.uniques || 0) - (+a.uniques || 0); }).slice(0, 2);
+      var hosts = hs.map(function (x) { return '<span>' + esc(shortHost(x.host)) + ' <b>' + (+x.uniques || 0) + '</b></span>'; }).join('');
+      var mon = +au.monitors_1h || 0, bots = +au.bots_1h || 0;
+      hd.innerHTML = 'Audience \u00b7 <i>' + (v5 > 0 ? 'live now' : 'live') + '</i>';
+      el.className = '';
+      h += '<div class="top"><b class="n' + (v5 === 0 ? ' zero' : '') + '">' + v5 + '</b>'
+         + '<div class="t"><b>' + (v5 === 1 ? 'person on site' : 'people on site') + '</b><span>' + (v5 > 0 ? 'unique people \u00b7 5 min' : 'quiet \u00b7 none in 5 min') + '</span></div>'
+         + '<div class="hr"><b>' + v1 + '</b><span>this hour</span></div></div>';
+      h += '<div class="sp">' + audSpark(AUD.hist, AUD.m || Math.floor(Date.now() / 60000), 250, 22)
+         + '<div class="cap"><span>5-min visitors \u00b7 60 min</span><b>' + (AUD.hist.length < 2 ? 'collecting\u2026' : cs.length + (cs.length === 1 ? ' country' : ' countries')) + '</b></div></div>';
+      h += '<div class="cc">' + (chips || '<span class="more">no visitors this hour</span>') + '</div>';
+      if (hosts) h += '<div class="row">' + hosts + '</div>';
+      h += '<div class="ex">' + (+au.requests_1h || 0) + ' req/h \u00b7 excluded: ' + mon + (mon === 1 ? ' monitor' : ' monitors') + ' \u00b7 ' + bots + (bots === 1 ? ' bot' : ' bots') + '</div>';
+      h += '<div class="new' + (showNew ? ' on' : '') + '">' + (showNew ? AUD.newTxt + ' \u00b7 ' + ageS + 's ago' : '') + '</div>';
+    } else if (cf.up) {
+      /* honest fallback: tunnel counters are requests, never people */
+      hd.innerHTML = 'Audience \u00b7 <i>requests only</i>';
+      el.className = 'fallback';
+      h += '<div class="top"><b class="n">' + Math.round(+cf.req_per_min || 0) + '</b>'
+         + '<div class="t"><b>req / min</b><span>tunnel \u00b7 requests, not people</span></div>'
+         + '<div class="hr"><b>' + (+cf.active_streams || 0) + '</b><span>in-flight</span></div></div>';
+      h += '<div class="cc">' + (cf.locations || []).map(function (l) { return '<span>' + esc(String(l).toUpperCase()) + '</span>'; }).join('') + '</div>';
+      h += '<div class="ex">visitor count unavailable \u00b7 audience feed down</div>';
+    } else {
+      hd.innerHTML = 'Audience \u00b7 <i>offline</i>';
+      el.className = 'fallback';
+      h += '<div class="ex">edge telemetry unavailable</div>';
+    }
+    if (h !== AUD.html) { AUD.html = h; box.innerHTML = h; }
+    if (AUD.up && !fromEvent) { AUD.up = false; audPop(); audTick(AUD.from || 0, AUD.last5 || 0); }
   }
 
   /* ---------------- mode ---------------- */
@@ -396,6 +587,8 @@
   document.addEventListener('keydown', keys);
   setInterval(mirror, MIRROR_MS);
   mirror();
+  /* the "new visitor \u00b7 Ns ago" line ages on its own clock */
+  setInterval(function () { if (AUD.newAt) { try { audRender(true); } catch (e) {} } }, 5000);
 
   /* zero-touch: wrap the panel renderer to get /api/all for free, exactly the
      way galaxy.js and cinema.js wrap netSceneTick */
@@ -404,7 +597,7 @@
     if (typeof prev !== 'function') { setTimeout(wrap, 300); return; }
     window.renderNewPanels = function (d) {
       if (H.privacy) { try { redact(d, 0); } catch (e) {} }
-      try { prev(d); } finally { try { vitals(d); } catch (e) {} }
+      try { prev(d); } finally { try { vitals(d); } catch (e) {} try { audience(d); } catch (e) {} }
     };
   })();
 

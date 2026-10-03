@@ -24,6 +24,25 @@ BOT = re.compile(r"bot|crawl|spider|scan|curl|wget|python-requests|python-urllib
                  r"|java/|okhttp|masscan|zgrab|nmap|censys|shodan", re.I)
 LINE = re.compile(r'^(\d+(?:\.\d+)?) (\S+) (\S+) (\S+) (\d{3}) "(.*)"$')
 
+# Two of the logged fields are whatever the client said they were. $host is the
+# Host header and $http_cf_ipcountry is a plain request header that only means
+# anything when the request really came through Cloudflare — anyone who can
+# reach the origin directly can put what they like in it. Both end up as
+# strings in audience.json and then on the wall, so neither is copied through
+# unexamined. (The front end escapes them today; this is so that stays true
+# whatever renders them next, and so one junk header cannot crowd the real
+# countries out of a twelve-row table.)
+CC = re.compile(r"^[A-Za-z]{2}$")
+HOSTNAME = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9._-]{0,62}[A-Za-z0-9])?$")
+
+
+def _country(raw):
+    return raw.upper() if CC.match(raw or "") else "??"
+
+
+def _host(raw):
+    return raw.lower() if HOSTNAME.match(raw or "") else "(invalid)"
+
 
 def _public(ip):
     try:
@@ -65,9 +84,9 @@ def main():
         r60 += 1; v60.add(ip)
         if now - ts <= 300:
             r5 += 1; v5.add(ip)
-        c = cc.setdefault(country if country not in ("-", "") else "??", {"ips": set(), "requests": 0})
+        c = cc.setdefault(_country(country), {"ips": set(), "requests": 0})
         c["ips"].add(ip); c["requests"] += 1
-        h = hosts.setdefault(host, {"ips": set(), "requests": 0})
+        h = hosts.setdefault(_host(host), {"ips": set(), "requests": 0})
         h["ips"].add(ip); h["requests"] += 1
     by_country = sorted(({"cc": k, "uniques": len(v["ips"]), "requests": v["requests"]} for k, v in cc.items()),
                         key=lambda x: (-x["uniques"], -x["requests"]))[:12]

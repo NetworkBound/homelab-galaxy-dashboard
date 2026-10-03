@@ -420,6 +420,18 @@ body #cin .cname{text-shadow:0 0 16px var(--tour-glow),0 1px 2px rgba(0,0,0,.85)
 body #cin .cbar i.now{background:var(--tour);box-shadow:0 0 8px var(--tour-glow)}
 /* the whole scene shares one tour hue at the panel hairlines; keep #tip readable on any palette */
 #tip{background:rgba(4,10,22,.97);border-color:var(--tour-soft);box-shadow:0 8px 24px rgba(0,0,0,.6),0 0 0 1px rgba(0,0,0,.5)}
+
+/* ---- 12. dense-HUD polish ------------------------------------------
+   The brand panel's edge chips carry a whole sentence (PoP list, last
+   attacker) and #title is 228-280 px wide with overflow:hidden, so on
+   camera they read as a clipped fragment. Each chip now ellipsises
+   inside the panel instead of being cut mid-glyph; the chip text itself
+   is also shorter (see chips() below). The hero-only audience panel
+   (hero.js #h-aud) belongs to the hero layout only - in the full HUD it
+   would sit on top of the right rail. */
+#clockbar .chip{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;line-height:1.75}
+#clockbar .chip.good:before,#clockbar .chip.bad:before{display:inline-block;margin-right:5px;vertical-align:1px}
+body:not(.hero) #h-aud{display:none!important}
 </style></head><body>
 
 <canvas id="c"></canvas>
@@ -701,7 +713,10 @@ function animate(now){
   // AFTER ctrl.update(): only now is the camera in its final orientation for
   // this frame, so this is the only point at which label collisions and the
   // hover raycast can be decided against what will actually be drawn.
-  if(window.NETSCENE&&NETSCENE.labelPass){try{NETSCENE.labelPass();}catch(e){NETSCENE._lpExternal=false;}}
+  // a throw here used to vanish silently and leave one frame half-judged (the
+  // rank-5 flow labels, processed last, stayed up over a hot callout - seen as a
+  // 1-in-60 sample in a label audit). Say so, at most once every 5 s.
+  if(window.NETSCENE&&NETSCENE.labelPass){try{NETSCENE.labelPass();}catch(e){NETSCENE._lpExternal=false;if(!window.__lpWarnAt||now-window.__lpWarnAt>5000){window.__lpWarnAt=now;console.warn('labelPass threw:',e&&e.message,e&&e.stack&&e.stack.split('\n')[1]);}}}
   // Shared heartbeat with the nexus (big-screen) view — same beat, same
   // instant, both screens flash together since /api/pulse/stream derives
   // its beat number from wall-clock time, not per-connection state.
@@ -787,13 +802,15 @@ window.loadConfig().then(function(C){
          that are not up leave the chip empty rather than guessing. */
       var e=d.edge||{}, cf=e.cloudflare||{}, cs=e.crowdsec||{};
       var fc=document.getElementById('chip-cf');
-      if(fc){ if(cf.up){ fc.textContent='CF EDGE · '+(cf.ha_connections!=null?cf.ha_connections+' conns':'?')+' · '+Math.round(cf.req_per_min||0)+' req/min · '+(cf.locations||[]).join(' ');
+      if(fc){ if(cf.up){ /* PoPs in one metro collapse to 'SEA ×3' so the chip fits its panel */
+                var locs=(cf.locations||[]).map(function(l){return String(l).toUpperCase();}), metro=locs.length>1&&locs.every(function(l){return l.slice(0,3)===locs[0].slice(0,3);})?locs[0].slice(0,3)+' ×'+locs.length:locs.join(' ');
+                fc.textContent='CF EDGE · '+(cf.ha_connections!=null?cf.ha_connections+' conns':'?')+' · '+Math.round(cf.req_per_min||0)+' req/min · '+metro;
                 fc.className='chip cf'+((cf.err_per_min||0)>0?' warn':''); }
               else { fc.textContent=''; fc.className='chip cf'; } }
       var sc=document.getElementById('chip-cs');
       if(sc){ if(cs.up){ var la=null;(cs.top_attackers||[]).forEach(function(a){if(a&&a.ts&&(!la||a.ts>la.ts))la=a;});
                 var ag=la?Math.max(0,Date.now()/1000-la.ts):0, agS=ag<3600?Math.round(ag/60)+'m':ag<86400?Math.round(ag/3600)+'h':Math.round(ag/86400)+'d';
-                sc.textContent='CROWDSEC · '+(cs.alerts_24h||0)+' atk/24h · '+(cs.banned||0)+' banned'+(la?' · last '+agS+' ago · '+(la.cn||'??')+' · '+String(la.scenario||'').replace(/^crowdsecurity\//,''):'');
+                sc.textContent='CROWDSEC · '+(cs.alerts_24h||0)+' atk/24h · '+(cs.banned||0)+' banned'+(la?' · '+agS+' ago · '+(la.cn||'??')+' · '+String(la.scenario||'').replace(/^crowdsecurity\//,'').replace(/-attempts$|-probing$/,''):'');
                 sc.className='chip'+((cs.alerts_1h||0)>0?' warn':''); }
               else { sc.textContent=''; sc.className='chip'; } }
       /* alert panel goes "hot" when Zabbix has problems */

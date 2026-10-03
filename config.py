@@ -69,6 +69,21 @@ def load_json_config(path=None):
 
 _JSON = load_json_config()
 
+
+def reload_json_config():
+    """Re-read config.json into the layer ``get()`` and ``get_list()`` consult.
+
+    The module-level constants below are a snapshot taken at import and stay
+    that way — only a restart re-reads those. This exists for the one caller
+    that writes the file while the process is still running: without it the
+    wizard reports the *pre-save* state back to the browser (every field blank
+    on a first run), and saving that view a second time writes the blanks back
+    over the Proxmox token and the dashboard key.
+    """
+    global _JSON
+    _JSON = load_json_config()
+    return _JSON
+
 # ---------------------------------------------------------------------------
 # The schema. One entry per setting: env name, config.json key, type, default.
 # ---------------------------------------------------------------------------
@@ -199,6 +214,33 @@ SECTIONS = [
     {"id": "netmap", "title": "LibreNMS netmap", "test": True,
      "help": "A JSON document listing SNMP devices (see docs/data-sources.md).",
      "fields": [F("NETMAP_URL", "url", "Netmap JSON URL", type="url", placeholder="http://10.0.0.60/netmap.json")]},
+    {"id": "snmp", "title": "SNMP devices", "test": True, "list": True, "prefix": "SNMP",
+     "help": "Any managed switch or router with SNMP enabled becomes a real infrastructure node: per-port state and "
+             "measured throughput, plus LLDP/CDP links between devices. No NMS needed. Only the targets listed here "
+             "are ever polled. Needs the optional pysnmp package (pip install pysnmp; v3 privacy also needs "
+             "cryptography).",
+     "item_fields": [
+         F("HOST", "host", "Address", required=True, placeholder="10.0.0.2",
+           help="Management address of the device. Nothing else is ever contacted."),
+         F("NAME", "name", "Label", placeholder="core-sw", help="Printed instead of the device's sysName."),
+         F("VERSION", "version", "SNMP version", type="select", default="2c", options=["2c", "3"]),
+         F("COMMUNITY", "community", "Community (v2c)", secret=True, help="A read-only community."),
+         F("USER", "user", "User (v3)", placeholder="dashboard"),
+         F("AUTH_PROTO", "auth_proto", "Auth protocol (v3)", type="select", default="sha",
+           options=["none", "md5", "sha", "sha224", "sha256", "sha384", "sha512"]),
+         F("AUTH_PASS", "auth_pass", "Auth passphrase (v3)", secret=True),
+         F("PRIV_PROTO", "priv_proto", "Privacy protocol (v3)", type="select", default="none",
+           options=["none", "des", "3des", "aes", "aes192", "aes256"]),
+         F("PRIV_PASS", "priv_pass", "Privacy passphrase (v3)", secret=True),
+         F("PORT", "port", "UDP port", type="int", default=161),
+         F("ROLE", "role", "Role", type="select", default="switch", options=["switch", "router", "gateway", "ap"],
+           help="gateway: drawn as the first hop inside the internet edge. Everything else hangs off whatever "
+                "LLDP/CDP says it is plugged into."),
+     ],
+     "fields": [
+         F("SNMP_POLL_S", "poll_s", "Poll interval (s)", type="int", default=30,
+           help="Counters are differenced over this interval; structure and neighbours are refreshed every 5 min."),
+     ]},
     {"id": "cloudflared", "title": "cloudflared metrics", "test": True,
      "help": "The tunnel's Prometheus endpoint (cloudflared --metrics): requests/min, edge locations, HA connections.",
      "fields": [F("CLOUDFLARED_METRICS_URL", "url", "Metrics URL", type="url",
@@ -259,6 +301,12 @@ SECTIONS = [
          F("ENABLE_CAMERAS", "cameras", "Camera satellites", type="bool", default=True,
            help="Needs a Frigate URL."),
          F("ENABLE_THREATS", "threats", "Threat feed", type="bool", default=True),
+         F("ENABLE_CINEMATICS", "cinematics", "Cinematic camera moves", type="bool", default=False,
+           help="Every few laps the camera breaks from the tour for a scripted move "
+                "(orbit, explode, close-up, flow arc). Off by default; also toggleable "
+                "per-screen with ?cinematics=on."),
+         F("CINEMATICS_LAPS", "cinematics_laps", "Laps between cinematic moves", type="int", default=3,
+           help="How many full tour laps between moves. Only used when cinematics are on."),
      ]},
     {"id": "access", "title": "Access control",
      "help": "Optional. The dashboard shows your whole infrastructure and has no login of its own; "
@@ -468,6 +516,36 @@ NETMAP_URL = get("NETMAP_URL")
 NTOPNG_URL, NTOPNG_USER, NTOPNG_PASS = get("NTOPNG_URL").rstrip("/"), get("NTOPNG_USER"), get("NTOPNG_PASS")
 NTOPNG_IFNAME, NTOPNG_IFID = get("NTOPNG_IFNAME"), get("NTOPNG_IFID")
 
+# SNMP devices: any managed switch/router, polled directly by snmp.py. The
+# credential fields are secrets (masked in the wizard, absent from
+# /api/config) and never leave config except into the SNMP request itself.
+_SNMP_VERSIONS = {"2c": "2c", "2": "2c", "v2c": "2c", "v2": "2c", "3": "3", "v3": "3"}
+
+
+def snmp_target(row):
+    """Normalise one SNMP target (a config.json row, an env block, or the wizard's test payload)."""
+    row = row if isinstance(row, dict) else {}
+    v = str(row.get("version") or "2c").strip().lower()
+    try:
+        port = int(row.get("port") or 161)
+    except (TypeError, ValueError):
+        port = 161
+    return {"host": str(row.get("host") or "").strip(),
+            "name": str(row.get("name") or "").strip(),
+            "version": _SNMP_VERSIONS.get(v, v),
+            "community": str(row.get("community") or ""),
+            "user": str(row.get("user") or "").strip(),
+            "auth_proto": str(row.get("auth_proto") or "none").strip().lower() or "none",
+            "auth_pass": str(row.get("auth_pass") or ""),
+            "priv_proto": str(row.get("priv_proto") or "none").strip().lower() or "none",
+            "priv_pass": str(row.get("priv_pass") or ""),
+            "port": port if 0 < port < 65536 else 161,
+            "role": str(row.get("role") or "switch").strip().lower() or "switch"}
+
+
+SNMP_TARGETS = [t for t in (snmp_target(r) for r in get_list("snmp")) if t["host"]]
+SNMP_POLL_S = get("SNMP_POLL_S")
+
 # Ollama: an indexed list of instances (showtime panel) plus the chat relay.
 OLLAMA_INSTANCES = [
     {"name": o["name"], "url": o["url"].rstrip("/"),
@@ -495,6 +573,7 @@ ALERT_SEV, ALERT_IGNORE = get("ALERT_SEV"), get("ALERT_IGNORE")
 # Features.
 ENABLE_NEXUS, ENABLE_DOOM = get("ENABLE_NEXUS"), get("ENABLE_DOOM")
 ENABLE_CAMERAS, ENABLE_THREATS = get("ENABLE_CAMERAS"), get("ENABLE_THREATS")
+ENABLE_CINEMATICS, CINEMATICS_LAPS = get("ENABLE_CINEMATICS"), get("CINEMATICS_LAPS")
 
 # Remote GPU exporters (nvidia_gpu_exporter Prometheus text) on other machines.
 REMOTE_GPU_EXPORTERS = [
@@ -630,4 +709,20 @@ def missing_required():
         problems.append("NTOPNG_URL is set but NTOPNG_PASS is not.")
     if CF_API_TOKEN and not CF_ZONE_ID:
         problems.append("CF_API_TOKEN is set but CF_ZONE_ID is not.")
+    for i, t in enumerate(SNMP_TARGETS):
+        tag = f"SNMP_{i}_HOST ({t['host']})"
+        if t["version"] == "2c":
+            if not t["community"]:
+                problems.append(f"{tag} is SNMPv2c but SNMP_{i}_COMMUNITY is empty.")
+        elif t["version"] == "3":
+            if not t["user"]:
+                problems.append(f"{tag} is SNMPv3 but SNMP_{i}_USER is empty.")
+            if t["auth_proto"] != "none" and not t["auth_pass"]:
+                problems.append(f"{tag}: SNMP_{i}_AUTH_PROTO is {t['auth_proto']} but SNMP_{i}_AUTH_PASS is empty.")
+            if t["priv_proto"] != "none" and not t["priv_pass"]:
+                problems.append(f"{tag}: SNMP_{i}_PRIV_PROTO is {t['priv_proto']} but SNMP_{i}_PRIV_PASS is empty.")
+            if t["priv_proto"] != "none" and t["auth_proto"] == "none":
+                problems.append(f"{tag}: SNMPv3 privacy requires an auth protocol too (authPriv).")
+        else:
+            problems.append(f"SNMP_{i}_VERSION must be 2c or 3, not {t['version']!r}.")
     return problems

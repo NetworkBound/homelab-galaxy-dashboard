@@ -10,7 +10,8 @@ User=dashboard
 Group=dashboard
 WorkingDirectory=/opt/homelab-galaxy-dashboard
 
-# Credentials live here, mode 0600, owned by the service account.
+# Credentials live here. install.sh creates it root-owned, group
+# 'dashboard', mode 0640: readable by the service, not by anyone else.
 EnvironmentFile=/etc/homelab-galaxy-dashboard/env
 
 # /api/setup/apply re-executes this same process (os.execv): the PID survives,

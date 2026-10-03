@@ -80,7 +80,7 @@ class DemoSmokeTest(unittest.TestCase):
         self.assertEqual([n["id"] for n in cfg["nodes"]], ["pve1", "pve2"])
         for n in cfg["nodes"]:
             self.assertEqual(set(n), {"id", "label", "accent"})
-        for f in ("nexus", "cameras", "threats", "audience", "lights", "doom", "setup", "chat"):
+        for f in ("nexus", "cameras", "threats", "audience", "lights", "doom", "setup", "chat", "snmp"):
             self.assertIn(f, cfg["features"])
         self.assertFalse(cfg["features"]["setup"])
         self.assertIn("stopped", cfg["palette"])
@@ -96,7 +96,7 @@ class DemoSmokeTest(unittest.TestCase):
         d = json.loads(body)
         for key in ("guests", "nodes", "nodes2", "storage", "pools", "zfs", "backups", "unifi", "zabbix", "zbx2",
                     "cameras", "frigate", "sources", "health", "latency", "netmap", "top", "certs", "telemetry",
-                    "probe", "topology", "edge", "external", "addons", "ts", "total", "running"):
+                    "probe", "snmp", "topology", "edge", "external", "addons", "ts", "total", "running"):
             self.assertIn(key, d, key)
         self.assertGreater(d["total"], 10)
         for block in ("cloudflare", "crowdsec", "secmon", "audience", "threats"):
@@ -107,6 +107,13 @@ class DemoSmokeTest(unittest.TestCase):
         for key in ("nodes", "links", "flows", "totals", "flow_meta", "edge", "external"):
             self.assertIn(key, topo)
         self.assertTrue(any(n["kind"] == "pvehost" for n in topo["nodes"]))
+        # polled switches (snmp.py) are infrastructure kinds; the netmap leaves share the id prefix but not the shape
+        snmp_nodes = [n for n in topo["nodes"] if n["id"].startswith("snmp:") and n["kind"] in ("switch", "ap", "gateway")]
+        self.assertTrue(snmp_nodes, "demo must show SNMP-polled switches")
+        self.assertTrue(all(n["meta"]["ports"] and n["meta"]["neighbors"] for n in snmp_nodes))
+        self.assertTrue(any(n["id"].startswith("lldp:") for n in topo["nodes"]), "and their LLDP neighbours")
+        _, allj = self.get("/api/all")
+        self.assertEqual(allj["snmp"]["devices_up"], len(allj["snmp"]["devices"]))
         _, gpu = self.get("/api/gpu")
         self.assertEqual(gpu["render_backend"], "demo")
         self.assertTrue(gpu["gpus"])

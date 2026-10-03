@@ -147,6 +147,9 @@ directly through NVML, which needs no exporter.
 
 **Config:** `NETMAP_URL`
 
+If you only want your own switches on the map, the SNMP source below needs no
+NMS at all; this one is for an estate LibreNMS already knows.
+
 Points at a JSON document describing your SNMP estate:
 
 ```json
@@ -163,6 +166,77 @@ Points at a JSON document describing your SNMP estate:
 Devices nothing else lists (including every *down* device) become topology
 nodes under the gateway; devices the prober found get their SNMP name. `down`
 devices also raise the pulse severity on both screens.
+
+---
+
+## SNMP devices — any managed switch or router
+
+**Config:** `SNMP_<n>_HOST`, `SNMP_<n>_NAME`, `SNMP_<n>_VERSION` (`2c` | `3`),
+`SNMP_<n>_COMMUNITY`, `SNMP_<n>_USER`, `SNMP_<n>_AUTH_PROTO`, `SNMP_<n>_AUTH_PASS`,
+`SNMP_<n>_PRIV_PROTO`, `SNMP_<n>_PRIV_PASS`, `SNMP_<n>_PORT`, `SNMP_<n>_ROLE`,
+`SNMP_POLL_S`
+
+**Dependency:** `pip install pysnmp` (pure Python, not in `requirements.txt` so
+the base install stays light). SNMPv3 with privacy also needs
+`pip install cryptography`. Without the library the source reports
+`library missing` in `/api/all` → `snmp.err` and nothing else changes.
+
+The physical layer of the topology otherwise comes from UniFi alone: a switch
+is a node with ports and an uplink only if the controller manages it, and
+anything else is at best a leaf the prober found. This source polls your own
+gear directly — Cisco, MikroTik, TP-Link, Netgear, HP, whatever speaks SNMP —
+so it gets the same treatment, with no NMS in between. Only the targets you
+list are ever contacted: no discovery, no sweep, no community guessing.
+
+| What | OIDs | Used for |
+|---|---|---|
+| Identity | `sysName`, `sysDescr`, `sysObjectID`, `sysUpTime` | Label, vendor (from the enterprise number), uptime |
+| Interfaces | `ifTable` + `ifXTable`: name, alias, type, speed (`ifHighSpeed`), MAC, admin/oper status, in/out errors | Per-port state on the node |
+| Counters | `ifHCInOctets` / `ifHCOutOctets`, falling back to the 32-bit `ifInOctets` / `ifOutOctets` | Per-port throughput, differenced over time |
+| Neighbours | LLDP-MIB `lldpRemTable` + `lldpRemManAddrTable` (+ `lldpLocPortTable` for the port mapping); CDP `cdpCacheTable` when the device reports no LLDP neighbours at all | Who is on the far end of each port: chassis id, port id, system name, management address |
+
+Structure and neighbours are refreshed every 5 minutes; status and counters
+every `SNMP_POLL_S` (default 30 s). Rates are differenced and lightly EMA-
+smoothed exactly like every other counter in the dashboard, with two rules on
+top because interface counters are the one place this matters:
+
+- **64-bit first.** `ifHCInOctets` is used wherever the agent has it. A 32-bit
+  `ifInOctets` wraps every ~34 s on a busy gigabit port, so where only those
+  exist a reading is trusted only if the port could not have wrapped more than
+  once in the interval (speed × dt < 2³² bytes); a 10G port on 32-bit-only
+  gear therefore shows no rate, by design. Each port carries `hc: true|false`.
+- **A counter that went backwards — wrap or reset — is no reading.** That
+  interval is `measured: false` with `null` rates; the next one measures again.
+  There is no "wrap correction", because a counter that wrapped twice looks
+  exactly like one that wrapped once, and a guessed gigabit is worse than a gap.
+
+**How it lands in the topology.** `topology.py` reads `/api/all` → `snmp` and:
+
+- draws each device as a `switch` (or `ap` / `gateway` by `SNMP_<n>_ROLE`),
+  id `snmp:<host>`, with `meta.ports[]`, `meta.neighbors[]`, `meta.vendor`,
+  `meta.uptime_s`, and the uplink port's rate as the node's `rx`/`tx`;
+- places it by LLDP/CDP evidence: a gateway-role device under `wan`,
+  anything else under the neighbour that is already on the map (the UniFi
+  gateway, a UniFi switch, another polled switch, in that order). With no
+  evidence at all it hangs off the gateway, which is genuinely all we know;
+- **merges rather than duplicates.** A polled box that is already a node —
+  same chassis MAC, port MAC or management address as a UniFi device or a
+  Proxmox host — gets no second node: its ports and neighbours enrich the
+  existing one. The same rule resolves every neighbour: a Proxmox host that
+  runs `lldpd`, a probed host, a UniFi client, a guest — matched by MAC or
+  address, never by name, and attached to the real switch port;
+- draws a neighbour nothing else lists as `lldp:<chassis-mac>` under the port
+  that saw it. That is an observation the switch made in the last couple of
+  minutes, not a guess.
+
+A device that does not answer is `up: false` with the reason — `timeout`,
+`auth`, `nosuch`, `library` — and its node is `down`; its last-known ports
+stay for shape, flagged `stale`, with every rate absent. The wizard's **Test**
+button runs one real poll and tells you which of those happened. One honest
+limit: an SNMPv2c agent silently drops a request with a wrong community, so
+on the wire that is indistinguishable from a dead host, and the message says
+so. SNMPv3 is better here — a wrong auth passphrase is reported as such — but
+a wrong *privacy* passphrase is dropped silently too.
 
 ---
 

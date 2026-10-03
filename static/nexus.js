@@ -21,6 +21,12 @@
  *     and above the WAN sun. Its stars are measured (tunnel PoPs + visitor
  *     countries). It is NEVER in CONFIG.nodes and nothing that iterates the
  *     nodes sees it.
+ *   - AUDIENCE: the viewer countries are labelled bodies on THE EDGE sized by
+ *     their unique visitors (leader lines to their labels), a gold headline
+ *     under the status block, an arrival flare + shockwave + a rate-limited
+ *     camera crane captioned NEW VIEWER · CC, and a dedicated `audience` stop
+ *     and showcase chapter. Only edge.audience is ever called people; tunnel
+ *     request counters say "requests".
  *   - the room's other screen: /api/lightstate(/stream) is what the wall
  *     publishes for the lights + its tour position. The director here follows
  *     it in lockstep (same smootherstep ease, driven by the wall's own prog),
@@ -422,6 +428,9 @@
      (hud, overview bounds, lockstep host/blk stops) should ever see it. */
   var EDGE = buildGalaxy({ id: 'edge', label: 'THE EDGE', accent: EDGE_ACC, hot: EDGE_HOT, pos: EDGE_POS, scale: EDGE_SCALE, tilt: [1.15, 0, 0.5], disc: 'galaxy_edge.png', spin: 1, N: 2400 });
   EDGE.coreR = 30; EDGE.spin = 0.012; EDGE.light.intensity = 0;
+  // gain trimmed: verified at THE EDGE stop that the builder's HDR core gain + the orange c1 still summed (with the
+  // halo and bloom) to a flat white coin; at this gain the ACES grade leaves the centre orange-hot
+  EDGE.coreMat.uniforms.gain.value = 0.75;
 
   function placeGuest(gal, i, n) {
     // deterministic spot on an arm from the guest's name — stable between polls.
@@ -574,6 +583,34 @@
     FAM['th' + thi] = { color: 0xff5a6a, bps: 0, u: 0.85, k: 6.5, rate: 0, onArrive: function () { threatArrive(); } };
   }
   var NO_GUIDE = { edge_view: 1, bridge_r: 1, th0: 1, th1: 1, th2: 1, th3: 1 };
+  /* AUDIENCE: a viewer mote launches from the COUNTRY's own star (not the EDGE core) when that country's
+     unique-visitor count rises. VW_N launch curves are rewritten at launch time (vwLaunch, from the star's live world
+     position, so the EDGE's spin never leaves the mote starting off-star) and used round-robin; the queue drains at
+     3/s and a flight is ~4 s, so at most ~12 are ever in flight and a slot is never rewritten under a comet still
+     riding it. A viewers_5m rise with no per-country delta (a returning 1 h unique) keeps the old edge_view route
+     from the core - the country is genuinely unknown then. */
+  var VW_N = 16, vwNext = 0;
+  for (var vwi = 0; vwi < VW_N; vwi++) {
+    CURVES['vw' + vwi] = new THREE.CubicBezierCurve3(EDGE_POS.clone(), EDGE_C1.clone(), EDGE_C2.clone(), SUN.clone());
+    FAM['vw' + vwi] = { color: 0xffd166, bps: 0, u: 0.6, k: 1.9, rate: 0 };
+    NO_GUIDE['vw' + vwi] = 1;
+  }
+  // gold arrival ping at the launching star: PING_N pooled sprites, scale grows / opacity decays over PING_S seconds
+  // (pingTick); world scale is capped against camera distance so a ping near the lens never washes the frame
+  var PING_N = 4, PING_S = 1.5, pings = [];
+  for (var pgi = 0; pgi < PING_N; pgi++) {
+    var pSp = new THREE.Sprite(new THREE.SpriteMaterial({ map: TEX_GLOW, color: 0xffd166, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+    pSp.visible = false; scene.add(pSp); pings.push({ sp: pSp, t: PING_S });
+  }
+  function pingAt(p) { var best = pings[0]; for (var i = 1; i < PING_N; i++) if (pings[i].t > best.t) best = pings[i]; best.t = 0; best.sp.position.copy(p); best.sp.visible = true; }
+  function pingTick(dt) {
+    for (var i = 0; i < PING_N; i++) {
+      var P = pings[i];
+      if (P.t >= PING_S) { if (P.sp.visible) { P.sp.visible = false; P.sp.material.opacity = 0; } continue; }
+      P.t += dt; var f = clamp(P.t / PING_S, 0, 1), s = Math.min(40 + 200 * f, cam.position.distanceTo(P.sp.position) * 0.16);
+      P.sp.scale.set(s, s, 1); P.sp.material.opacity = 0.75 * (1 - f) * (1 - f);
+    }
+  }
   function famU(f) { return f.u != null ? f.u : normBps(f.bps); }
   /* CN 96 -> 160 (2026-09-14) to carry the exosphere comet families */
   var CN = 200, TRAIL = 7, cpos = new Float32Array(CN * TRAIL * 3), ccol = new Float32Array(CN * TRAIL * 3), csz = new Float32Array(CN * TRAIL), cph = new Float32Array(CN * TRAIL);
@@ -602,10 +639,24 @@
   function cometSpawnAt(fam, t0, v, sz, life) {
     for (var i = 0; i < CN; i++) if (cometS[i].t >= 1) { var s = cometS[i]; s.fam = fam; s.t = t0; s.v = v; s.sz = sz; s.life = life || 0; return; }
   }
-  var viewQueue = 0, viewAcc = 0;   // gold viewer comets waiting to launch (drained at ~3/s so they read as a stream, not a clump)
+  // gold viewer motes waiting to launch, drained at ~3/s so they read as a stream, not a clump. A fixed 32-slot ring
+  // of EDGE star indices (-1 = country unknown, launch from the core); pushed only from the 6 s poll, never per frame.
+  var VQ = new Int16Array(32), vqH = 0, vqT = 0, viewAcc = 0;
+  function viewPush(idx) { if (vqT - vqH < 32) VQ[vqT++ & 31] = idx; }
+  function viewQueue() { return vqT - vqH; }
+  function vwLaunch(idx) {
+    var st = idx >= 0 && edgeStars[idx];
+    if (!st) { cometSpawn('edge_view'); return; }
+    _local.fromArray(L_estar[idx].local); EDGE.G.localToWorld(_local);
+    var k = vwNext++ % VW_N, cv = CURVES['vw' + k];
+    cv.v0.copy(_local); cv.v3.copy(SUN); cv.v1.copy(_local).lerp(SUN, 0.3); cv.v1.y += 90; cv.v2.copy(SUN).lerp(_local, 0.3); cv.v2.y += 60;
+    pingAt(_local); cometSpawn('vw' + k);
+    // the arrival is an EVENT: the star flares (edgeBreathe), the EDGE fires a gold shockwave from its core, the headline flashes
+    edgeFlare[idx] = 2; EDGE.ringT = 0; EDGE.ring.material.color.setHex(0xffd166); audHit();
+  }
   var spawnAcc = {};   // per-family accumulator, keys created lazily in cometTick
   function cometTick(dt) {
-    if (viewQueue > 0) { viewAcc += dt * 3; while (viewAcc >= 1 && viewQueue > 0) { viewAcc -= 1; viewQueue -= 1; cometSpawn('edge_view'); } }
+    if (vqT > vqH) { viewAcc += dt * 3; while (viewAcc >= 1 && vqT > vqH) { viewAcc -= 1; vwLaunch(VQ[vqH++ & 31]); } } else viewAcc = 0;
     Object.keys(FAM).forEach(function (f) {
       var u = famU(FAM[f]); if (u <= 0) return;
       var per = FAM[f].rate != null ? FAM[f].rate : (0.4 + u * 7);   // exosphere families carry their own (lower) cadence
@@ -805,7 +856,17 @@
     if (L.el.style.transform !== tx) L.el.style.transform = tx;
     if (L.el.style.opacity !== '1') L.el.style.opacity = '1';
   }
-  function hideLabel(L) { L._vis = false; if (L.el.style.opacity !== '0') L.el.style.opacity = '0'; }
+  // class swap (e.g. a country label growing into the big .viewer tier) changes the box size: re-measure with the text batch
+  function setLabelClass(L, cls) { if (L._cls === cls) return; L._cls = cls; L.el.className = cls; PENDING_MEASURE.push(L); }
+  function hideLabel(L) { L._vis = false; if (L.el.style.opacity !== '0') L.el.style.opacity = '0'; if (L.lead && L._leadTx) { L._leadTx = ''; L.lead.style.opacity = '0'; } }
+  // leader from the star (x0,y0) to the nearest point on the placed box; transform + opacity writes only when changed
+  function placeLeader(L, x0, y0, w, h) {
+    var tx = clamp(x0, L.sx, L.sx + w), ty = clamp(y0, L.sy, L.sy + h), dx = tx - x0, dy = ty - y0, len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 22) { if (L._leadTx) { L._leadTx = ''; L.lead.style.opacity = '0'; } return; }
+    var ux = dx / len, uy = dy / len, gap = 11;   // start just outside the star's own glow
+    var s = 'translate3d(' + (x0 + ux * gap).toFixed(1) + 'px,' + (y0 + uy * gap).toFixed(1) + 'px,0) rotate(' + Math.atan2(dy, dx).toFixed(3) + 'rad) scaleX(' + (len - gap).toFixed(1) + ')';
+    if (s !== L._leadTx) { if (!L._leadTx) L.lead.style.opacity = '1'; L._leadTx = s; L.lead.style.transform = s; }
+  }
   function labelsTick(dt) {
     var W = innerWidth, H = innerHeight, placed = [];
     LBL_K = 1 - Math.exp(-dt / 0.045);
@@ -850,6 +911,7 @@
           if (!clash) { x = cx; y = cy; placed.push([bx1, by1, bx2, by2]); shown = true; L._ci = ci; break; }
         }
         if (!shown) { hideLabel(L); continue; }
+        if (L.lead) { placeLabel(L, x, y); placeLeader(L, x0, y0, w, h); continue; }   // placed first so the leader sees the damped box position
         var far = cam.position.distanceTo(L.pos) > 420;
         if (L._far !== far) { L._far = far; L.el.classList.toggle('far', far); }
       } else {
@@ -1020,27 +1082,85 @@
      (size ~ sqrt(bytes)). Positions are hashed from the key so they stay put between polls. Labels are
      pool-placed .lbl.station and only shown at the WAN / EDGE / threat shots (+ PoPs and top 4 at OVERVIEW). */
   var EDGE_N = 24, edgeStars = [], L_estar = [];
-  for (var ei = 0; ei < EDGE_N; ei++) { var LE = mkLabel('station', '<b></b><span></span>'); LE.poolItem = true; LE.on = false; LE.mode = 'guest'; LE.frame = EDGE.G; LE.local = [0, 0, 0]; L_estar.push(LE); }
-  var edgeInfo = { audience: false, viewers: 0, streams: 0, rpm: 0, ha: 0, pops: [] }, lastViewers = null;
-  function edgeSub() {
-    return edgeInfo.audience ? plural(edgeInfo.viewers, 'viewer') + ' · 5 min'
-      : edgeInfo.streams + ' in-flight · ' + Math.round(edgeInfo.rpm) + ' req/min · ' + edgeInfo.ha + ' HA';
+  // fixed per-slot state for the live EDGE animation (edgeBreathe): base size/glow from the poll, share weight
+  // (-1 = PoP), seconds of arrival flare left, and the poll-time position scratch the spread pass works in
+  var edgeBase = new Float32Array(EDGE_N), edgeGlow = new Float32Array(EDGE_N), edgeW = new Float32Array(EDGE_N), edgeFlare = new Float32Array(EDGE_N);
+  var epx = new Float32Array(EDGE_N), epy = new Float32Array(EDGE_N), epz = new Float32Array(EDGE_N);
+  /* the EDGE moves with the data, every frame, from measured values only:
+     - PoP stars pulse at the same cadence the shield station uses (1.2 + req/min / 8 rad/s), amplitude with req/min
+     - country stars breathe with their share of the hour's viewers (the top country swells most)
+     - an arrival flares its star for 2 s (glow +2.2, size +60%, squared decay) as the mote leaves it
+     One 24-float loop + two tiny attribute uploads (size, glow) per frame. */
+  function edgeBreathe(dt, t) {
+    var n = edgeStars.length; if (!n) return;
+    var rpmU = clamp(edgeInfo.rpm / 60, 0, 1), popRate = 1.2 + Math.min(4, edgeInfo.rpm / 8);
+    for (var i = 0; i < n; i++) {
+      var w = edgeW[i], ph = i * 1.9, br;
+      if (w < 0) br = 1 + (0.06 + 0.16 * rpmU) * Math.sin(t * popRate + ph);
+      else br = 1 + (0.05 + 0.2 * w) * Math.sin(t * (0.9 + 0.5 * w) + ph);
+      var fl = 0;
+      if (edgeFlare[i] > 0) { edgeFlare[i] -= dt; fl = clamp(edgeFlare[i] / 2, 0, 1); fl *= fl; }
+      EDGE.gs[i] = edgeBase[i] * (br + 0.6 * fl); EDGE.ggl[i] = edgeGlow[i] + 2.2 * fl;
+    }
+    EDGE.gg.attributes.size.needsUpdate = true; EDGE.gg.attributes.glow.needsUpdate = true;
   }
+  // each EDGE star label owns a leader line (.lead, a 1-px div stretched with scaleX): the room-readable .viewer boxes
+  // are ~250 px wide while neighbouring stars sit ~60 px apart, so the clash walk legitimately parks a label rows away
+  // from its star - verified on a TV as "anonymous blobs" next to labels that belonged to them. labelsTick draws
+  // the line from the star to the nearest edge of the box whenever they are more than a few px apart.
+  for (var ei = 0; ei < EDGE_N; ei++) {
+    var LE = mkLabel('station', '<b></b><span></span>'); LE.poolItem = true; LE.on = false; LE.mode = 'guest'; LE.frame = EDGE.G; LE.local = [0, 0, 0];
+    LE.lead = document.createElement('i'); LE.lead.className = 'lead'; labelLayer.appendChild(LE.lead); LE._leadTx = ''; L_estar.push(LE);
+  }
+  /* edge.audience is the ONLY source of people: real unique humans (monitors and bots already excluded upstream).
+     When it is down everything here degrades to tunnel counters and says "requests", never "viewers".
+     top = countries sorted by uniques then requests. */
+  var edgeInfo = { audience: false, viewers: 0, viewers1h: 0, req5m: 0, req1h: 0, bots: 0, monitors: 0, countries: 0, top: [], hosts: [], streams: 0, rpm: 0, ha: 0, pops: [] }, lastViewers = null, lastCc = null;
+  function nCountries(n) { return n + (n === 1 ? ' country' : ' countries'); }
+  function edgeSub() {
+    return edgeInfo.audience ? plural(edgeInfo.viewers, 'viewer') + ' now · ' + edgeInfo.viewers1h + ' this hour · ' + nCountries(edgeInfo.countries)
+      : edgeInfo.streams + ' in-flight · ' + Math.round(edgeInfo.rpm) + ' req/min · ' + edgeInfo.ha + ' HA · requests, not people';
+  }
+  // the country roll-call ("US 3 · DE 1 · BR 1 · +8 more") for the AUDIENCE caption and the HUD headline
+  function audienceRoll(n) {
+    var t = edgeInfo.top, s = t.slice(0, n).map(function (r) { return r.cc + ' ' + r.uniques; }).join(' · ');
+    return s + (t.length > n ? ' · +' + (t.length - n) + ' more' : '');
+  }
+  function audienceSub() { return edgeInfo.audience && edgeInfo.top.length ? edgeSub() + ' · ' + audienceRoll(4) : edgeSub(); }
   function edgeUpdate(edge, ext) {
     var cf = (edge && edge.cloudflare) || {}, au = (edge && edge.audience) || {};
-    edgeInfo.audience = !!au.up; edgeInfo.viewers = +au.viewers_5m || 0; edgeInfo.streams = +cf.active_streams || 0; edgeInfo.rpm = cf.up ? (+cf.req_per_min || 0) : 0; edgeInfo.ha = +cf.ha_connections || 0;
+    edgeInfo.audience = !!au.up; edgeInfo.viewers = +au.viewers_5m || 0; edgeInfo.viewers1h = +au.viewers_1h || 0; edgeInfo.req5m = +au.requests_5m || 0; edgeInfo.req1h = +au.requests_1h || 0;
+    edgeInfo.bots = +au.bots_1h || 0; edgeInfo.monitors = +au.monitors_1h || 0; edgeInfo.hosts = au.up ? (au.by_host || []) : [];
+    edgeInfo.streams = +cf.active_streams || 0; edgeInfo.rpm = cf.up ? (+cf.req_per_min || 0) : 0; edgeInfo.ha = +cf.ha_connections || 0;
     edgeInfo.pops = cf.up ? (cf.locations || []).slice(0, 8) : [];
     // request comets: cadence follows req/min, capped so a burst stays readable (3/s); 0 req/min = none
     FAM.edge_in.u = edgeInfo.rpm > 0 ? clamp(0.3 + edgeInfo.rpm / 200, 0, 1) : 0;
     FAM.edge_in.rate = Math.min(3, 0.12 + edgeInfo.rpm / 25);
-    // new unique viewers since the last poll (only when the REAL audience feed is up; tunnel counters are never viewers)
-    if (au.up) { if (lastViewers != null && edgeInfo.viewers > lastViewers) viewQueue = Math.min(20, viewQueue + (edgeInfo.viewers - lastViewers)); lastViewers = edgeInfo.viewers; } else lastViewers = null;
+    var rows = au.up ? (au.by_country || []).filter(function (r) { return r.cc && r.cc !== '??'; }) : [];
+    rows.sort(function (a, b) { return ((+b.uniques || 0) - (+a.uniques || 0)) || ((+b.requests || 0) - (+a.requests || 0)); });
+    edgeInfo.top = rows.map(function (r) { return { cc: r.cc, uniques: +r.uniques || 0, requests: +r.requests || 0 }; });
+    edgeInfo.countries = rows.length;
+    // new people since the last poll (only when the REAL audience feed is up; tunnel counters are never viewers):
+    // a country whose 1 h unique count rose names the star the mote launches from (newCc); any further viewers_5m
+    // rise beyond those is a returning visitor of unknown country and launches from the core (-1)
+    var newCc = {}, named = 0;
+    if (au.up) {
+      var cur = {}; rows.forEach(function (r) { cur[r.cc] = +r.uniques || 0; });
+      if (lastCc) rows.forEach(function (r) { var d = cur[r.cc] - (lastCc[r.cc] || 0); if (d > 0) { newCc[r.cc] = d; named += d; } });
+      lastCc = cur;
+      var rise = (lastViewers != null && edgeInfo.viewers > lastViewers) ? edgeInfo.viewers - lastViewers : 0;
+      lastViewers = edgeInfo.viewers;
+      for (var ui = 0; ui < Math.min(20, rise - named); ui++) viewPush(-1);
+    } else { lastViewers = null; lastCc = null; }
     var list = [];
     edgeInfo.pops.forEach(function (pp, i) { list.push({ key: 'pop:' + pp, pop: true, name: String(pp), sub: 'cloudflare pop', w: 1, rank: i }); });
     var cc = [];
-    if (au.up && (au.by_country || []).length) {
-      var mx = 1; (au.by_country || []).forEach(function (r) { mx = Math.max(mx, +r.uniques || 0); });
-      (au.by_country || []).slice(0, EDGE_N - list.length).forEach(function (r) { cc.push({ key: 'cc:' + r.cc, name: r.cc || '??', sub: plural(+r.uniques || 0, 'viewer'), w: (+r.uniques || 0) / mx }); });
+    if (rows.length) {
+      var mx = 1; rows.forEach(function (r) { mx = Math.max(mx, +r.uniques || 0); });
+      rows.slice(0, EDGE_N - list.length).forEach(function (r) {
+        var n = +r.uniques || 0;
+        cc.push({ key: 'cc:' + r.cc, cc: r.cc, viewer: true, name: r.cc + ' · ' + n, sub: plural(n, 'viewer') + ' · ' + plural(+r.requests || 0, 'request'), w: n / mx, n: n, fresh: newCc[r.cc] || 0 });
+      });
     } else if (ext && ext.up && (ext.by_country || []).length) {
       var rows = (ext.by_country || []).filter(function (r) { return r.cc && r.cc !== '??' && +r.bytes > 0; }).slice(0, 8), mb = 1;
       rows.forEach(function (r) { mb = Math.max(mb, Math.sqrt(+r.bytes)); });
@@ -1048,18 +1168,40 @@
     }
     cc.forEach(function (s, i) { s.rank = i; list.push(s); });
     edgeStars = list.slice(0, EDGE_N);
-    var c = new THREE.Color();
-    for (var i = 0; i < EDGE_N; i++) { EDGE.gs[i] = 0; L_estar[i].on = false; }
+    var c = new THREE.Color(), nS = edgeStars.length;
+    for (var i = 0; i < EDGE_N; i++) { EDGE.gs[i] = 0; edgeBase[i] = 0; edgeW[i] = -1; L_estar[i].on = false; }
     edgeStars.forEach(function (s, i) {
       var h = hash(s.key), h2 = hash(s.key + '#'), h3 = hash(s.key + '##');
       var r = s.pop ? 42 + h * 40 : 95 + Math.pow(h, 0.8) * 150, arm = h2 < 0.5 ? 0 : 1;
       var th = arm * Math.PI + r * 0.0165 + (h3 - 0.5) * 0.7;
-      var x = Math.cos(th) * r, y = (h2 - 0.5) * 10, z = Math.sin(th) * r, j = i * 3;
+      epx[i] = Math.cos(th) * r; epy[i] = (h2 - 0.5) * 10; epz[i] = Math.sin(th) * r;
+    });
+    // spread: hashed spots can coincide (three countries landed within 6 units of each other - verified on a TV as one
+    // blob with one label), so a few repulsion passes push any pair closer than EDGE_MIN_D apart in the disc plane.
+    // Deterministic for a given star set, so stars still stay put between polls; 24 stars, poll-time only.
+    var EDGE_MIN_D = 44;
+    for (var it = 0; it < 8; it++) for (var a = 0; a < nS; a++) for (var b = a + 1; b < nS; b++) {
+      var dx = epx[b] - epx[a], dz = epz[b] - epz[a], d2 = dx * dx + dz * dz;
+      if (d2 < EDGE_MIN_D * EDGE_MIN_D) {
+        var d = Math.sqrt(d2), ux = d > 0.001 ? dx / d : 1, uz = d > 0.001 ? dz / d : 0, push = (EDGE_MIN_D - d) / 2;
+        epx[a] -= ux * push; epz[a] -= uz * push; epx[b] += ux * push; epz[b] += uz * push;
+      }
+    }
+    edgeStars.forEach(function (s, i) {
+      var x = epx[i], y = epy[i], z = epz[i], j = i * 3;
       EDGE.gp[j] = x; EDGE.gp[j + 1] = y; EDGE.gp[j + 2] = z;
-      c.setHex(s.pop ? 0xffa050 : 0xd9c8ff); EDGE.gc[j] = c.r; EDGE.gc[j + 1] = c.g; EDGE.gc[j + 2] = c.b;
-      EDGE.gs[i] = s.pop ? 34 : 12 + 20 * s.w; EDGE.ggl[i] = s.pop ? 1.2 : 0.3 + 0.6 * s.w; EDGE.gcat[i] = 0;
+      // gold = people (same hue as the viewer motes), orange = tunnel PoPs, pale violet = the flow-bytes fallback.
+      // size AND glow follow uniques (w = share of the top country): the top country projects ~3x the pixels of a
+      // single-visitor one, still under the pool's 240 px cap on a close approach
+      if (s.pop) c.setHex(0xffa050); else if (s.viewer) c.setHex(0xe6d8ff).lerp(new THREE.Color(0xffd166), 0.35 + 0.65 * s.w); else c.setHex(0xd9c8ff);
+      EDGE.gc[j] = c.r; EDGE.gc[j + 1] = c.g; EDGE.gc[j + 2] = c.b;
+      // base size/glow; edgeBreathe() modulates these per frame (PoP pulse at req/min, country breath by share, arrival flare)
+      edgeBase[i] = s.pop ? 34 : s.viewer ? 18 + 44 * s.w : 12 + 20 * s.w; edgeGlow[i] = s.pop ? 1.2 : s.viewer ? 0.5 + 1.2 * s.w : 0.3 + 0.6 * s.w; edgeW[i] = s.pop ? -1 : s.w;
+      EDGE.gs[i] = edgeBase[i]; EDGE.ggl[i] = edgeGlow[i]; EDGE.gcat[i] = 0;
       var L = L_estar[i]; L.local[0] = x; L.local[1] = y; L.local[2] = z; L.star = s;
-      setLabelText(L, s.name, s.sub); L.el.style.color = s.pop ? '#ffb073' : '#d9c8ff';
+      setLabelClass(L, s.viewer && s.rank < 6 ? 'lbl station viewer' : 'lbl station');   // top 6 countries get the room-readable tier
+      setLabelText(L, s.name, s.sub); L.el.style.color = s.pop ? '#ffb073' : s.viewer ? '#ffd9a0' : '#d9c8ff';
+      if (s.fresh) { for (var fi = 0; fi < s.fresh && fi < 5; fi++) viewPush(i); viewerArrived(s); }
     });
     ['position', 'color', 'size', 'glow'].forEach(function (k) { EDGE.gg.attributes[k].needsUpdate = true; });
     EDGE.gg.setDrawRange(0, edgeStars.length);
@@ -1091,14 +1233,20 @@
     cfStation.material.opacity = (cfState.up ? 0.5 + 0.3 * pulse : 0.1) * trim;
     cfStation.getWorldPosition(L_cf.pos);
     var mode = LABEL.mode, wantN = (mode === 'wan' || mode === 'edge') ? EXO_N : (mode === 'over' || mode === 'threat') ? 4 : 0;
-    L_cf.on = cfState.up && (mode === 'wan' || mode === 'over' || mode === 'edge' || mode === 'threat') && !SC.active;
-    // EDGE stars: PoPs + every country at WAN/EDGE/threat, PoPs + top 4 countries at OVERVIEW, nothing elsewhere
-    var edgeAll = mode === 'wan' || mode === 'edge' || mode === 'threat', edgeSome = mode === 'over';
-    for (var ii = 0; ii < edgeStars.length; ii++) { var st = edgeStars[ii]; L_estar[ii].on = !night && (edgeAll || (edgeSome && (st.pop || st.rank < 4))); }
+    // AUDIENCE frames people only: no AS stations (they are bytes, not viewers), every country star labelled
+    L_cf.on = cfState.up && (mode === 'wan' || mode === 'over' || mode === 'edge' || mode === 'threat' || mode === 'audience') && !SC.active;
+    // EDGE stars: PoPs + every country at WAN/EDGE/threat/audience, PoPs + top 3 countries at OVERVIEW, nothing elsewhere
+    var edgeAll = mode === 'wan' || mode === 'edge' || mode === 'threat' || mode === 'audience', edgeSome = mode === 'over';
+    for (var ii = 0; ii < edgeStars.length; ii++) { var st = edgeStars[ii]; L_estar[ii].on = !night && (edgeAll || (edgeSome && (st.pop || st.rank < 3))); }
     if (L_cf.on) setLabelText(L_cf, 'CLOUDFLARE EDGE', (cf.ha_connections != null ? cf.ha_connections + ' HA · ' : '') + Math.round(cfState.rpm) + ' req/min · ' + (cf.locations || []).join(' '));
     for (var i = 0; i < exoStations.length; i++) { var s = exoStations[i]; L_exo[s.slot].on = s.rank < wantN && !night; }
-    exoPts.material.uniforms.uAlpha.value = night ? 0.6 : 1;
+    // AS stations recede in the AUDIENCE frame (eased, ~0.6 s): they are the same glow sprite as a country star and
+    // read as unlabelled "viewers" otherwise - verified on a TV as eight anonymous blobs around the disc
+    var exoWant = night ? 0.6 : mode === 'audience' ? 0.15 : 1;
+    exoAlpha += (exoWant - exoAlpha) * (1 - Math.exp(-dt / 0.6));
+    exoPts.material.uniforms.uAlpha.value = exoAlpha;
   }
+  var exoAlpha = 1;
 
   /* ============================== director / shots ============================== */
   // establishing "OVERVIEW" shot, computed live from the bounding sphere of both galaxy
@@ -1150,6 +1298,7 @@
     if (key.indexOf('over') === 0) return { kind: 'over' };
     if (key === 'wan') return { kind: 'wan' };
     if (key === 'edge') return { kind: 'edge' };
+    if (key === 'audience') return { kind: 'audience' };
     if (key === 'fabric') return { kind: 'fabric' };
     if (key.indexOf('wired:') === 0) return { kind: 'wired', id: key.slice(6) };
     if (key.indexOf('ap:') === 0) return { kind: 'ap', id: key.slice(3) };
@@ -1221,6 +1370,20 @@
   function edgeShot() { return { pos: SUN.clone().add(new THREE.Vector3(-180, 60, 520)), look: SUN.clone().lerp(EDGE_POS, 0.5) }; }
   // intrusion cut: tighter on the sun so the shield ring reads, EDGE still behind it
   function threatShot() { return { pos: SUN.clone().add(new THREE.Vector3(-150, 50, 400)), look: SUN.clone().lerp(EDGE_POS, 0.32) }; }
+  // AUDIENCE: the EDGE disc face-on, seen from its sun-side normal, so the country stars spread across the
+  // frame instead of stacking along the edge-on THE EDGE view; the look point leans a little toward the sun so the WAN
+  // sun hangs at the frame's edge as the destination the motes fly to. Distance frames the ~540-unit star radius.
+  var AUD_SHOT = { dist: 1700, lean: 0.28 };   // tunable live via NEXUS.AUD_SHOT (see testShot)
+  function audienceShot() {
+    var n = new THREE.Vector3(0, 1, 0).applyQuaternion(EDGE.O.quaternion), toSun = SUN.clone().sub(EDGE_POS).normalize();
+    // the disc normal points almost straight at the sun (n.toSun = 0.85, measured), so from the sun side a face-on
+    // disc always has the sun BEHIND the camera and the camera INSIDE the EDGE->sun comet lane (verified on a TV:
+    // request comets flew through the lens as quarter-screen blobs). So: the FAR side, looking back through the
+    // violet disc at the sun - face-on, 1400+ units clear of the lane, the sun framed lower-centre behind the disc
+    // with the estate beneath it, and every mote flies INTO the frame toward its destination.
+    if (n.dot(toSun) > 0) n.negate();
+    return { pos: EDGE_POS.clone().addScaledVector(n, AUD_SHOT.dist), look: EDGE_POS.clone().lerp(SUN, AUD_SHOT.lean) };
+  }
   // a point on the bridge curve alone is real-but-sparse content — just a couple of comet
   // sprites in open space between the galaxies (verified: under 5% of frame, functionally a
   // blank shot). Blend the look-target toward the nearer galaxy's core so the shot always has
@@ -1266,6 +1429,7 @@
       case 'over': return overviewShot();
       case 'wan': return SHOTS_STATIC.wan;
       case 'edge': return edgeShot();
+      case 'audience': return audienceShot();
       case 'fabric': return SHOTS_STATIC.fabric;
       case 'wired': return fabricShotForId(subj.id);
       case 'ap': return fabricShotForId(subj.id);
@@ -1283,6 +1447,8 @@
         return '↓ ' + fmtBps(FAM.wan_in.bps) + '   ↑ ' + fmtBps(FAM.wan_out.bps);
       case 'edge':
         return edgeSub() + (edgeInfo.pops.length ? ' · ' + edgeInfo.pops.join(' ') : '');
+      case 'audience':
+        return audienceSub();
       case 'fabric':
         return 'gateway · switch · ap · ' + moonState.length + ' clients';
       case 'wired': case 'ap':
@@ -1367,6 +1533,7 @@
   var camSpeed = 0, _prevPos = new THREE.Vector3(), _prevLook = new THREE.Vector3();
   function applyCam(dt) {
     clampAwayFrom(SUN, 170);
+    clampAwayFrom(EDGE_POS, 170);   // the AUDIENCE legs fly through the EDGE disc (a feature) but never through its core
     for (var ci2 = 0; ci2 < N_NODES; ci2++) {
       var gC = galaxies[NODES[ci2].id];
       clampAwayFrom(gC.world, gC.coreR * 3 + 40);
@@ -1376,6 +1543,12 @@
     _prevPos.copy(camPos); _prevLook.copy(camLook);
     camSpeed += (v - camSpeed) * (1 - Math.exp(-dt / 0.1));
     cam.position.copy(camPos); cam.lookAt(camLook);
+    // intrusion shake: a decaying, distance-relative jitter on the final camera pose only (camPos/camLook, the
+    // director's own state, are untouched, so the shot settles back exactly where it was)
+    if (shakeT > 0) {
+      shakeT -= dt; var sa = clamp(shakeT / 0.6, 0, 1), sm = sa * sa * dist * 0.014, st = U_TIME.value;
+      cam.position.x += Math.sin(st * 61) * sm; cam.position.y += Math.cos(st * 47) * sm * 0.7; cam.position.z += Math.sin(st * 53 + 1.3) * sm * 0.5;
+    }
     sky.position.copy(camPos);
   }
   // parked on a shot: the slow orbit sway, entered through a short eased settle from wherever
@@ -1388,11 +1561,11 @@
     _rel.copy(sh.pos).sub(sh.look).applyAxisAngle(_UP, Math.sin(D.orbit * 0.11) * 0.16); _rel.y += Math.sin(D.orbit * 0.07) * 18;
     _tp.copy(sh.look).add(_rel); _tl.copy(sh.look);
     if (D.settleT < 1) {
-      D.settleT = Math.min(1, D.settleT + dt / 0.7); var e = smootherstep(D.settleT);
+      D.settleT = Math.min(1, D.settleT + dt / (D.settleDur || 0.7)); var e = smootherstep(D.settleT);
       camPos.lerpVectors(D.settleFrom.pos, _tp, e); camLook.lerpVectors(D.settleFrom.look, _tl, e);
     } else { camPos.copy(_tp); camLook.copy(_tl); }
   }
-  function beginHold(sh) { D.settleFrom.pos.copy(camPos); D.settleFrom.look.copy(camLook); D.settleT = 0; D.hold = 0; D.orbit = 0; D.toShot = sh; D.to = sh; }
+  function beginHold(sh) { D.settleFrom.pos.copy(camPos); D.settleFrom.look.copy(camLook); D.settleT = 0; D.settleDur = 0.7; D.hold = 0; D.orbit = 0; D.toShot = sh; D.to = sh; }
   function beginTravel(sh, subj, hubShot) {
     D.from.pos.copy(camPos); D.from.look.copy(camLook); D.toShot = sh; D.to = sh; D.toSubj = subj; D.subject = subj;
     legSetup(D.leg, D.from, sh, hubShot); D.pendingSubj = subj; D.travelRaw = 0;
@@ -1434,7 +1607,7 @@
   }
   // #cap only ever shows a DISPLAY name: the wall's stop_name when it has one, else a fixed title per stop kind.
   // (A raw key like "over:0" leaked into the caption once via a caller passing the key as the name.)
-  var KIND_NAME = { over: 'OVERVIEW', wan: 'WAN EDGE', edge: 'THE EDGE', fabric: 'THE FABRIC', wired: 'WIRED', ap: 'WIRELESS', host: 'GALAXY', blk: 'CATEGORY', none: 'THE ESTATE' };
+  var KIND_NAME = { over: 'OVERVIEW', wan: 'WAN EDGE', edge: 'THE EDGE', audience: 'AUDIENCE', fabric: 'THE FABRIC', wired: 'WIRED', ap: 'WIRELESS', host: 'GALAXY', blk: 'CATEGORY', none: 'THE ESTATE' };
   function stopName(key, name) {
     if (name && name.toLowerCase() !== String(key).toLowerCase()) return name;
     var st = freeStops().filter(function (x) { return x.key === key; })[0];
@@ -1449,7 +1622,7 @@
   function freeGoto(key, name) {
     var subj = parseStop(key), sh = shotFor(subj);
     beginTravel(sh, subj, needsHub(camLook, sh.look) ? overviewShot() : null);
-    D.t = 0; D.dur = 1.6;
+    D.t = 0; D.dur = 1.6; D.stopKey = key;
     setCaption(stopName(key, name), subFor(subj));
   }
   function directorFreeTick(dt) {
@@ -1468,8 +1641,8 @@
     applyCam(dt);
   }
   // the wall's own stop list plus THE EDGE (a TV-only stop: the wall has no such subject)
-  var EDGE_STOP = { key: 'edge', name: 'THE EDGE' };
-  function freeStops() { return (WALL.stops.length ? WALL.stops : [{ key: 'over:0', name: 'OVERVIEW' }]).concat([EDGE_STOP]); }
+  var EDGE_STOP = { key: 'edge', name: 'THE EDGE' }, AUDIENCE_STOP = { key: 'audience', name: 'AUDIENCE' };
+  function freeStops() { return (WALL.stops.length ? WALL.stops : [{ key: 'over:0', name: 'OVERVIEW' }]).concat([EDGE_STOP, AUDIENCE_STOP]); }
   function enterFreeRoam() {
     D.mode = 'free'; D.freeIdx = 0;
     var stops = freeStops();
@@ -1480,9 +1653,10 @@
   /* wall sync v2: SSE stream of /api/lightstate (falls back to 1 Hz polling) drives the
      director in lockstep — travel legs ease with the wall's own prog, re-anchored on
      every update so motion stays smooth between the wall's ~5 Hz ticks. */
-  var WALL = { stops: [], lastKey: '', lastBeat: -1 };
+  var WALL = { stops: [], lastKey: '', lastBeat: -1, lastTs: 0 };
   function applyWallState(s) {
     var fresh = s && s.ts && (Date.now() / 1000 - s.ts) < 20;
+    if (s && s.ts) WALL.lastTs = s.ts;
     if (fresh && s.rgb) document.documentElement.style.setProperty('--wall', 'rgb(' + s.rgb.join(',') + ')');
     if (fresh && s.stops && s.stops.length) WALL.stops = s.stops;
     if (fresh && typeof s.beat === 'number') { if (WALL.lastBeat >= 0 && s.beat !== WALL.lastBeat) shockwave(); WALL.lastBeat = s.beat; }
@@ -1494,7 +1668,7 @@
       chip.className = 'off'; chip.querySelector('span').textContent = (fresh && s.manual) ? 'wall manual' : 'free roam';
       return;
     }
-    D.mode = 'sync';
+    D.mode = 'sync'; D.stopKey = s.phase === 'travel' && s.to ? s.to : s.stop;
     chip.className = 'on'; chip.querySelector('span').textContent = s.stop_name || s.stop || '';
     // caption/sub always reflect the latest server state (cheap, two textContent writes) —
     // camera snap / label rebuild / focus are the expensive parts and stay change-gated below,
@@ -1509,7 +1683,15 @@
         D.travelP0 = clamp(s.prog || 0, 0, 1);
       }
       D.travelProgBase = s.prog || 0; D.travelT0 = performance.now(); D.travelS = Math.max(0.1, s.travel_s || 2); D.inTravel = true;
-      setCaption(s.to_name || '', subFor(toSubj));
+      /* The camera flies toward s.to from the START of the leg, but the WALL's own
+         caption hands over at the leg MIDPOINT - that is exactly what s.stop /
+         s.stop_name encode (lightsync.js: "stop (and colour) hand over at the
+         travel midpoint, matching the camera's own focus handover"). Captioning
+         from s.to_name here therefore put this screen AHEAD of the wall: measured
+         across 7 consecutive stop changes, the TV read a median 909 ms early,
+         worst case 1504 ms. Fly early, read in step. */
+      var capSubj = parseStop(s.stop || s.to);
+      setCaption(s.stop_name || s.to_name || '', subFor(capSubj));
     } else {
       var subj = parseStop(s.stop), hkey = 'hold:' + s.stop;
       if (D.inTravel || WALL.lastKey !== hkey) {
@@ -1537,6 +1719,33 @@
     lightstatePoll = setInterval(pollLightstate, 1000);
   }
   startWallSync(); pollLightstate();
+
+  /* Watchdog for a SILENT authority. The freshness test above only runs when a
+     packet arrives, so an SSE socket that stays open and quiet leaves this screen
+     in 'sync' mode parked on the last stop indefinitely - observed on a TV that
+     held one stop in sync mode for ~25 minutes while /api/lightstate was
+     1612 s stale and the wall toured on. Free roam is the honest fallback; the
+     next packet puts us straight back in sync via applyWallState. */
+  setInterval(function () {
+    try {
+      if (SC.active || TC.on) return;                 // showcase / cut own the camera
+      if (!WALL.lastTs) return;
+      var age = Date.now() / 1000 - WALL.lastTs;
+      if (age < 20) return;
+      /* The SSE socket can go silent WITHOUT firing onerror, so the failover poll
+         at startWallSync() never arms and nothing ever calls applyWallState again.
+         Verified: with the stream in that state the wall was publishing 0.1 s-fresh
+         packets while this screen sat in free roam, and a single pollLightstate()
+         put it back in sync instantly. Poll while stale - it is one request per
+         2 s and it is the only path back. */
+      pollLightstate();
+      if (age > 35 && D.mode === 'sync') {            // grace, so a brief hiccup does not flick the camera
+        enterFreeRoam();
+        var c = $('sync');
+        if (c) { c.className = 'off'; c.querySelector('span').textContent = 'wall silent'; }
+      }
+    } catch (e) { }
+  }, 2000);
 
   /* ============================== showcase (the playthrough) ==============================
      a flat sequence of {pos,look,chapter} waypoints, walked leg by leg with the same
@@ -1590,6 +1799,8 @@
     chapter('THE ESTATE', function () { return plural(S.guests.length, 'guest') + ' \u00b7 ' + plural(N_NODES, 'node') + ' \u00b7 one estate'; }, { kind: 'over' }, dwellPair(OV, 0.2, 1.0, 0.92));
     chapter(WAN_LABEL + ' \u00b7 WAN', function () { return '\u2193 ' + fmtBps(FAM.wan_in.bps) + '   \u2191 ' + fmtBps(FAM.wan_out.bps); }, { kind: 'wan' }, dwellPair(SHOTS_STATIC.wan));
     chapter('THE EDGE', function () { return subFor({ kind: 'edge' }); }, { kind: 'edge' }, dwellPair(edgeShot(), 0.3, 0.92, 0.9));
+    // the people beat: the EDGE face-on with every viewer country labelled, held 1.6x a normal pan so the roll-call reads
+    chapter('AUDIENCE', function () { return audienceSub(); }, { kind: 'audience' }, dwellPair(audienceShot(), 0.26, 0.94, 0.96), 1.6);
 
     var fb = fabricBounds();
     chapter('THE FABRIC', function () { return moonState.length + ' clients · gateway · switch · ap'; }, { kind: 'fabric' },
@@ -1696,9 +1907,11 @@
                   threatShot() for those 5 s (re-entrant: another event extends, never stacks).
      secmon    -> the status line flashes the finding title red for 6 s; the affected guest's galaxy rings red.
      window.NEXUS.threat(evt) injects one for QA. */
-  var THREAT = { seq: null, capHold: false, capUntil: 0, pendCap: null, pendSub: null, prevCap: null, prevSub: null, cutUntil: 0,
-                 secUntil: 0, secOn: false, flashT: 0, waveT: 9, nextCurve: 0, chip: '', last: null };
-  var TC = { on: false, from: { pos: new THREE.Vector3(), look: new THREE.Vector3() }, to: null, leg: mkLeg(), t: 1, dur: 0.9, hold: 0 };
+  var THREAT = { seq: null, capHold: false, capUntil: 0, capCls: '', pendCap: null, pendSub: null, prevCap: null, prevSub: null,
+                 secUntil: 0, secOn: false, flashT: 0, waveT: 9, nextCurve: 0, chip: '', level: 0, last: null };
+  // TC is the shared "cut" director state: kind 'threat' (intrusion, 5 s) or 'audience' (a new viewer, 8 s). A threat
+  // always wins: it takes over a running audience cut, and an audience cut never interrupts a threat.
+  var TC = { on: false, kind: '', until: 0, from: { pos: new THREE.Vector3(), look: new THREE.Vector3() }, to: null, leg: mkLeg(), t: 1, dur: 0.9, hold: 0 };
   function galaxyForHost(h) {
     h = String(h || ''); if (galaxies[h] && NODES.some(function (n) { return n.id === h; })) return h;
     var nodes = (S.topo && S.topo.nodes) || [];
@@ -1710,23 +1923,43 @@
     }
     return null;
   }
-  function threatCaption(cap, sub) {
+  // a caption owned by an event for ms milliseconds (body class colours it: nx-threat red, nx-audience gold); the
+  // director's own caption requests queue behind it (setCaption -> pendCap) and are applied when it ends
+  function holdCaption(cap, sub, ms, cls) {
     if (!THREAT.capHold) { THREAT.capHold = true; THREAT.prevCap = CAP_CUR; THREAT.prevSub = $('capsub').textContent; THREAT.pendCap = null; }
-    document.body.classList.add('nx-threat');
-    setCaptionRaw(cap, sub); THREAT.capUntil = performance.now() + 5000;
+    if (THREAT.capCls && THREAT.capCls !== cls) document.body.classList.remove(THREAT.capCls);
+    THREAT.capCls = cls; document.body.classList.add(cls);
+    setCaptionRaw(cap, sub); THREAT.capUntil = performance.now() + ms;
   }
+  function threatCaption(cap, sub) { holdCaption(cap, sub, 5000, 'nx-threat'); }
   function threatCaptionTick(now) {
     if (!THREAT.capHold || now < THREAT.capUntil) return;
-    THREAT.capHold = false; document.body.classList.remove('nx-threat');
+    THREAT.capHold = false; if (THREAT.capCls) document.body.classList.remove(THREAT.capCls); THREAT.capCls = '';
     if (THREAT.pendCap != null) setCaptionRaw(THREAT.pendCap, THREAT.pendSub); else if (THREAT.prevCap != null) setCaptionRaw(THREAT.prevCap, THREAT.prevSub);
     THREAT.pendCap = null;
   }
-  function beginThreatCut() {
-    THREAT.cutUntil = performance.now() + 5000;
-    if (TC.on || SC.active) return;                             // re-entrant: a second event only extends the cut
-    TC.on = true; TC.t = 0; TC.hold = 0; TC.from.pos.copy(camPos); TC.from.look.copy(camLook); TC.to = threatShot();
-    legSetup(TC.leg, TC.from, TC.to, null, 0.35);
-    applyLabelSubject({ kind: 'threat' }); setFocus(-1, null);
+  function beginCut(kind, shot, ms) {
+    if (SC.active) return;
+    var now = performance.now();
+    if (TC.on) {
+      if (TC.kind === kind) { TC.until = Math.max(TC.until, now + ms); return; }   // re-entrant: a second event of the same kind only extends the cut
+      if (kind !== 'threat') return;                                                // an audience cut never interrupts a threat cut
+    }
+    TC.on = true; TC.kind = kind; TC.until = now + ms; TC.t = 0; TC.hold = 0; TC.from.pos.copy(camPos); TC.from.look.copy(camLook); TC.to = shot;
+    TC.dur = kind === 'threat' ? 0.9 : 2.4;                     // an intrusion is a hard cut; a viewer arriving is an eased crane out through the EDGE
+    legSetup(TC.leg, TC.from, TC.to, null, kind === 'threat' ? 0.35 : 0.8);
+    applyLabelSubject({ kind: kind }); setFocus(-1, null);
+  }
+  function beginThreatCut() { beginCut('threat', threatShot(), 5000); }
+  /* a new person (a country's 1 h unique count rose): cut to the AUDIENCE shot for 8 s with the country named, at most
+     once per AUD_CUT_GAP so a busy hour never turns the screen into a slideshow; the mote + ping fire regardless */
+  var AUD_CUT_MS = 8000, AUD_CUT_GAP = 120000, audLastCut = -1e9;
+  function viewerArrived(s) {
+    var now = performance.now();
+    if (now - audLastCut < AUD_CUT_GAP || SC.active || (TC.on && TC.kind === 'threat') || (THREAT.capHold && THREAT.capCls === 'nx-threat')) return;
+    audLastCut = now;
+    holdCaption('NEW VIEWER \u00b7 ' + s.cc, edgeSub() + ' \u00b7 ' + audienceRoll(4), AUD_CUT_MS, 'nx-audience');
+    beginCut('audience', audienceShot(), AUD_CUT_MS);
   }
   function threatCutTick(dt) {
     if (TC.t < 1) { TC.t = Math.min(1, TC.t + dt / TC.dur); travelLerp(TC.from, TC.to, TC.t, TC.leg); }
@@ -1737,10 +1970,15 @@
     TC.on = false;
     if (SC.active) return;
     applyLabelSubject(D.subject || { kind: 'over' }); focusFor(D.subject || { kind: 'over' });
-    if (D.mode === 'sync') { if (D.toShot) beginHold(D.toShot); WALL.lastKey = ''; pollLightstate(); }
-    else if (D.to) { D.from.pos.copy(camPos); D.from.look.copy(camLook); legSetup(D.leg, D.from, D.to, null, 0.35); D.t = 0; D.dur = 1.4; D.pendingSubj = null; }
+    // the way back: a 5 s threat cut snaps back fast; the audience beat glides home over ~2.4 s (a clean exit, not a jump)
+    var back = TC.kind === 'audience' ? 2.4 : 1.2;
+    if (D.mode === 'sync') { if (D.toShot) { beginHold(D.toShot); D.settleDur = back; } WALL.lastKey = ''; pollLightstate(); }
+    else if (D.to) { D.from.pos.copy(camPos); D.from.look.copy(camLook); legSetup(D.leg, D.from, D.to, null, 0.35); D.t = 0; D.dur = back; D.pendingSubj = null; }
   }
-  function threatArrive() { THREAT.flashT = 1.3; THREAT.waveT = 0; }
+  // the hit: shield flash + red shockwave (as before) plus a bloom kick and a short camera shake, both decaying over
+  // ~0.6 s (hitKick feeds bloom.strength in the loop, shakeT the jitter in applyCam) - an impact, not a colour change
+  var hitKick = 0, shakeT = 0;
+  function threatArrive() { THREAT.flashT = 1.3; THREAT.waveT = 0; hitKick = 1; shakeT = 0.6; }
   function threat(e) {
     if (!e) return; THREAT.last = e;
     if (e.src === 'secmon') {
@@ -1764,6 +2002,7 @@
     var c = d.counts || {}, lvl = +d.level || 0;
     var txt = 'THREAT ' + (d.name || ['GREEN', 'YELLOW', 'RED', 'BLACK'][lvl] || '?') + ' · ' + (c.secmon_critical || 0) + ' crit · ' + (c.secmon_high || 0) + ' high · ' + (c.banned || 0) + ' banned';
     if (txt !== THREAT.chip) { THREAT.chip = txt; el.textContent = txt; el.style.color = THREAT_COL[lvl] || THREAT_COL[0]; }
+    THREAT.level = lvl;
   }
   function threatFrame(d) {
     if (!d || !d.up) return;
@@ -1832,6 +2071,23 @@
   }
   setInterval(pollAll, 6000); pollAll();
   setInterval(pollShowtime, 5000); pollShowtime();
+
+  /* AUDIENCE headline animation: the viewers-now number rolls from the old value to the new one over
+     0.9 s (one textContent write per integer step, only while rolling) and the line flashes gold (.hit, CSS keyframe,
+     compositor-only) on every arrival - a person showing up is an event on this screen, not a digit changing. */
+  var AUD = { shown: -1, from: 0, to: -1, t: 1, hour: 0, hit: 0 };
+  function audWrite(txt) { var ab = $('aud-big'); if (ab && ab.textContent !== txt) ab.textContent = txt; }
+  function audText(v) { return v + ' VIEWER' + (v === 1 ? '' : 'S') + ' NOW \u00b7 ' + AUD.hour + ' THIS HOUR'; }
+  function audSet(v) {
+    if (AUD.to === v) { if (AUD.t >= 1) audWrite(audText(v)); return; }     // hour count may have moved under the same 5 m number
+    if (AUD.shown < 0) { AUD.shown = AUD.to = v; AUD.t = 1; audWrite(audText(v)); return; }
+    AUD.from = AUD.shown; AUD.to = v; AUD.t = 0; if (v > AUD.shown) audHit();
+  }
+  function audHit() { AUD.hit = 1.2; var a = $('aud'); if (a) a.classList.add('hit'); }
+  function audTick(dt) {
+    if (AUD.t < 1) { AUD.t = Math.min(1, AUD.t + dt / 0.9); var v = Math.round(lerp(AUD.from, AUD.to, smootherstep(AUD.t))); if (v !== AUD.shown) { AUD.shown = v; audWrite(audText(v)); } }
+    if (AUD.hit > 0) { AUD.hit -= dt; if (AUD.hit <= 0) { var a = $('aud'); if (a) a.classList.remove('hit'); } }
+  }
 
   /* ============================== HUD ============================== */
   var lastHud = '';
@@ -1914,8 +2170,9 @@
           h += '<div class="r"><span>EDGE</span><b class="' + ((Ecs.alerts_1h || 0) > 0 ? 'hot2' : '') + '">'
              + (Ecf.up ? 'TUNNEL ' + f(Ecf.ha_connections) + 'c \u00b7 ' + f(Ecf.req_per_min) + ' req/m' : 'TUNNEL \u2014')
              + ' \u00b7 ' + (Ecs.up ? f(Ecs.alerts_24h) + ' atk/24h' : f(T.cs_alerts_h) + ' atk/h') + '</b></div>';
-          /* REAL unique visitors only: tunnel request counters are requests, never viewers */
-          if (Eau.up) h += '<div class="r"><span>AUDIENCE</span><b>' + plural(Eau.viewers_5m || 0, 'viewer') + ' \u00b7 5 min</b></div>';
+          /* the people line - REAL unique visitors only; tunnel request counters are requests, never viewers */
+          if (Eau.up || edgeInfo.audience) h += '<div class="r"><span>VIEWERS</span><b class="' + (edgeInfo.audience && edgeInfo.viewers > 0 ? 'gold' : '') + '">'
+             + (edgeInfo.audience ? edgeInfo.viewers + ' now \u00b7 ' + edgeInfo.viewers1h + ' / h \u00b7 ' + nCountries(edgeInfo.countries) : 'no audience feed') + '</b></div>';
           var La = null; (Ecs.top_attackers || []).forEach(function (a) { if (a && a.ts && (!La || a.ts > La.ts)) La = a; });
           if (La) {
             var ag = Math.max(0, Date.now() / 1000 - La.ts);
@@ -1955,6 +2212,15 @@
     else if (problems > 0) { sb.textContent = 'NOMINAL · ' + problems + ' WARN'; sb.className = 'big warn'; }
     else { sb.textContent = 'ALL NOMINAL'; sb.className = 'big ok'; }
     ss.textContent = upAll + ' / ' + S.guests.length + ' SERVICES UP · ' + problems + ' OPEN PROBLEMS · ' + ((S.unifi && S.unifi.clients) || 0) + ' CLIENTS';
+    // AUDIENCE headline: the real people on the public sites, under the status block. Only edge.audience
+    // counts people; with it down the line says requests and drops its live dot (class .off).
+    var asb = $('aud-sub'), asT, audEl = $('aud');
+    if (edgeInfo.audience) {
+      AUD.hour = edgeInfo.viewers1h; audSet(edgeInfo.viewers);   // the big number rolls to its new value (audTick) instead of snapping
+      asT = (edgeInfo.top.length ? audienceRoll(6) : 'no countries this hour') + (edgeInfo.bots ? ' \u00b7 ' + plural(edgeInfo.bots, 'bot') + ' excluded' : '');
+    } else { AUD.shown = AUD.to = -1; AUD.t = 1; audWrite(Math.round(edgeInfo.rpm) + ' REQ/MIN AT THE EDGE'); asT = 'requests, not people \u00b7 audience feed down'; }
+    if (asb && asb.textContent !== asT) asb.textContent = asT;
+    if (audEl) audEl.classList.toggle('off', !edgeInfo.audience);
     refreshLabels();                                            // guest numbers (cpu/mem) just moved
   }
 
@@ -1977,11 +2243,14 @@
     if (t - _dsT < 1) return; _dsT = t;
     document.body.dataset.nexus =
       'nodes=' + N_NODES +
-      ' director=' + (SC.active ? 'showcase' : D.mode) +
+      ' director=' + (SC.active ? 'showcase' : TC.on ? 'cut:' + TC.kind : D.mode) +
       ' stop=' + (String(CAP_CUR || '').toLowerCase().replace(/\s+/g, '_') || 'none') +
-      ' phase=' + (D.t < 1 ? 'travel' : 'hold') +
+      ' key=' + (D.stopKey || '') +
+      ' phase=' + (SC.active ? 'showcase' : (D.mode === 'sync' ? D.inTravel : D.t < 1) ? 'travel' : 'hold') +
       ' threat=' + (String(THREAT.chip || 'none').split(/\s+/)[1] || 'none').toLowerCase() +
-      ' fps=' + Math.round(_fps);
+      ' fps=' + Math.round(_fps) +
+      ' viewers=' + edgeInfo.viewers + '/' + edgeInfo.viewers1h + ' countries=' + edgeInfo.countries +
+      ' audience=' + (edgeInfo.audience ? 'up' : 'down') + ' queue=' + viewQueue();
   }
   var _fps = 0, _fpsAcc = 0, _fpsN = 0;
 
@@ -2059,7 +2328,11 @@
     var rE = Math.min(EDGE.coreR * (1 + Math.sin(t * 0.8) * 0.03 + beat * 0.1), camDistE * Math.tan(maxCoreAngle) / EDGE_SCALE);
     EDGE.core.scale.setScalar(rE); EDGE.core.rotation.y += dt * 0.2; EDGE.core.rotation.x += dt * 0.05;
     EDGE.coreMat.uniforms.pulse.value = beat * 0.3; EDGE.coreMat.uniforms.near.value = nearE;
-    var hsE = Math.min(rE * 6.5, camDistE * 0.38 / EDGE_SCALE); EDGE.halo.scale.set(hsE, hsE, 1); EDGE.halo.material.opacity = 0.4 * (1 - 0.55 * nearE);
+    var hsE = Math.min(rE * 6.5, camDistE * 0.38 / EDGE_SCALE); EDGE.halo.scale.set(hsE, hsE, 1); EDGE.halo.material.opacity = 0.3 * (1 - 0.55 * nearE);
+    // the EDGE's own shockwave ring (gold, fired from vwLaunch on every arrival; NODES' rings ride the heartbeat above)
+    if (EDGE.ringT < 1.4) { EDGE.ringT += dt; var sE = rE + EDGE.ringT * 130; EDGE.ring.scale.set(sE, sE, sE); EDGE.ring.material.opacity = 0.6 * (1 - EDGE.ringT / 1.4); }
+    else if (EDGE.ring.material.opacity !== 0) EDGE.ring.material.opacity = 0;
+    edgeBreathe(dt, t);
     discTick(EDGE, nearE);
     projectObstacle(OBSTACLES[OB_EDGE], EDGE.world, rE * EDGE_SCALE, camDistE);
     var camDistSun = cam.position.distanceTo(SUN);
@@ -2088,7 +2361,10 @@
     // bloom all stack in the same amber, and from the FABRIC/AP stops (~500 units) that sum was
     // verified on screen to saturate into a frame-filling white disc
     sunHalo.material.opacity = 0.8 * (1 - 0.8 * sunNear);
-    sunMat.uniforms.gain.value = 1.3 - 0.6 * sunNear;
+    // far trim: from the AUDIENCE frame (~3000 units) the sun is a small disc whose bloom still summed to a
+    // white dot; ease the gain down beyond 2000 units so it stays an amber body at the bottom of that frame
+    var sunFar = 1 - nearFactor(camDistSun, 2000, 3400);
+    sunMat.uniforms.gain.value = 1.3 - 0.6 * sunNear - 0.4 * sunFar;
     // fabric planets: pulse with the beat, switch rings red while down
     FABKIND.forEach(function (k, ki) {
       var f = fab[k], camDistF = cam.position.distanceTo(f.pos);
@@ -2120,11 +2396,13 @@
     var nowMs = performance.now();
     threatCaptionTick(nowMs);
     if (THREAT.secOn && nowMs > THREAT.secUntil) { THREAT.secOn = false; hud(); }
-    if (TC.on && nowMs > THREAT.cutUntil) endThreatCut();
+    if (TC.on && nowMs > TC.until) endThreatCut();
+    pingTick(dt); audTick(dt);
     var showcaseOn = wantShowcase();
     if (showcaseOn !== SC.active) toggleShowcase(showcaseOn);
     if (SC.active) showcaseTick(dt); else if (TC.on) threatCutTick(dt); else if (D.mode === 'free') directorFreeTick(dt); else directorSyncTick(dt);
-    bloom.strength = BLOOM_BASE * (night ? 0.7 : 1) + beat * (beatSev >= 3 ? 0.9 : 0.45);
+    if (hitKick > 0) hitKick = Math.max(0, hitKick - dt * 1.6);
+    bloom.strength = BLOOM_BASE * (night ? 0.7 : 1) + beat * (beatSev >= 3 ? 0.9 : 0.45) + hitKick * hitKick * 0.8;
     // label anchors
     // anchor in the galaxy's own local space then transform through O (the static tilt group,
     // not G which spins continuously) — a raw world-space guess here ignored the tilt entirely
@@ -2132,7 +2410,10 @@
     // 5-shot director never used (the showcase flythrough)
     // (the fixed landmark positions/offsets are set once, right after animate — no per-frame
     // Vector3/array allocation here; only the galaxy labels need re-deriving from coreR)
-    NODES.forEach(function (n) { var gal = galaxies[n.id]; _local.set(0, gal.coreR + 150, -150); gal.O.localToWorld(_local); L_gal[n.id].pos.copy(_local); });
+    // the AUDIENCE frame is about people: the estate's own landmarks (galaxies, bridge, sun) stay quiet in it
+    var estateLbl = LABEL.mode !== 'audience';
+    L_sun.on = estateLbl; L_bridge.on = estateLbl; L_gw.on = estateLbl; L_sw.on = estateLbl; L_ap.on = estateLbl;
+    NODES.forEach(function (n) { var gal = galaxies[n.id]; L_gal[n.id].on = estateLbl; _local.set(0, gal.coreR + 150, -150); gal.O.localToWorld(_local); L_gal[n.id].pos.copy(_local); });
     // world-space anchor (not O-local like the two estate galaxies): the EDGE's steep tilt puts O's +Y almost
     // along the view axis, so an O-local "above the core" landed beside the disc and off the right edge
     L_edge.pos.set(EDGE_POS.x, EDGE_POS.y + EDGE.coreR * EDGE_SCALE + 150, EDGE_POS.z);
@@ -2174,7 +2455,11 @@
   window.composer = composer;           // the render-count probe looks for this
   window.NEXUS = { S: S, D: D, SC: SC, galaxies: galaxies, fab: fab, FAM: FAM, composer: composer, play: function (v) { SC.manual = !!v; },
                    EDGE: EDGE, THREAT: THREAT, TC: TC, ROCKETS: ROCKETS, threat: threat, edgeStars: function () { return edgeStars; },
-                   edgeUpdate: edgeUpdate, edgeInfo: edgeInfo, viewQueue: function () { return viewQueue; },
+                   edgeUpdate: edgeUpdate, edgeInfo: edgeInfo, viewQueue: viewQueue, audienceShot: audienceShot, AUD_SHOT: AUD_SHOT,
+                   // QA: fly (free-roam, pinned) to an arbitrary {pos,look} so a framing can be tuned live before it is baked into a shot
+                   testShot: function (pos, look, sub) { D.pinFree = true; D.mode = 'free'; var sh = { pos: new THREE.Vector3().fromArray(pos), look: new THREE.Vector3().fromArray(look) }; beginTravel(sh, { kind: sub || 'audience' }, null); D.t = 0; D.dur = 1.4; D.hold = 0; },
+                   // QA: NEXUS.arrive('DE') = a new viewer from that country (mote from its star + ping + the 8 s AUDIENCE cut, gap permitting)
+                   arrive: function (cc, n) { var idx = -1; for (var i = 0; i < edgeStars.length; i++) if (edgeStars[i].cc === cc) idx = i; for (var k = 0; k < (n || 1); k++) viewPush(idx); if (idx >= 0) viewerArrived(edgeStars[idx]); return idx; },
                    goto: function (key, name) { D.mode = 'free'; freeGoto(key, name); }, sky: sky, stopName: stopName,
                    pinFree: function (v) { D.pinFree = !!v; if (!v) { WALL.lastKey = ''; pollLightstate(); } },
                    moons: function () { return moonState.map(function (m) { return { id: m.client.id, kind: m.kind, status: m.client.status }; }); } };

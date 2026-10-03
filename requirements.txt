@@ -1,11 +1,25 @@
+# Floors are what the code needs; ceilings are the next major version, because
+# this is a public repo and a stranger's `pip install -r` should not be the
+# first place a breaking release shows up. Nothing here is pinned to an exact
+# version: the app is run from a checkout, not shipped as a package, and an
+# exact pin would hold back security updates in Flask and requests.
+
 # Core — always required
 Flask>=3.0,<4
-requests>=2.31
-urllib3>=2.0
+requests>=2.31,<3
+urllib3>=2.0,<3          # used directly, for disable_warnings() around self-signed backends
 
-# Optional: NVIDIA GPU telemetry panels (set ENABLE_GPU=false to skip).
-# Needs an NVIDIA driver on the host; pynvml alone is not enough.
-nvidia-ml-py>=12.535
+# NVIDIA GPU telemetry panels. Installed unconditionally — it is a ~60 KB pure
+# Python binding and importing it on a host with no driver fails cleanly, which
+# app.py handles by turning the GPU panels off. ENABLE_GPU=false skips the
+# runtime probe, not the install.
+nvidia-ml-py>=12.535,<14
+
+# Optional: SNMP polling of your own switches and routers (SNMP_<n>_HOST). Pure
+# Python; the dashboard runs identically without it and the source reports
+# "library missing" instead. SNMPv3 privacy (authPriv) also needs cryptography.
+# pysnmp>=7.1,<8
+# cryptography>=42
 
 # Optional: server-side offscreen 3D render on the GPU (ENABLE_GPU_RENDER=true).
 # Requires EGL headers and a GPU the container can see.

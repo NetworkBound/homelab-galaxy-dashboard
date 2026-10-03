@@ -25,8 +25,13 @@
   var DEFAULT_CATS = ['ai', 'media', 'network', 'monitor', 'web', 'infra'];
   var CAT_NAMES = { ai: 'AI / inference', media: 'Media', network: 'Network', monitor: 'Monitoring',
                     web: 'Web / apps', infra: 'Infra' };
+  /* cinematics is OPT-IN (off unless the server, the URL or local storage
+     says otherwise): every N tour laps the wall plays one cinematic camera
+     move (see cinema.js) and then hands the camera back to the tour. */
   var DEFAULT_FEATURES = { nexus: true, cameras: false, threats: true, audience: true,
-                           lights: false, doom: false, setup: true, chat: false };
+                           lights: false, doom: false, setup: true, chat: false,
+                           cinematics: false };
+  var DEFAULT_CINEMATICS = { laps: 3, moves: ['roll', 'explode', 'closeup', 'arc'] };
 
   function hexInt(s, fallback) {
     if (typeof s === 'number') return s;
@@ -62,6 +67,21 @@
     Object.keys(DEFAULT_FEATURES).forEach(function (k) {
       cfg.features[k] = (raw.features && raw.features[k] !== undefined) ? !!raw.features[k] : DEFAULT_FEATURES[k];
     });
+    /* cinematics tunables: /api/config `cinematics: {laps, moves}` when the back
+       end sends it; `?cinematics=on|off&laps=N` on the URL (a kiosk or a QA run
+       needs no server change) and localStorage 'galaxy.cinematics' override it. */
+    var rc = raw.cinematics || {};
+    cfg.cinematics = {
+      laps: Math.max(1, Math.min(50, parseInt(rc.laps, 10) || DEFAULT_CINEMATICS.laps)),
+      moves: (Array.isArray(rc.moves) && rc.moves.length ? rc.moves : DEFAULT_CINEMATICS.moves).slice()
+    };
+    try {
+      var q = /[?&]cinematics=(on|off|1|0|true|false)\b/i.exec(location.search), ql = /[?&]laps=(\d+)\b/.exec(location.search);
+      var ls = null; try { ls = localStorage.getItem('galaxy.cinematics'); } catch (e2) { }
+      if (ls === 'on' || ls === 'off') cfg.features.cinematics = ls === 'on';
+      if (q) cfg.features.cinematics = /^(on|1|true)$/i.test(q[1]);
+      if (ql) cfg.cinematics.laps = Math.max(1, Math.min(50, parseInt(ql[1], 10) || cfg.cinematics.laps));
+    } catch (e3) { }
     (Array.isArray(raw.nodes) ? raw.nodes : []).forEach(function (n, i) {
       if (!n) return;
       var id = typeof n === 'string' ? n : n.id;

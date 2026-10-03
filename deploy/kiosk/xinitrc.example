@@ -21,30 +21,53 @@ if [ -e /tmp/.X11-unix/X0 ] && DISPLAY=:0.1 xdpyinfo >/dev/null 2>&1; then
   HAVE_SCREEN1=1
 fi
 
-# cold boot: wait until the dashboard is serving before launching the browsers,
-# so the wall never shows a connection error
-until curl -fsS -o /dev/null --max-time 3 "$DASH/"; do sleep 2; done
+# Cold boot: wait until the dashboard is serving before launching the browsers,
+# so the wall never shows a connection error. Any HTTP answer counts as serving
+# — `curl -f` would spin here forever once DASH_API_KEY is set, because the
+# gate answers 401 and that is still a dashboard that is up.
+until [ -n "$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "$DASH/" | grep -v '^000$')" ]; do
+  sleep 2
+done
 
 COMMON=(--kiosk --no-first-run --noerrdialogs --disable-infobars --disable-session-crashed-bubble
-        --password-store=basic --check-for-update-interval=31536000 "--remote-allow-origins=*")
+        --password-store=basic --check-for-update-interval=31536000)
 # add --no-sandbox only if the kiosk user is root (not recommended)
 
-# primary kiosk loop (remote debugging on 9222 for headless QA / screenshots)
+# Chrome DevTools, off unless you ask for it. This used to be on permanently,
+# with --remote-allow-origins=* alongside it, and that pair is worth being
+# explicit about: the origin check is the only thing stopping a page the kiosk
+# browser has open from opening the DevTools WebSocket itself. Disable it and
+# any script running in that browser drives the whole browser — reads every
+# tab, every cookie, and navigates to file:// to read the disk as the kiosk
+# user. The flag buys nothing for the documented use, because a CDP client
+# that is not a browser (the QA scripts, puppeteer, a Python driver) sends no
+# Origin header and never needed it.
+#
+# Turn it on for a debugging session with KIOSK_DEBUG_PORT=9222, and reach it
+# over an SSH tunnel: it is bound to loopback and still unauthenticated, so
+# anything else with an account on this host can take the browser.
+DEBUG0=(); DEBUG1=()
+if [ -n "${KIOSK_DEBUG_PORT:-}" ]; then
+  DEBUG0=(--remote-debugging-address=127.0.0.1 --remote-debugging-port="$KIOSK_DEBUG_PORT")
+  DEBUG1=(--remote-debugging-address=127.0.0.1 --remote-debugging-port="$((KIOSK_DEBUG_PORT + 1))")
+fi
+
+# primary kiosk loop
 (
   while true; do
     rm -f "$PROFILE/chromium-kiosk/Singleton"* 2>/dev/null
-    chromium "${COMMON[@]}" --user-data-dir="$PROFILE/chromium-kiosk" --remote-debugging-port=9222 --app="$DASH"
+    chromium "${COMMON[@]}" "${DEBUG0[@]}" --user-data-dir="$PROFILE/chromium-kiosk" --app="$DASH"
     sleep 2
   done
 ) &
 
-# second-screen loop (remote debugging on 9223)
+# second-screen loop
 if [ -n "$HAVE_SCREEN1" ]; then
   (
     while true; do
       rm -f "$PROFILE/chromium-nexus/Singleton"* 2>/dev/null
-      DISPLAY=:0.1 chromium "${COMMON[@]}" --force-device-scale-factor=2 --user-data-dir="$PROFILE/chromium-nexus" \
-        --remote-debugging-port=9223 --app="$DASH/nexus"
+      DISPLAY=:0.1 chromium "${COMMON[@]}" "${DEBUG1[@]}" --force-device-scale-factor=2 \
+        --user-data-dir="$PROFILE/chromium-nexus" --app="$DASH/nexus"
       sleep 2
     done
   ) &

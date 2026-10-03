@@ -26,6 +26,9 @@ MEASURED throughput on every edge that can actually be measured:
   * probe   : (optional) measured RTT/jitter/loss per node and hosts found by
               the subnet sweep that no controller lists.
   * netmap  : (optional) SNMP devices LibreNMS knows that nothing else here does.
+  * snmp    : (optional) any managed switch/router polled directly by snmp.py:
+              ports with measured rates, and LLDP/CDP neighbours turned into
+              uplinks and attachments, merged onto nodes the map already has.
 
 HONEST-DATA RULES
   - Every rate is a real measurement. Where a rate cannot be measured (first
@@ -181,80 +184,214 @@ FLOW_STATE_CAP = 4096        # bound on per-flow counter state (clear = skip one
 IFID_TTL = 600               # re-discover the capture ifid this often (seconds)
 
 # ---------------- rate math: cumulative-counter differencing + light EMA ----------------
-_prev = {}   # counter key -> (ts, value)          (cumulative counters)
-_ema = {}    # key -> smoothed rate, units/sec
+class RateTracker:
+    """Difference CUMULATIVE counters into EMA-smoothed units/sec.
+
+    One instance per poller thread, so the pollers never clear each other's
+    counters: flow keys churn much faster than link keys, and the SNMP poller
+    (snmp.py) runs on its own cadence again. ``prev`` and ``ema`` are plain
+    dicts so a caller can bound them (``len``) and reset them (``clear``).
+    """
+
+    def __init__(self):
+        self.prev = {}   # counter key -> (ts, value)          (cumulative counters)
+        self.ema = {}    # key -> smoothed rate, units/sec
+
+    def smooth(self, key, raw):
+        """EMA over ~3 samples so the visual doesn't jitter. Input is a REAL rate."""
+        try:
+            raw = float(raw)
+        except (TypeError, ValueError):
+            return None
+        e = self.ema.get(key)
+        e = raw if e is None else EMA_A * raw + (1.0 - EMA_A) * e
+        self.ema[key] = e
+        return e
+
+    def rate(self, key, value, now):
+        """Difference a CUMULATIVE counter against its previous sample.
+        Returns EMA-smoothed units/sec, or None when genuinely unknown (first
+        sample, counter reset/wrap, bad clock) -- caller must set measured=false.
+        A reset or wrap (new < old) skips the interval instead of emitting a
+        huge spike. There is deliberately no "wrap correction": a 32-bit
+        counter that wrapped twice in the interval looks exactly like one that
+        wrapped once, and a guessed gigabit is worse than no reading."""
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return None
+        prev = self.prev.get(key)
+        self.prev[key] = (now, value)
+        if prev is None:
+            return None
+        dt = now - prev[0]
+        if dt <= 0:
+            return None
+        if value < prev[1]:                 # counter reset / wrap
+            self.ema.pop(key, None)
+            return None
+        return self.smooth(key, (value - prev[1]) / dt)
+
+    def clear(self):
+        self.prev.clear()
+        self.ema.clear()
 
 
-def _smooth(key, raw):
-    """EMA over ~3 samples so the visual doesn't jitter. Input is a REAL rate."""
-    try:
-        raw = float(raw)
-    except (TypeError, ValueError):
-        return None
-    e = _ema.get(key)
-    e = raw if e is None else EMA_A * raw + (1.0 - EMA_A) * e
-    _ema[key] = e
-    return e
-
-
-def _rate(key, value, now):
-    """Difference a CUMULATIVE byte counter against its previous sample.
-    Returns EMA-smoothed bytes/sec, or None when genuinely unknown (first
-    sample, counter reset/wrap, bad clock) -- caller must set measured=false.
-    A reset (new < old) skips the interval instead of emitting a huge spike."""
-    try:
-        value = float(value)
-    except (TypeError, ValueError):
-        return None
-    prev = _prev.get(key)
-    _prev[key] = (now, value)
-    if prev is None:
-        return None
-    dt = now - prev[0]
-    if dt <= 0:
-        return None
-    if value < prev[1]:                 # counter reset / wrap
-        _ema.pop(key, None)
-        return None
-    return _smooth(key, (value - prev[1]) / dt)
-
+_R = RateTracker()                       # link/node counters: the topology thread
+_prev, _ema = _R.prev, _R.ema
+_smooth, _rate = _R.smooth, _R.rate
 
 # same math, but private state for the flow thread so the two pollers never
 # clear each other's counters (flow keys churn much faster than link keys)
-_fprev = {}   # flow key -> (ts, cumulative bytes)
-_fema = {}    # flow key -> smoothed bytes/sec
+_F = RateTracker()
+_fprev, _fema = _F.prev, _F.ema
+_fsmooth, _frate = _F.smooth, _F.rate
 
 
-def _fsmooth(key, raw):
-    try:
-        raw = float(raw)
-    except (TypeError, ValueError):
-        return None
-    e = _fema.get(key)
-    e = raw if e is None else EMA_A * raw + (1.0 - EMA_A) * e
-    _fema[key] = e
-    return e
+# ---------------- SNMP-polled devices (snmp.py): placement + neighbour identity ----------------
+# topology.py never talks SNMP itself; it reads DATA["snmp"] (written by
+# snmp.py) and decides where each device sits and which LLDP/CDP neighbour is
+# which node. Identity is chassis MAC, port MACs and management address. A
+# display name is NEVER a merge key: two boxes called "switch" are two boxes,
+# and one box renamed is still one box.
+_SNMP_KIND = {"gateway": "gateway", "ap": "ap", "router": "switch", "switch": "switch"}
+SNMP_NEIGHBOUR_CAP = 64          # LLDP-only neighbour nodes drawn per tick
 
 
-def _frate(key, value, now):
-    """Flow-thread twin of _rate(): first sample and counter reset (a flow that
-    ended and restarted between samples) both return None -> that interval is
-    skipped, never spiked."""
-    try:
-        value = float(value)
-    except (TypeError, ValueError):
+def _snmp_devices():
+    s = DATA.get("snmp") if isinstance(DATA.get("snmp"), dict) else {}
+    return [d for d in (s.get("devices") or []) if isinstance(d, dict) and d.get("host")]
+
+
+def _nb_keys(nb):
+    """The stable identities a neighbour can be matched on: MACs and addresses. Never its name."""
+    macs, ips = [], []
+    ct, cid = nb.get("chassis_id_type"), nb.get("chassis_id")
+    if cid and ct == "mac":
+        macs.append(str(cid).lower())
+    elif cid and ct == "ip":
+        ips.append(str(cid))
+    pt, pid = nb.get("port_id_type"), nb.get("port_id")
+    if pid and pt == "mac":
+        macs.append(str(pid).lower())
+    if nb.get("mgmt_ip"):
+        ips.append(str(nb["mgmt_ip"]))
+    return macs, ips
+
+
+def _snmp_port(dev, nb):
+    """The polled port on `dev` that faces neighbour `nb`, or None."""
+    idx = nb.get("local_ifindex") if isinstance(nb, dict) else None
+    if idx is None:
         return None
-    prev = _fprev.get(key)
-    _fprev[key] = (now, value)
-    if prev is None:
-        return None
-    dt = now - prev[0]
-    if dt <= 0:
-        return None
-    if value < prev[1]:                 # flow disappeared and came back reset
-        _fema.pop(key, None)
-        return None
-    return _fsmooth(key, (value - prev[1]) / dt)
+    return next((p for p in (dev.get("ports") or []) if p.get("index") == idx), None)
+
+
+def _port_rates(p):
+    """(rx, tx) bytes/sec from a port's published bits/sec, None where unmeasured."""
+    if not p or not p.get("measured"):
+        return None, None
+    rx, tx = p.get("rx_bps"), p.get("tx_bps")
+    if rx is None or tx is None:
+        return None, None
+    return rx / 8.0, tx / 8.0
+
+
+def _snmp_plan(devices, mac_index, ip_index, gw_id):
+    """Decide where every SNMP-polled device goes.
+
+    `mac_index` / `ip_index` map identities of nodes ALREADY on the map (UniFi
+    devices, Proxmox hosts, ...) to node ids. Returns a dict:
+
+      devices : items in placement order (parents before children), each
+                {"dev", "nid", "merge_into", "parent", "uplink"} -- `merge_into`
+                is set when the polled box is one the map already has (same
+                chassis MAC or management address), in which case no node is
+                created and its SNMP facts enrich the existing one.
+      attach  : neighbour MAC or address -> (switch nid, neighbour entry), for
+                nodes added later (Proxmox hosts, probed hosts) to find their
+                real switch port.
+      pending : (switch nid, neighbour entry) for every neighbour that is not
+                infrastructure, resolved again at the end of the build.
+    """
+    mac_index, ip_index = dict(mac_index), dict(ip_index)
+    items, seen_chassis = [], {}
+    for d in devices:
+        host = str(d.get("host") or "")
+        macs = {str(m).lower() for m in (d.get("macs") or []) if m}
+        ch = str(d.get("chassis_id") or "").lower() if d.get("chassis_id_type") == "mac" else ""
+        if ch:
+            macs.add(ch)
+        merge = next((mac_index[m] for m in sorted(macs) if m in mac_index), None)
+        if merge is None and host in ip_index:
+            merge = ip_index[host]
+        if merge is None and ch and ch in seen_chassis:
+            merge = seen_chassis[ch]            # the same box listed twice (two addresses)
+        nid = merge or f"snmp:{host}"
+        if ch:
+            seen_chassis.setdefault(ch, nid)
+        for m in macs:
+            mac_index.setdefault(m, nid)
+        ip_index.setdefault(host, nid)
+        items.append({"dev": d, "nid": nid, "merge_into": merge, "parent": None, "uplink": None, "nbs": []})
+
+    for it in items:                            # every SNMP device is indexed now: resolve neighbours
+        for nb in (it["dev"].get("neighbors") or []):
+            if not isinstance(nb, dict):
+                continue
+            macs, ips = _nb_keys(nb)
+            rid = next((mac_index[m] for m in macs if m in mac_index), None)
+            if rid is None:
+                rid = next((ip_index[i] for i in ips if i in ip_index), None)
+            it["nbs"].append((nb, rid))
+
+    def is_infra(rid):
+        return bool(rid) and (rid == gw_id or rid.startswith("unifi:") or rid in placed)
+
+    # placement: a gateway-role device roots under wan; everything else hangs
+    # off a neighbour that is already placed, preferring the gateway, then a
+    # UniFi device, then another SNMP device. No LLDP evidence at all -> the
+    # gateway (or wan), which is genuinely all we know -- same as the netmap path.
+    placed = {it["nid"] for it in items if it["merge_into"] and (it["nid"] == gw_id or it["nid"].startswith("unifi:"))}
+    order = [it for it in items if it["merge_into"]]
+    todo = [it for it in items if not it["merge_into"]]
+    for it in todo:
+        if str(it["dev"].get("role") or "") == "gateway":
+            it["parent"] = "wan"
+            placed.add(it["nid"]); order.append(it)
+    while True:
+        progressed = False
+        for it in todo:
+            if it["parent"] is not None:
+                continue
+            best = None
+            for nb, rid in it["nbs"]:
+                if not rid or rid == it["nid"] or not is_infra(rid):
+                    continue
+                rank = 0 if rid == gw_id else 1 if rid.startswith("unifi:") else 2
+                if best is None or rank < best[0]:
+                    best = (rank, rid, nb)
+            if best:
+                it["parent"], it["uplink"] = best[1], best[2]
+                placed.add(it["nid"]); order.append(it); progressed = True
+        if progressed:
+            continue
+        rest = [it for it in todo if it["parent"] is None]
+        if not rest:
+            break
+        rest[0]["parent"] = gw_id or "wan"          # no evidence: hang the first one off the root...
+        placed.add(rest[0]["nid"]); order.append(rest[0])   # ...and let the others find it
+
+    attach, pending = {}, []
+    for it in items:
+        for nb, rid in it["nbs"]:
+            if rid and is_infra(rid):
+                continue
+            macs, ips = _nb_keys(nb)
+            for k in macs + ips:
+                attach.setdefault(k, (it["nid"], nb))
+            pending.append((it["nid"], nb))
+    return {"devices": order, "attach": attach, "pending": pending}
 
 
 # Display aliases for UniFi device names (config.json topology.aliases). The
@@ -659,6 +796,61 @@ def _build(devices, stas, wan, guests, now, unifi_fresh, pve_fresh, health_fresh
         if parent:
             link(parent, nid, rx, tx, cap)
 
+    # ---- SNMP-polled devices (snmp.py): any managed switch or router ----
+    # Placed by LLDP/CDP evidence (_snmp_plan). A polled box the map already
+    # has -- same chassis MAC, port MAC or management address as a UniFi
+    # device or a Proxmox host -- is NOT drawn again: its ports and neighbours
+    # enrich the existing node. Everything downstream (Proxmox hosts, probed
+    # hosts, the neighbour pass at the end) attaches through `snmp_attach`.
+    snmp_attach, snmp_pending, snmp_by_nid, snmp_up = {}, [], {}, 0
+    snmp_devs = _snmp_devices()
+    if snmp_devs:
+        plan = _snmp_plan(snmp_devs, {m: f"unifi:{m}" for m in dev_by_mac},
+                          {**{ip_: v["id"] for ip_, v in ipmap.items()},
+                           **{ip_: f"pve:{nm}" for ip_, nm in _pve_ips().items()}},
+                          gw_id)
+        snmp_attach = plan["attach"]
+        pub_by_nb = {}
+        for it in plan["devices"]:
+            dv, nid = it["dev"], it["nid"]
+            snmp_by_nid[nid] = dv
+            if dv.get("up"):
+                snmp_up += 1
+            pubs = []
+            for nb, rid in it["nbs"]:
+                pub = {"proto": nb.get("proto"), "port": nb.get("local_port_name") or nb.get("local_port"),
+                       "ifindex": nb.get("local_ifindex"), "sys_name": nb.get("sys_name"),
+                       "chassis_id": nb.get("chassis_id"), "chassis_id_type": nb.get("chassis_id_type"),
+                       "port_id": nb.get("port_id"), "port_descr": nb.get("port_descr"),
+                       "mgmt_ip": nb.get("mgmt_ip"), "node": rid}
+                pub_by_nb[id(nb)] = pub
+                pubs.append(pub)
+            smeta = {"snmp": True, "role": dv.get("role"), "vendor": dv.get("vendor"), "descr": dv.get("descr"),
+                     "uptime_s": dv.get("uptime_s"), "ports": dv.get("ports") or [],
+                     "ports_up": dv.get("ports_up"), "ports_total": dv.get("ports_total"),
+                     "neighbors": pubs, "nb_proto": dv.get("nb_proto"), "snmp_err": dv.get("err"),
+                     "stale": True if dv.get("stale") else None, "chassis_id": dv.get("chassis_id"),
+                     "snmp_ms": dv.get("latency_ms"), "snmp_host": dv.get("host")}
+            if it["merge_into"]:
+                ex = next((n for n in nodes if n["id"] == nid), None)
+                if ex is not None:
+                    ex["meta"].update({k: v for k, v in smeta.items() if v is not None})
+                continue
+            up_port = _snmp_port(dv, it["uplink"]) if it["uplink"] else None
+            rx, tx = _port_rates(up_port)
+            parent = it["parent"] if it["parent"] in node_ids else (gw_id if gw_id in node_ids else "wan")
+            smeta["model"] = dv.get("vendor")
+            smeta["uplink_port"] = (up_port or {}).get("name")
+            smeta["mac"] = dv.get("chassis_id") if dv.get("chassis_id_type") == "mac" else None
+            add(nid, _SNMP_KIND.get(dv.get("role"), "switch"), dv.get("label") or dv.get("name") or dv["host"],
+                dv["host"], parent, rx, tx, "up" if dv.get("up") else "down", smeta)
+            link(parent, nid, rx, tx, (up_port or {}).get("speed_bps"))
+        snmp_pending = [(snid, nb, pub_by_nb[id(nb)]) for snid, nb in plan["pending"] if id(nb) in pub_by_nb]
+    # the polled boxes by every identity they carry, so the client sections
+    # below never draw one of them a second time under its management MAC
+    snmp_macs = {str(m).lower(): nid for nid, dv in snmp_by_nid.items() for m in (dv.get("macs") or []) if m}
+    snmp_ips = {str(dv.get("host")): nid for nid, dv in snmp_by_nid.items() if dv.get("host")}
+
     # ---- PVE hosts: attach to their REAL switch port (matched by ip in stat/sta) ----
     sta_by_ip = {c.get("ip"): c for c in stas or [] if c.get("ip")}
     pve_ip = _pve_ips()
@@ -683,16 +875,28 @@ def _build(devices, stas, wan, guests, now, unifi_fresh, pve_fresh, health_fresh
             sw_mac, port = c["sw_mac"].lower(), c.get("sw_port")
         if sw_mac and port is not None:
             pve_ports.add((sw_mac, port))
-        parent = f"unifi:{sw_mac}" if sw_mac and f"unifi:{sw_mac}" in node_ids else \
-                 (gw_id if gw_id in node_ids else "wan")
+        # no controller knows the port, but an SNMP-polled switch saw this host
+        # over LLDP/CDP (it runs lldpd): that is a measured attachment
+        satt = snmp_attach.get(ip or "") if not sw_mac else None
+        sport = _snmp_port(snmp_by_nid.get(satt[0]) or {}, satt[1]) if satt and satt[0] in node_ids else None
+        if satt and satt[0] in node_ids:
+            parent = satt[0]
+            port = satt[1].get("local_port_name") or satt[1].get("local_port")
+        else:
+            satt = None
+            parent = f"unifi:{sw_mac}" if sw_mac and f"unifi:{sw_mac}" in node_ids else \
+                     (gw_id if gw_id in node_ids else "wan")
         rx = tx = None
         if c and unifi_fresh:        # UniFi sta rates are from the switch's perspective:
             rx = _smooth(f"pve.{name}.rx", c.get("tx_bytes-r") or 0)   # tx->client = INTO host
             tx = _smooth(f"pve.{name}.tx", c.get("rx_bytes-r") or 0)   # rx from client = OUT of host
+        elif sport:                  # likewise the SNMP switch port: its tx is INTO the host
+            srx, stx = _port_rates(sport)
+            rx, tx = stx, srx
         gl = guests_by_node.get(name, [])
         status = "up" if (c or (pve_fresh and gl)) else "unknown"
         add(nid, "pvehost", name, ip, parent, rx, tx, status,
-            {"port": port, "guests": len(gl),
+            {"port": port, "guests": len(gl), "lldp": True if satt else None,
              "running": sum(1 for g in gl if g.get("status") == "running")})
         # the host's switch PORT carries host + all bridged guest traffic -> honest link rate
         lrx = ltx = lcap = None
@@ -702,6 +906,9 @@ def _build(devices, stas, wan, guests, now, unifi_fresh, pve_fresh, health_fresh
             if unifi_fresh and p.get("rx_bytes") is not None:
                 lrx = _rate(f"port.{sw_mac}.{port}.rx", p.get("rx_bytes"), now)
                 ltx = _rate(f"port.{sw_mac}.{port}.tx", p.get("tx_bytes"), now)
+        elif sport:
+            lrx, ltx = _port_rates(sport)
+            lcap = sport.get("speed_bps")
         if parent:
             link(parent, nid, lrx, ltx, lcap)
 
@@ -762,6 +969,25 @@ def _build(devices, stas, wan, guests, now, unifi_fresh, pve_fresh, health_fresh
         mac = (c.get("mac") or "").lower()
         if not mac or c.get("ip") in pve_ip:
             continue                                  # PVE hosts already emitted above
+        snid = snmp_macs.get(mac) or snmp_ips.get(str(c.get("ip") or ""))
+        if snid is not None:
+            # an SNMP-polled switch hanging off a UniFi port: the controller
+            # knows the port, so a device that had no LLDP evidence of its own
+            # uplink gets that port instead of the gateway fallback
+            sn = next((n for n in nodes if n["id"] == snid), None)
+            pm_ = (c.get("sw_mac") or "").lower()
+            if (sn is not None and c.get("is_wired") and f"unifi:{pm_}" in node_ids
+                    and not sn["meta"].get("uplink_port") and sn["parent"] != f"unifi:{pm_}"):
+                sn["parent"] = f"unifi:{pm_}"
+                sn["meta"]["port"] = c.get("sw_port")
+                sn["meta"]["via_unifi"] = True
+                for lk in links:
+                    if lk["target"] == snid:
+                        lk["source"] = f"unifi:{pm_}"
+                        pp_ = ports.get((pm_, c.get("sw_port")))
+                        if pp_ and pp_.get("speed"):
+                            lk["capacity_bps"] = int(pp_["speed"]) * 1_000_000
+            continue
         sw_mac = (c.get("sw_mac") or "").lower()
         if c.get("is_wired") and (sw_mac, c.get("sw_port")) in pve_ports:
             # guest bridged via a PVE host port -> already a guest node; but its IP
@@ -824,7 +1050,7 @@ def _build(devices, stas, wan, guests, now, unifi_fresh, pve_fresh, health_fresh
     seen_lbl_ip = {}
     for u in sorted((_known.get("rows") or []), key=lambda u: -(u.get("last_seen") or 0)):
         mac = (u.get("mac") or "").lower()
-        if not mac or mac in online_macs or f"client:{mac}" in node_ids:
+        if not mac or mac in online_macs or f"client:{mac}" in node_ids or mac in snmp_macs:
             continue
         name, hostname = (u.get("name") or "").strip(), (u.get("hostname") or "").strip()
         if not (name or hostname):
@@ -835,7 +1061,7 @@ def _build(devices, stas, wan, guests, now, unifi_fresh, pve_fresh, health_fresh
         if now - last > OFFLINE_KEEP_S:
             continue
         uip = str(u.get("last_ip") or u.get("fixed_ip") or "") or None
-        if uip and (uip in pve_ip or uip in ipmap):
+        if uip and (uip in pve_ip or uip in ipmap or uip in snmp_ips):
             continue                                   # address already lives on another node
         gname = (name or hostname).lower()
         if guest_by_name.get(gname) is not None:
@@ -878,20 +1104,26 @@ def _build(devices, stas, wan, guests, now, unifi_fresh, pve_fresh, health_fresh
         if dip:
             snmp[str(dip)] = d
     for uip in (probe.get("unknown") or [])[:24]:
-        if uip in ipmap or uip in pve_ip or uip in gw_lan:
+        if uip in ipmap or uip in pve_ip or uip in gw_lan or uip in snmp_ips:
             continue
         nid = f"disc:{uip}"
         sd = snmp.get(uip) or {}
-        label = sd.get("name") or uip
-        dcat, dlbl = _client_cat(sd.get("name"), None, None, None, None, uip)
-        add(nid, "client", dlbl or label, uip,
-            gw_id if gw_id in node_ids else None,
-            None, None, "up",
-            {"discovered": True, "wired": None, "cat": dcat,
-             "snmp": True if sd else None,
+        satt = snmp_attach.get(uip) or snmp_attach.get(str(parp.get(uip) or "").lower())
+        if satt and satt[0] not in node_ids:
+            satt = None
+        label = sd.get("name") or (satt[1].get("sys_name") if satt else None) or uip
+        dcat, dlbl = _client_cat(label if label != uip else None, None, None, bool(satt), None, uip)
+        sport = _snmp_port(snmp_by_nid.get(satt[0]) or {}, satt[1]) if satt else None
+        srx, stx = _port_rates(sport)
+        dparent = satt[0] if satt else (gw_id if gw_id in node_ids else None)
+        add(nid, "client", dlbl or label, uip, dparent,
+            stx, srx, "up",
+            {"discovered": True, "wired": True if satt else None, "cat": dcat,
+             "snmp": True if sd else None, "lldp": True if satt else None,
+             "port": (satt[1].get("local_port_name") or satt[1].get("local_port")) if satt else None,
              "group": sd.get("group")})
-        if gw_id in node_ids:
-            link(gw_id, nid, None, None, None)
+        if dparent:
+            link(dparent, nid, stx, srx, (sport or {}).get("speed_bps") if satt else None)
 
     # ---- SNMP-only devices: LibreNMS knows them, nothing else here does ------
     # That includes every DOWN device - which is exactly when you want to see
@@ -922,6 +1154,74 @@ def _build(devices, stas, wan, guests, now, unifi_fresh, pve_fresh, health_fresh
             link(gw_id, nid, None, None, None)
         snmp_added += 1
 
+    # ---- LLDP/CDP neighbours nothing else lists ----------------------------
+    # An SNMP-polled switch SAW each of these on a port within the last couple
+    # of minutes (LLDP ages entries out), so drawing them is reporting an
+    # observation, not inventing one. First they are matched once more, now
+    # against everything on the map (clients, guests, probed hosts), by MAC
+    # and address only: a neighbour that is already a node is linked to it,
+    # and a client or probed host the switch sees directly gets that port as
+    # its parent -- the switch knows better than "somewhere behind the gateway".
+    if snmp_pending:
+        macmap = {}
+        for n in nodes:
+            m = (n.get("meta") or {}).get("mac")
+            if m:
+                macmap.setdefault(str(m).lower(), n["id"])
+            if n["id"].startswith(("unifi:", "client:")):
+                macmap.setdefault(n["id"].split(":", 1)[1], n["id"])
+        for (gnode_, gvmid_), gm in _gmac.items():
+            macmap.setdefault(gm, f"guest:{gnode_}:{gvmid_}")
+        for ip_, mac_ in parp.items():
+            if ip_ in ipmap:
+                macmap.setdefault(str(mac_).lower(), ipmap[ip_]["id"])
+        by_id = {n["id"]: n for n in nodes}
+        lldp_added = 0
+        for snid, nb, pub in snmp_pending:
+            if snid not in node_ids:
+                continue
+            macs, ips = _nb_keys(nb)
+            rid = next((macmap[m] for m in macs if m in macmap), None)
+            if rid is None:
+                rid = next((ipmap[i]["id"] for i in ips if i in ipmap), None)
+            sport = _snmp_port(snmp_by_nid.get(snid) or {}, nb)
+            prx, ptx = _port_rates(sport)
+            if rid is not None and rid in node_ids:
+                pub["node"] = rid
+                ex = by_id.get(rid)
+                if ex is not None and rid.startswith(("client:", "disc:")) and ex.get("parent") != snid:
+                    ex["parent"] = snid
+                    ex["meta"]["port"] = nb.get("local_port_name") or nb.get("local_port")
+                    ex["meta"]["lldp"] = True
+                    for lk in links:
+                        if lk["target"] == rid:
+                            lk["source"] = snid
+                            if sport and sport.get("speed_bps"):
+                                lk["capacity_bps"] = int(sport["speed_bps"])
+                continue
+            if lldp_added >= SNMP_NEIGHBOUR_CAP:
+                continue
+            key = (macs[0] if macs else None) or (ips[0] if ips else None) or re.sub(
+                r"[^A-Za-z0-9_.-]", "_", str(nb.get("chassis_id") or nb.get("sys_name") or ""))[:48]
+            if not key:
+                continue
+            nid = f"lldp:{key}"
+            if nid in node_ids:
+                pub["node"] = nid
+                continue
+            name = nb.get("sys_name") or key
+            ncat, nlbl = _client_cat(name, None, nb.get("sys_descr"), True, macs[0] if macs else None,
+                                     ips[0] if ips else None)
+            add(nid, "client", nlbl or name, ips[0] if ips else None, snid, ptx, prx, "up",
+                {"lldp": True, "proto": nb.get("proto"), "wired": True, "cat": ncat,
+                 "mac": macs[0] if macs else None,
+                 "port": nb.get("local_port_name") or nb.get("local_port"),
+                 "chassis_id": nb.get("chassis_id"), "port_id": nb.get("port_id"),
+                 "descr": nb.get("sys_descr"), "via": snid, "name": nb.get("sys_name")})
+            link(snid, nid, ptx, prx, (sport or {}).get("speed_bps"))
+            pub["node"] = nid
+            lldp_added += 1
+
     # ---- external NVR on another site: real edge, rate NOT measurable ----
     if NVR_IP:
         fg = _struct.get("frigate_guest")
@@ -947,6 +1247,8 @@ def _build(devices, stas, wan, guests, now, unifi_fresh, pve_fresh, health_fresh
                        "clients_capped": culled > 0,        # only anonymous idle ones ever are
                        "clients_culled": culled,
                        "clients_offline": offline,          # known-but-asleep, shown as down
+                       "snmp_devices": len(snmp_devs),      # SNMP-polled switches/routers (snmp.py)
+                       "snmp_up": snmp_up,
                        "stale_nodes": list(_pve_state["stale_nodes"])}}
 
 

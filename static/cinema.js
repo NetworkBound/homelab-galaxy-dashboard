@@ -20,6 +20,12 @@
                segmented progress bar. netscene's setTourText() has written to
                #tour since August, but #tour is display:none — the tour has been
                narrating to nobody. This is that narration, made legible.
+     4 MOVES   OPT-IN cinematic camera moves (CONFIG.features.cinematics):
+               after every N tour laps (CONFIG.cinematics.laps, default 3) one
+               of four moves plays - a barrel roll through the topology, an
+               exploded view of the tiers, a close-up on one node with its
+               real numbers, a flight along the strongest measured link - and
+               the camera is handed back to the tour exactly where it was.
 
    All DOM and CSS is injected from here, so index.html needs exactly one
    <script> line and no template edits (index.html is Jinja — braces are
@@ -29,6 +35,7 @@
      c   cinema mode  — letterbox + heavier grade, for recording
      h   HUD          — hide the rails/panels for a clean plate
      g   grade        — bypass the whole pass (A/B check)
+     m   move         — play the next cinematic move now (features.cinematics)
 
    NON-NEGOTIABLES (inherited from galaxy.js / netscene.js, do not break)
    * video-safe: no strobing. Grain is the only per-frame term and it is
@@ -256,7 +263,10 @@
     var manual = !!(NS.tour && NS.tour.manual);
     var target = manual ? 0 : clamp(-lateral * BANK_GAIN, -BANK_MAX, BANK_MAX);
 
-    C.roll = lerp(C.roll, target, 1 - Math.exp(-dt * BANK_EASE));
+    /* a cinematic move may own the roll outright (the barrel roll writes a
+       full 2*pi); it hands back at exactly 0, so the lerp below resumes cleanly */
+    if (MV.roll != null) C.roll = MV.roll;
+    else C.roll = lerp(C.roll, target, 1 - Math.exp(-dt * BANK_EASE));
     if (Math.abs(C.roll) < 1e-4) C.roll = 0;
 
     /* roll = rotate the up vector about the view axis. OrbitControls rebuilds
@@ -413,6 +423,8 @@
     if (!C.el || !NS || !NS.tour || !NS.tour.stops || !NS.tour.stops.length) return;
     var TR = NS.tour;
 
+    if (MV.on) { renderMoveCaption(); C.el.classList.add('on'); return; }
+
     if (TR.manual) {
       if (C.lastKey !== '~manual') {
         C.lastKey = '~manual';
@@ -475,6 +487,310 @@
     C.el.classList.add('on');
   }
 
+  /* ======================= 4. cinematic moves (opt-in) =======================
+     IDEA CREDIT: a user running this dashboard for a homelab called Kosmos
+     built his own camera work and described it in GitHub issue #1 - "Camera
+     roll and in general a better camera now too. Every 3 laps it plays one of
+     4 Animations (Barrel roll through the topology, Explosion view, zoom in on
+     one node and showing statistics, zooming in on one strong arc) which looks
+     amazing." This is that idea, implemented against the real scene state.
+
+     RULES (all four moves)
+     * driven by what is on screen: the orbit radius and elevation come from
+       the tour's own overview pose, the exploded tiers are the real node
+       kinds, the close-up picks the busiest infra node by measured bps and
+       prints ITS numbers, the arc flight picks the highest measured-bps link
+       in NETSCENE.links. A move whose subject does not exist (no measured
+       link yet) is skipped, never faked.
+     * eased in and out: every sub-phase is a smootherstep lerp, so velocity
+       is zero at every boundary and the camera never snaps.
+     * never a blank frame: every look target is either the graph centre (the
+       overview target) or a node / link inside the graph, and the lerp
+       between two such targets stays inside the graph's bounding box - the
+       same content-anchoring argument nexus.js makes with needsHub(). The
+       barrel roll orbits the centre at >= 0.58x the fit distance, so the
+       whole estate stays in frame while the horizon turns.
+     * hands back cleanly: the tour is PAUSED (netscene freezes its clocks),
+       the camera pose at the start is saved, and every move's path ends on
+       exactly that pose before the tour is unpaused - so the tour's own
+       glide resumes from where it left off with no jump. The user grabbing
+       the mouse (or the doom takeover) aborts the move at once.
+     * gated: CONFIG.features.cinematics (default OFF). CONFIG.cinematics.laps
+       (default 3) is how many complete tour laps run between moves; the
+       rotation order is CONFIG.cinematics.moves. ?cinematics=on&laps=1 on the
+       URL, or localStorage 'galaxy.cinematics' = 'on', switches it on for one
+       kiosk without touching the server. CINEMA.play('roll'|'explode'|
+       'closeup'|'arc') plays one on demand (QA); key m plays the next. */
+  var MV = { on: false, name: '', t: 0, dur: 0, u: 0, laps: 0, prevIdx: 0, prevNext: 0, prevPhase: '', playedLap: -1, seq: 0,
+             roll: null, pose: null, cap: null, sub: null, stats: null, lastStats: '', waitUntil: 0,
+             P0: new THREE.Vector3(), T0: new THREE.Vector3(), c: new THREE.Vector3(),
+             posV: new THREE.Vector3(), tgtV: new THREE.Vector3() };
+  var _a = new THREE.Vector3(), _b = new THREE.Vector3(), _m = new THREE.Vector3(), _p = new THREE.Vector3();
+  var MOVE_DUR = { roll: 16, explode: 14, closeup: 13, arc: 13 };
+  var MOVE_EYE = { roll: 'cinematic · barrel roll', explode: 'cinematic · exploded view',
+                   closeup: 'cinematic · close-up', arc: 'cinematic · strongest link' };
+
+  function cfgC() { return window.CONFIG || {}; }
+  function cinematicsOn() { return !!((cfgC().features || {}).cinematics); }
+  function lapsPer() { var c = cfgC().cinematics; return Math.max(1, (c && c.laps) || 3); }
+  function moveList() { var c = cfgC().cinematics; var l = (c && c.moves) || ['roll', 'explode', 'closeup', 'arc']; return l.filter(function (m) { return MOVE_DUR[m]; }); }
+  function ss(x) { x = clamp(x, 0, 1); return x * x * x * (x * (x * 6 - 15) + 10); }
+  function orbitPos(out, c, az, el, dist) {
+    return out.set(c.x + dist * Math.cos(el) * Math.sin(az), c.y + dist * Math.sin(el), c.z + dist * Math.cos(el) * Math.cos(az));
+  }
+  function nodePos(out, n) { return out.set(n._cx !== undefined ? n._cx : n._x, n._cy !== undefined ? n._cy : n._y, n._cz !== undefined ? n._cz : n._z); }
+  function fmtMs(v) { return v == null ? null : (+v).toFixed(v < 10 ? 2 : 1) + ' ms'; }
+
+  /* the pose the move starts from and must end on, in orbit terms */
+  function startFrame(NS) {
+    MV.P0.copy(NS.cam.position); MV.T0.copy(NS.ctrl.target);
+    _a.subVectors(MV.P0, MV.T0);
+    MV.d0 = Math.max(150, _a.length());
+    MV.az0 = Math.atan2(_a.x, _a.z);
+    MV.el0 = Math.asin(clamp(_a.y / MV.d0, -0.99, 0.99));
+  }
+
+  /* ---- 4a. barrel roll: one full orbit of the graph centre, dipping toward
+     the plane and in to 0.58x the distance at the midpoint ("through the
+     topology"), with a full 2*pi roll across the middle 60% of the move ---- */
+  function poseRoll(u) {
+    var s = ss(u), dip = Math.sin(Math.PI * s);
+    var az = MV.az0 + 2 * Math.PI * s;
+    var dist = MV.d0 * (1 - 0.42 * dip);
+    var el = MV.el0 - (MV.el0 - 0.12) * dip;
+    orbitPos(MV.posV, MV.T0, az, el, dist); MV.tgtV.copy(MV.T0);
+    MV.roll = 2 * Math.PI * ss((u - 0.2) / 0.6);
+    if (u >= 1) MV.roll = 0;
+  }
+  function setupRoll(NS) {
+    MV.cap = 'BARREL ROLL'; MV.sub = 'one orbit through the whole estate · the horizon turns once';
+    var inf = 0, g = 0, cl = 0;
+    NS.nodes.forEach(function (n) { if (n.kind === 'guest') g++; else if (n.kind === 'client') cl++; else if (n.kind !== 'external') inf++; });
+    MV.stats = function () { return '<div>infra<b>' + inf + '</b></div><div>guests<b>' + g + '</b></div><div>clients<b>' + cl + '</b></div><div>links<b>' + NS.links.length + '</b></div>'; };
+    return true;
+  }
+
+  /* ---- 4b. exploded view: guests rise, clients sink, infra stays (netscene
+     applies NS.explode in its transform sync and re-stretches the links); the
+     camera pulls back and up so the three tiers fit, then everything settles ---- */
+  function poseExplode(u) {
+    var s = ss(u), bell = Math.sin(Math.PI * s);
+    var ex = u < 0.3 ? ss(u / 0.3) : u < 0.7 ? 1 : 1 - ss((u - 0.7) / 0.3);
+    /* pull back AND up while the tiers are apart: verified in a 1280x720 run
+       that +0.16 rad / 1.28x left the dropped client tier clipped at the
+       bottom edge; the gap is ~2 x explodeY tall, so the distance grows with it */
+    var NS = window.NETSCENE, gap = (NS && NS.explodeY) || 90;
+    orbitPos(MV.posV, MV.T0, MV.az0 + 0.35 * Math.sin(2 * Math.PI * s), MV.el0 + 0.30 * bell, MV.d0 * (1 + 0.30 * bell) + 1.6 * gap * ex);
+    MV.tgtV.copy(MV.T0); MV.tgtV.y -= 0.25 * gap * ex;      // look a little down into the gap
+    MV.explode = u >= 1 ? 0 : ex;
+  }
+  function setupExplode(NS) {
+    var inf = 0, g = 0, cl = 0, meas = 0;
+    NS.nodes.forEach(function (n) { if (n.kind === 'guest') g++; else if (n.kind === 'client') cl++; else if (n.kind !== 'external') inf++; });
+    NS.links.forEach(function (L) { if (L.measured) meas++; });
+    if (!g && !cl) return false;                      // nothing to separate
+    MV.cap = 'EXPLODED VIEW'; MV.sub = 'the three tiers pulled apart · guests up · fabric level · clients down';
+    MV.stats = function () { return '<div>infra<b>' + inf + '</b></div><div>guests<b>' + g + '</b></div><div>clients<b>' + cl + '</b></div><div>measured links<b>' + meas + '</b></div>'; };
+    return true;
+  }
+
+  /* ---- 4c. close-up: the infra node moving the most measured traffic (ties:
+     the host with the most guests), framed from the tour's own azimuth, a slow
+     40-degree orbit at 170 units, its real numbers in the caption ---- */
+  function pickNode(NS) {
+    var best = null, bestK = -1;
+    NS.nodes.forEach(function (n) {
+      if (n.kind === 'guest' || n.kind === 'client' || n.kind === 'external') return;
+      if (n._foc !== undefined && n._foc < 0.5) return;
+      var k = (n.measured ? (+n.rx || 0) + (+n.tx || 0) : 0) + ((n.meta && n.meta.guests) || 0) * 1e3 + (n.kind === 'pvehost' ? 1 : 0);
+      if (k > bestK) { bestK = k; best = n; }
+    });
+    return best;
+  }
+  function poseHoldNode(v, out, tgt) {
+    var R = MV.R * (1 - 0.12 * v);
+    orbitPos(out, MV.c, MV.az0 + 0.7 * v, 0.34, R); tgt.copy(MV.c);
+  }
+  function poseCloseup(u) {
+    if (u < 0.25) {
+      var s1 = ss(u / 0.25); poseHoldNode(0, _a, _b);
+      MV.posV.lerpVectors(MV.P0, _a, s1); MV.posV.y += 0.08 * MV.d0 * Math.sin(Math.PI * s1);
+      MV.tgtV.lerpVectors(MV.T0, _b, s1);
+    } else if (u < 0.8) {
+      poseHoldNode(ss((u - 0.25) / 0.55), MV.posV, MV.tgtV);
+    } else {
+      var s3 = ss((u - 0.8) / 0.2); poseHoldNode(1, _a, _b);
+      MV.posV.lerpVectors(_a, MV.P0, s3); MV.posV.y += 0.08 * MV.d0 * Math.sin(Math.PI * s3);
+      MV.tgtV.lerpVectors(_b, MV.T0, s3);
+    }
+  }
+  function setupCloseup(NS) {
+    var n = pickNode(NS); if (!n) return false;
+    nodePos(MV.c, n); MV.c.y += (n._h || 6) * 0.5;
+    MV.R = Math.max(150, 120 + (n._h || 6) * 4);     // OrbitControls floors the distance at 120
+    MV.node = n;
+    var kids = 0; NS.nodes.forEach(function (k) { if (k.parent === n.id) kids++; });
+    MV.cap = String(n.label || n.id).toUpperCase();
+    MV.sub = n.kind + (n.ip ? ' · ' + n.ip : '') + (n.meta && n.meta.model ? ' · ' + n.meta.model : '') + ' · ' + kids + ' attached · close-up';
+    MV.stats = function () {
+      var m = n.meta || {}, h = '';
+      h += '<div>state<b class="' + (n.status === 'down' ? 'bad' : '') + '">' + (n.status || '?') + '</b></div>';
+      if (n.measured) { h += '<div>down<b class="rx">' + fmtRate(n.rx) + '</b></div><div>up<b class="tx">' + fmtRate(n.tx) + '</b></div>'; }
+      if (m.rtt != null) h += '<div>latency<b class="' + (m.rtt > 60 ? 'bad' : m.rtt > 15 ? 'warn' : '') + '">' + fmtMs(m.rtt) + '</b></div>';
+      if (m.jitter != null) h += '<div>jitter<b>' + fmtMs(m.jitter) + '</b></div>';
+      if (m.loss != null) h += '<div>loss<b class="' + (m.loss ? 'bad' : '') + '">' + m.loss + '%</b></div>';
+      if (m.guests != null) h += '<div>guests<b>' + (m.running != null ? m.running + ' / ' : '') + m.guests + '</b></div>';
+      if (m.cpu != null) h += '<div>cpu<b>' + Math.round(m.cpu) + '%</b></div>';
+      if (m.inet_ms != null) h += '<div>internet<b>' + fmtMs(m.inet_ms) + '</b></div>';
+      return h;
+    };
+    return true;
+  }
+
+  /* ---- 4d. strongest arc: the highest measured-bps link in the scene; the
+     camera flies along it, beside and above, looking a quarter-length ahead ---- */
+  function pickLink(NS) {
+    var best = null, bps = 0;
+    NS.links.forEach(function (L) {
+      if (!L.measured || !L.data) return;
+      var a = NS.byId[L.aId], b = NS.byId[L.bId]; if (!a || !b) return;
+      if ((a._foc !== undefined && a._foc < 0.5) || (b._foc !== undefined && b._foc < 0.5)) return;
+      var v = +L.data.bps || 0; if (v > bps) { bps = v; best = L; }
+    });
+    return best;
+  }
+  function poseAlong(v, out, tgt) {
+    _m.lerpVectors(MV.la, MV.lb, v);
+    out.copy(_m).addScaledVector(MV.side, MV.W).addScaledVector(_p.set(0, 1, 0), MV.H);
+    tgt.lerpVectors(MV.la, MV.lb, clamp(v + 0.25, 0, 1));
+  }
+  function poseArc(u) {
+    if (u < 0.25) {
+      var s1 = ss(u / 0.25); poseAlong(0, _a, _b);
+      MV.posV.lerpVectors(MV.P0, _a, s1); MV.tgtV.lerpVectors(MV.T0, _b, s1);
+    } else if (u < 0.8) {
+      poseAlong(ss((u - 0.25) / 0.55), MV.posV, MV.tgtV);
+    } else {
+      var s3 = ss((u - 0.8) / 0.2); poseAlong(1, _a, _b);
+      MV.posV.lerpVectors(_a, MV.P0, s3); MV.tgtV.lerpVectors(_b, MV.T0, s3);
+    }
+  }
+  function setupArc(NS) {
+    var L = pickLink(NS); if (!L) return false;
+    var a = NS.byId[L.aId], b = NS.byId[L.bId];
+    MV.la = nodePos(new THREE.Vector3(), a); MV.lb = nodePos(new THREE.Vector3(), b);
+    _m.subVectors(MV.lb, MV.la); var len = Math.max(1, _m.length());
+    /* the perpendicular on the camera's own side of the link, so the approach
+       never crosses through the graph */
+    MV.side = new THREE.Vector3(-_m.z, 0, _m.x); if (MV.side.lengthSq() < 1e-6) MV.side.set(1, 0, 0); MV.side.normalize();
+    _p.lerpVectors(MV.la, MV.lb, 0.5); _a.subVectors(MV.P0, _p);
+    if (_a.dot(MV.side) < 0) MV.side.negate();
+    /* beside and above the link, far enough that BOTH endpoints and the beam
+       between them read as a route (verified at 1280x720: 120/55 on a ~200-unit
+       trunk framed the switch box alone, the link was a slab across the frame) */
+    MV.W = Math.max(190, len * 0.75); MV.H = Math.max(100, len * 0.45);
+    MV.link = L;
+    var bps = +L.data.bps || 0, cap = +L.data.capacity_bps || 0;
+    MV.cap = String(a.label || a.id).toUpperCase() + ' ⇄ ' + String(b.label || b.id).toUpperCase();
+    MV.sub = 'strongest measured link in the scene · ' + (L.trunk ? 'trunk' : L.arc ? 'wireless' : 'leaf') + ' · flying along it';
+    MV.stats = function () {
+      var h = '<div>measured<b class="rx">' + fmtRate(bps / 8) + '</b></div>';
+      if (cap) h += '<div>capacity<b>' + fmtRate(cap / 8) + '</b></div><div>utilisation<b class="' + (bps / cap > 0.8 ? 'warn' : '') + '">' + (100 * bps / cap).toFixed(1) + '%</b></div>';
+      h += '<div>' + String(a.label || a.id) + '<b class="' + (a.status === 'down' ? 'bad' : '') + '">' + (a.status || '?') + '</b></div>';
+      h += '<div>' + String(b.label || b.id) + '<b class="' + (b.status === 'down' ? 'bad' : '') + '">' + (b.status || '?') + '</b></div>';
+      return h;
+    };
+    return true;
+  }
+
+  var SETUP = { roll: setupRoll, explode: setupExplode, closeup: setupCloseup, arc: setupArc };
+  var POSE = { roll: poseRoll, explode: poseExplode, closeup: poseCloseup, arc: poseArc };
+
+  /* start a move now (returns false when its subject is missing). The tour is
+     parked at a hold; the move owns the camera until it has returned the pose. */
+  function startMove(name) {
+    var NS = window.NETSCENE;
+    if (MV.on || !NS || !NS.tour || !NS.tour.stops.length || NS.tour.manual || !SETUP[name]) return false;
+    /* only with the WHOLE estate materialised (the overview holds): at a
+       focused stop everything outside the subject is shrunk away, and an orbit
+       or an exploded view of one block is mostly empty sky */
+    if (NS.focusAll === false) return false;
+    startFrame(NS);
+    MV.name = name; MV.cap = ''; MV.sub = ''; MV.stats = null; MV.explode = 0; MV.roll = null; MV.node = null; MV.link = null;
+    if (!SETUP[name](NS)) return false;
+    MV.on = true; MV.t = 0; MV.u = 0; MV.dur = MOVE_DUR[name]; MV.lastStats = '';
+    NS.tour.paused = true;
+    C.lastKey = '';
+    return true;
+  }
+  function endMove(abort) {
+    var NS = window.NETSCENE;
+    MV.on = false; MV.roll = null; MV.explode = 0;
+    if (NS) { NS.explode = 0; if (NS.tour) NS.tour.paused = false; }
+    if (!abort && NS) { NS.cam.position.copy(MV.P0); NS.ctrl.target.copy(MV.T0); }
+    C.lastKey = ''; MV.lastStats = '';
+  }
+  /* play the next move in the rotation, skipping any whose subject is missing */
+  function playNext() {
+    var list = moveList(); if (!list.length) return false;
+    for (var i = 0; i < list.length; i++) {
+      var name = list[(MV.seq + i) % list.length];
+      if (startMove(name)) { MV.seq = (MV.seq + i + 1) % list.length; return true; }
+    }
+    return false;
+  }
+
+  function moveTick(t, dt) {
+    var NS = window.NETSCENE, TR = NS && NS.tour;
+    if (!TR || !TR.stops || !TR.stops.length) return;
+    /* lap counter: a lap is an ARRIVAL at stop 0 - the previous frame was the
+       travel leg INTO stop 0 from a non-zero stop. A tour rebuilt at stop 0, the
+       boot frames that already sit there and the manual fly-home (which sets
+       idx = 0 before it flies) are none of those, so none of them count. */
+    if (TR.phase === 'hold' && TR.idx === 0 && MV.prevPhase === 'travel' && MV.prevNext === 0 && MV.prevIdx !== 0) { MV.laps++; MV.waitUntil = t + 1.4; }
+    MV.prevIdx = TR.idx; MV.prevNext = TR.next; MV.prevPhase = TR.phase;
+
+    if (MV.on) {
+      var doom = document.body.dataset.doom || '';
+      if (TR.manual || (doom && doom.indexOf('phase=off') !== 0)) { endMove(true); return; }
+      /* re-asserted every frame: a topology rebuild mid-move replaces NS.tour
+         (netscene carries the flag over, but belt and braces - a running tour
+         under a move is exactly the "lands on the wrong stop" bug) */
+      TR.paused = true;
+      MV.t += dt; MV.u = Math.min(1, MV.t / MV.dur);
+      POSE[MV.name](MV.u);
+      NS.cam.position.copy(MV.posV); NS.ctrl.target.copy(MV.tgtV);
+      if (MV.name === 'explode') NS.explode = MV.explode;
+      if (MV.u >= 1) endMove(false);
+      return;
+    }
+    /* automatic play: every N laps, once the arrival glide has settled, from
+       the overview hold only (everything is materialised there) */
+    if (!cinematicsOn()) return;
+    if (TR.phase !== 'hold' || TR.idx !== 0 || TR.manual || t < MV.waitUntil) return;
+    if (MV.laps <= 0 || MV.laps % lapsPer() !== 0 || MV.playedLap === MV.laps) return;
+    var doom2 = document.body.dataset.doom || '';
+    if (doom2 && doom2.indexOf('phase=off') !== 0) return;
+    MV.playedLap = MV.laps;
+    playNext();
+  }
+
+  function renderMoveCaption() {
+    var key = '~move|' + MV.name;
+    if (C.lastKey !== key) {
+      C.lastKey = key;
+      C.eye.textContent = MOVE_EYE[MV.name] || 'cinematic';
+      C.name.textContent = MV.cap || MV.name.toUpperCase();
+      C.sub.textContent = MV.sub || '';
+      C.bar.innerHTML = '<i class="now"></i>';
+      MV.lastStats = '';
+    }
+    var h = MV.stats ? MV.stats() : '';
+    if (h !== MV.lastStats) { MV.lastStats = h; C.stats.innerHTML = h; }
+    var bar = C.bar.firstChild;
+    if (bar) { var w = Math.round(MV.u * 100) + '%'; if (bar.style.width !== w) { bar.style.flex = 'none'; bar.style.width = w; } }
+  }
+
   /* ======================= modes & keys ======================= */
 
   function applyMode() {
@@ -499,6 +815,7 @@
     if (k === 'c') { C.cinema = !C.cinema; applyMode(); }
     else if (k === 'h') { C.hud = !C.hud; applyMode(); }
     else if (k === 'g') { C.on = !C.on; C.degraded = false; applyMode(); }
+    else if (k === 'm') { if (cinematicsOn()) playNext(); }
     else return;
     e.preventDefault();
   }
@@ -522,6 +839,10 @@
       window.bloom.threshold = BLOOM.threshold;
     }
 
+    /* the cinematic moves run AFTER the tour has posed the camera for this
+       frame (netSceneTick ran first) and BEFORE the bank, so the roll they ask
+       for is applied through the same cam.up path as the banking */
+    try { moveTick(t, dt); } catch (e) { endMove(true); }
     bankTick(dt);
 
     C.u.uTime.value = t;
@@ -580,6 +901,9 @@
         ' roll=' + C.roll.toFixed(4) +
         ' blur=' + C.u.uSpeed.value.toFixed(4) +
         ' mode=' + (C.cinema ? 'cinema' : 'wall') +
+        ' cinematics=' + (cinematicsOn() ? 'on' : 'off') +
+        ' laps=' + MV.laps +
+        ' move=' + (MV.on ? MV.name + ':' + MV.u.toFixed(2) : 'none') +
         (C.force ? ' forced' : '') + (C.degraded ? ' degraded' : '');
     }
   }
@@ -592,6 +916,10 @@
   /* doom.js drives this 0..1 through the takeover transitions. Kept off
      applyMode()'s books so it still fires when the grade is bypassed. */
   C.glitch = function (v) { C.glitchV = clamp(+v || 0, 0, 1); };
+  /* cinematic moves: play one now (QA / console), or the next in rotation */
+  C.play = function (name) { return name ? startMove(name) : playNext(); };
+  C.stopMove = function () { if (MV.on) endMove(false); };
+  C.move = MV;
   window.CINEMA = C;
   window.cinemaSet = function (o) {
     Object.keys(o || {}).forEach(function (k) {

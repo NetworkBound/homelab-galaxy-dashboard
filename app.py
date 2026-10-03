@@ -18,7 +18,7 @@ Three ways to run it:
     set -a; . ./.env; python3 app.py
 
 Modules: ``pollers`` (inventory + extra pollers + telemetry), ``topology``
-(network tree + flows), ``probe`` (fping), ``edge`` (tunnel/CrowdSec/Akvorado),
+(network tree + flows), ``probe`` (fping), ``snmp`` (polled switches/routers), ``edge`` (tunnel/CrowdSec/Akvorado),
 ``threats`` (security + audience + unified timeline), ``showtime`` (Ollama /
 Frigate / Emby feeds, display modes, presence), ``addons`` (panels dropped into
 ``addons/``), ``setup`` (wizard API), ``demo`` (fixture feed).
@@ -496,12 +496,16 @@ def api_config():
         "doom": doom,
         "setup": bool(config.SETUP_UI and not demo),
         "chat": bool(demo or OLLAMA),
+        "snmp": bool(config.SNMP_TARGETS or (demo and DATA.get("snmp"))),
+        "cinematics": bool(config.ENABLE_CINEMATICS),
     }
     return jsonify({
         "version": config.VERSION, "demo": demo,
         "brand": config.BRAND, "domain": config.DOMAIN or ("example.com" if demo else ""),
         "tagline": config.TAGLINE, "nodes": config.node_entries(_node_names()),
         "wan_label": config.WAN_LABEL, "categories": config.CATEGORY_LIST, "palette": config.PALETTE,
+        "cinematics": {"laps": config.CINEMATICS_LAPS,
+                       "moves": ["roll", "explode", "closeup", "arc"]},
         "features": features, "addons": sorted(DATA.get("addons") or {}),
     })
 
@@ -521,7 +525,8 @@ def api_all():
         "total": len(g), "running": sum(1 for x in g if x.get("status") == "running"), "ts": DATA["ts"],
         "ts_age": round(time.time() - DATA["ts"], 1) if DATA.get("ts") else None, "ts_err": DATA.get("ts_err"),
         **{k: DATA.get(k) for k in ("nodes2", "zfs", "backups", "frigate", "top", "certs", "zbx2", "latency",
-                                    "topology", "probe", "telemetry", "edge", "external") if DATA.get(k) is not None}})
+                                    "topology", "probe", "snmp", "telemetry", "edge", "external")
+           if DATA.get(k) is not None}})
 
 
 # ---- room light sync ------------------------------------------------------
@@ -923,6 +928,8 @@ def start_background_pollers():
              ("addons", lambda: __import__("addons").load(app, DATA, config))]
     if config.ENABLE_PROBE:
         steps.insert(2, ("probe", lambda: __import__("probe").start_probe(DATA)))
+    if config.SNMP_TARGETS:      # snmp.py decides for itself whether the library is there
+        steps.insert(2, ("snmp", lambda: __import__("snmp").start_snmp(DATA)))
     for name, fn in steps:
         try:
             fn()

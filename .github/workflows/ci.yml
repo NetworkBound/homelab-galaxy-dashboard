@@ -25,13 +25,18 @@ jobs:
           # Removing a secret from HEAD does not remove it from what GitHub
           # serves. Every blob ever committed is checked, because that is what
           # a clone actually hands over.
+          # Pass the path each blob was committed at, so a historical version
+          # of a file is judged by the same ALLOW_PATH rule as the current one.
+          # Without it the sweep was stricter on history than on the tree and
+          # flagged every synthetic credential an old test file ever held.
           fail=0
-          for sha in $(git rev-list --objects --all | awk 'NF==2{print $1}' \
-                       | git cat-file --batch-check='%(objectname) %(objecttype)' \
-                       | awk '$2=="blob"{print $1}'); do
+          while read -r sha path; do
+            [ -n "$path" ] || continue
+            [ "$(git cat-file -t "$sha" 2>/dev/null)" = blob ] || continue
             git cat-file -p "$sha" 2>/dev/null \
-              | python3 .github/secretscan.py --stdin --label "blob $sha" || fail=1
-          done
+              | python3 .github/secretscan.py --stdin --label "blob $sha ($path)" \
+                                              --allow-path "$path" || fail=1
+          done < <(git rev-list --objects --all | awk 'NF>=2')
           [ "$fail" -eq 0 ] || { echo "::error::Credential found in repository history."; exit 1; }
 
   python:
@@ -53,7 +58,7 @@ jobs:
 
       - name: Byte-compile every module
         run: |
-          python3 -m compileall -q app.py auth.py config.py pollers.py topology.py probe.py edge.py threats.py \
+          python3 -m compileall -q app.py auth.py config.py pollers.py topology.py probe.py snmp.py edge.py threats.py \
             showtime.py gpu_render.py demo.py setup.py addons.py addons tests deploy/lights/galaxy-lights.py \
             deploy/edge/galaxy-audience-export.py
 

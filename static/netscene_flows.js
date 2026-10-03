@@ -572,6 +572,7 @@
     sp.userData.setText = function (l1, l2, colHex) {
       var key = l1 + '|' + l2 + '|' + colHex;
       if (key === last) return; last = key;
+      sp.userData.txt = l1 + ' / ' + l2;           // named in NETSCENE.auditLabels() (was "(flowlbl)")
       x.clearRect(0, 0, W, H);
       x.textAlign = 'center'; x.textBaseline = 'middle';
       x.font = '700 34px ui-monospace,Consolas,monospace';

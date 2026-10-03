@@ -186,7 +186,12 @@
       pProg: new Float32Array(P_CAP), pRate: new Float32Array(P_CAP),
       pActive: 0,
       tmpV: new THREE.Vector3(), tmpQ: new THREE.Quaternion(), tmpM: new THREE.Matrix4(),
-      up: new THREE.Vector3(0, 1, 0), t: 0
+      up: new THREE.Vector3(0, 1, 0), t: 0,
+      /* cinematic exploded view (cinema.js): 0 = the real layout, 1 = guests
+         lifted / clients dropped by explodeY so the three tiers separate */
+      explode: 0, explodeY: 90,
+      /* constants the camera overlays (cinema.js) frame against */
+      CAM_EL: CAM_EL, CAM_SWAY: CAM_SWAY, MANUAL_HOLD: MANUAL_HOLD
     };
     NS.ray.params.Points = { threshold: 0 };
     scene.add(NS.backdrop);
@@ -1287,6 +1292,9 @@
     var dV = (exZ * Math.sin(CAM_EL) + exY * Math.cos(CAM_EL) + 44) / (Math.tan(vf) * FRAC_Y);
     NS.fitDist = Math.max(dH, dV, 480);
     NS.fitEx = { x: exX, y: exY, z: exZ };   // kept so setFrame() can re-fit
+    /* the exploded view's tier gap scales with the estate: a 4-node layout
+       is wider, so its guests lift further before the tiers read as separate */
+    NS.explodeY = Math.max(70, Math.min(190, exX * 0.3));
     applyViewOffset();
     NS.tweenUntil = NS.t + (hadOld ? 1.6 : 0);
     NS.needSettle = true;
@@ -1466,7 +1474,12 @@
        an in-flight position tween */
     NS.nodes.forEach(function (n) { if (n._inst) n._scl = guestScale(n); });
     syncNodeTransforms(0);
-    updateHotLabels();
+    /* NOT updateHotLabels() here: this runs from the poll's fetch callback,
+       i.e. BETWEEN frames, and re-seated the hot callouts with no label pass
+       after them. On a kiosk the gap to the next pass is <16 ms; in a
+       software-GL browser (~2 fps) it is up to 430 ms, and a label audit
+       sampled a callout sitting on a flow label 1 frame in 60. netSceneTick
+       calls updateHotLabels() before every render anyway. */
 
     restyleLinks();
     updateLinkGeometry(true);
@@ -1676,11 +1689,15 @@
   /* ============================ node transform sync (tween) ============================ */
   function syncNodeTransforms(alpha) {
     var touchedG = false, touchedC = false;
+    var ex = NS.explode || 0, exY = NS.explodeY || 90;
     NS.nodes.forEach(function (n) {
       var sp = n._sprd || 0;
       var tx = n._x + (sp ? sp * SPR_L * (n._x - n._bcx) : 0);
       var ty = n._y + (sp ? sp * SPR_V * (n._y - n._bcy) : 0);
       var tz = n._z + (sp ? sp * SPR_L * (n._z - n._bcz) : 0);
+      /* exploded view: guests rise, clients sink, the infra tier stays - the
+         links are re-stretched by updateLinkGeometry(true) so they follow */
+      if (ex) ty += ex * (n.kind === 'guest' ? exY : n.kind === 'client' ? -0.7 * exY : 0);
       n._cx += (tx - n._cx) * alpha; n._cy += (ty - n._cy) * alpha; n._cz += (tz - n._cz) * alpha;
       if (n._grp) n._grp.position.set(n._cx, n._cy, n._cz);
       if (n._lbl) n._lbl.position.set(n._cx, n._cy + (n.kind === 'external' ? -((n._h || 8) + 22) : ((n._h || 4) + (n._grp ? 18 : 5.5) + 5.5 * (n._lstag || 0))), n._cz);
@@ -1898,6 +1915,7 @@
         T.P0.copy(prev.P0); T.T0.copy(prev.T0);
         T.travelT = prev.travelT; T.manual = prev.manual;
         T.switched = prev.switched; T.arcH = prev.arcH || 0;
+        T.paused = !!prev.paused; T.pausedAt = prev.pausedAt || 0;   // a cinematic move in progress survives the rebuild
         var here = stops[T.idx], there = stops[T.next];
         if (T.manual) forceFocus(null);
         else if (T.phase === 'hold') forceFocus(here.ids || null, stopSpread(here));
@@ -1948,6 +1966,15 @@
       if (!TR.manual) { TR.manual = true; setFocus(null); setTourText('◆ MANUAL · tour resumes after idle'); }
       return;
     }
+    /* a cinematic move (cinema.js) owns the camera: the tour's clocks are
+       frozen, so the dwell it was in resumes exactly where it left off and the
+       pose it glides back to is the one it was parked on - no jump either way.
+       Frozen by TIMESTAMP, not by accumulating dt: dt is capped at 1 s, so at a
+       low frame rate a per-frame shift leaked and the dwell expired under the
+       move (measured in a 1 fps headless run: the tour departed the instant
+       the move ended). The shift by the true elapsed time is exact at any rate. */
+    if (TR.paused) { if (!TR.pausedAt) TR.pausedAt = t; return; }
+    if (TR.pausedAt) { var shift = t - TR.pausedAt; TR.t0 += shift; TR.tHold += shift; TR.pausedAt = 0; }
     if (TR.manual) {                               // idle again: fly home first
       TR.manual = false; TR.idx = 0; TR.next = 0; TR.phase = 'travel'; TR.t0 = t;
       TR.P0.copy(NS.cam.position); TR.T0.copy(NS.ctrl.target); TR.travelT = 6;
@@ -2055,6 +2082,13 @@
     } else if (NS.needSettle) {
       NS.needSettle = false;
       syncNodeTransforms(1);
+      updateLinkGeometry(true);
+    } else if (NS.explode !== NS._explodeApplied) {
+      /* the exploded view is eased by cinema.js one value per frame; outside a
+         tween nothing else re-seats the nodes, so do it here */
+      NS._explodeApplied = NS.explode;
+      syncNodeTransforms(1);
+      updateHotLabels();
       updateLinkGeometry(true);
     }
     tickParticles(dt);

@@ -29,7 +29,9 @@ Three deliberate properties fall out of this shape:
 | `config.py` | Resolves all configuration from the environment. The only place that knows what is site-specific. |
 | `app.py` | Flask app, the `DATA` cache, the core pollers (Proxmox, Zabbix, UniFi, cameras, service health, fleet), the JSON API, and the SQLite sampler. |
 | `pollers.py` | Second-tier pollers: per-node detail, TLS certificate expiry, backup freshness, Prometheus scrapes. |
-| `topology.py` | Network topology and flow analysis — UniFi client graph, ntopng host-to-host flows, rate smoothing. |
+| `topology.py` | Network topology and flow analysis — UniFi client graph, ntopng host-to-host flows, rate smoothing, and the placement of SNMP-polled devices by LLDP/CDP evidence. |
+| `probe.py` | Optional active ICMP measurement (fping) and the subnet sweep for hosts no controller lists. |
+| `snmp.py` | Optional direct SNMP polling of any managed switch or router: interfaces with measured rates, LLDP/CDP neighbours. Needs `pysnmp`. |
 | `gpu_render.py` | Optional offscreen EGL render of the scene on the server's GPU, written to the fixed path `/opt/dashboard/static/gpu_scene.png`. |
 | `templates/index.html` | The 3D console. Scene construction, data binding, and the no-WebGL HUD fallback. |
 | `templates/desk.html` | A denser, non-3D view intended for a fixed wall display. |
@@ -54,6 +56,8 @@ each, which is what makes the lock-free design safe:
 | `health` | `poll_health` | Result of each configured service probe |
 | `netmap` | `poll_netmap` | External SNMP topology document |
 | `fleet` | `poll_fleet` | Reachability of arbitrary `host:port` targets |
+| `probe` | `probe.py` | Measured RTT/jitter/loss per address, ARP presence, hosts found by the sweep |
+| `snmp` | `snmp.py` | SNMP-polled devices: identity, ports with rates, LLDP/CDP neighbours, per-device up/down with the classified reason |
 
 The second-tier pollers in `pollers.py` add their own keys on the same
 one-writer-per-key rule: `nodes2` (per-node vitals incl. temperature), `zfs`

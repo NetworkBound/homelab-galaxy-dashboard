@@ -24,7 +24,8 @@ tell the difference.
 | Fixture | Feeds |
 |---|---|
 | `all.json` | `/api/all` — 89 guests across two nodes, storage, pools, ZFS, Zabbix, UniFi, health, certs, telemetry, edge, add-ons |
-| `topology.json` | `/api/topology` — 136 nodes, 135 links, 30 flows, measured rates |
+| `topology.json` | `/api/topology` — 140 nodes, 139 links, 30 flows, measured rates; includes two SNMP-polled switches with ports and LLDP links |
+| `snmp.json` | `/api/all` → `snmp`: the two polled switches as `snmp.py` publishes them |
 | `showtime.json` | `/api/showtime` — Ollama instances, Frigate, media sessions, GPU series |
 | `threats.json` | `/api/threats` and its stream — the intrusion timeline |
 | `gpu.json`, `telemetry.json`, `inventory.json` | the matching endpoints |

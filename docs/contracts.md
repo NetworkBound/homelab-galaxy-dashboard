@@ -20,7 +20,9 @@ Served in every mode (demo or real). Never contains a credential.
   "palette": {"ai": "#ff4fa3", "media": "#38e1ff", "network": "#37f5a0",
               "monitor": "#ffb347", "web": "#9b8cff", "infra": "#8fb0d0", "stopped": "#ff5a6a"},
   "features": {"nexus": true, "cameras": false, "threats": true, "audience": true,
-               "lights": false, "doom": false, "setup": true, "chat": false},
+               "lights": false, "doom": false, "setup": true, "chat": false, "snmp": false,
+               "cinematics": false},
+  "cinematics": {"laps": 3, "moves": ["roll", "explode", "closeup", "arc"]},
   "addons": ["speedtest", "backup-check"]
 }
 ```
@@ -32,6 +34,11 @@ Served in every mode (demo or real). Never contains a credential.
   (cyan, amber, violet, green, rose, gold) when not configured.
 - `features.doom` is true only when `static/doom/js-dos.js` exists on disk.
 - `features.cameras` is true only when an NVR URL is configured.
+- `features.snmp` is true when at least one SNMP target is configured (or in demo mode).
+- `features.cinematics` reflects the server default for scripted camera moves; a
+  screen can still override it per-session with `?cinematics=on|off`. The
+  `cinematics` block gives the default lap count between moves and the rotation
+  of move names; the front end clamps `laps` to 1..50 and ignores unknown moves.
 - Everything in `brand`, `domain`, `tagline`, `wan_label`, `nodes[].label/accent`,
   `palette` and `categories` is user-editable in the setup wizard.
 
@@ -123,7 +130,7 @@ one of `ok | warn | bad` (or absent).
 
 `/api/all` (`guests, nodes, nodes2, storage, pools, zfs, backups, unifi, zabbix,
 zbx2, cameras, frigate, sources, health, latency, netmap, top, certs, telemetry,
-probe, topology, edge, external, addons, ts`), `/api/topology` (`nodes, links,
+probe, snmp, topology, edge, external, addons, ts`), `/api/topology` (`nodes, links,
 flows, totals, flow_meta, edge, external`), `/api/gpu`, `/api/showtime`,
 `/api/threats` (+`/stream`), `/api/lightstate` (+`/stream`, `/api/lightcolor`,
 `/api/lightenable`), `/api/mode` (+`/stream`), `/api/presence` (+`/stream`),
@@ -131,6 +138,17 @@ flows, totals, flow_meta, edge, external`), `/api/gpu`, `/api/showtime`,
 `/api/inventory`, `/api/telemetry`, `/cam/<name>.jpg`, `/frigate/thumb/<id>.jpg`.
 `edge` contains `cloudflare`, `crowdsec`, `secmon`, `audience`, `threats`; any of
 them may be `{"up": false, ...}` and the screens must degrade per block.
+
+Topology node kinds are `wan | gateway | switch | ap | pvehost | guest | client |
+external`. SNMP-polled devices are `switch` / `ap` / `gateway` nodes with id
+`snmp:<host>` and `meta.snmp: true`, carrying `meta.ports[]` (`index, name,
+alias, speed_bps, admin, oper, rx_bps, tx_bps, measured, hc, rx_err, tx_err`)
+and `meta.neighbors[]` (`proto, port, sys_name, chassis_id, port_id, mgmt_ip,
+node`, where `node` is the id of the node that neighbour resolved to, or
+`null`). A neighbour nothing else lists is a `client` node `lldp:<chassis-mac>`
+with `meta.lldp: true`. A device the map already had keeps its existing id and
+gains the same `meta` keys. Rates that could not be measured are `null` with
+`measured: false`; the screens must not animate those.
 
 Two things the screens must never do: open a 6th `EventSource` (Chrome allows
 six connections per host and each stream holds one; the pages already use

@@ -1,5 +1,141 @@
 # Changelog
 
+## Unreleased — the clean-room pass
+
+Someone cloned this repo, followed the README literally and wrote down every
+place reality disagreed with it, then attacked the key gate added in #3. What
+came out of that:
+
+### Added — any managed switch or router in the topology (#1)
+
+- **A first-class SNMP source** (`snmp.py`, `SNMP_<n>_*`, wizard section "SNMP
+  devices"), asked for in #1 by Noah-2012: the infrastructure layer was UniFi
+  only, so a Cisco, MikroTik or TP-Link switch was at best a leaf the prober
+  found. Each listed device is now polled directly — sysName/sysDescr/
+  sysObjectID/sysUpTime, the interface table with admin/oper status, speed,
+  octet and error counters — and drawn as a real node with per-port measured
+  throughput. **LLDP (CDP as the fallback for Cisco gear without it) turns
+  the device list into a graph**: uplinks, Proxmox hosts and probed hosts on
+  their real switch ports, and neighbours nothing else lists. A device the
+  map already has — same chassis MAC, port MAC or management address as a
+  UniFi device or a Proxmox host — is merged, never drawn twice; a display
+  name is never a merge key. v2c and v3 (auth + privacy); every credential is
+  a masked secret and absent from `/api/config`. 64-bit counters are
+  preferred, a counter wrap or reset is *no reading* for that interval rather
+  than a fake gigabit, and a 32-bit-only port that could wrap twice in the
+  interval reports nothing. Only the listed targets are ever contacted. The
+  **Test** button runs one real poll and says *which* of timeout /
+  authentication / no-such-object happened. Optional `pysnmp` (pure Python);
+  the base install and every existing test are unchanged without it. Demo
+  mode gains two SNMP switches with ports and LLDP links.
+
+### Added — who is watching, and a camera that moves (#1)
+
+- **Live audience on both screens.** The wall grows an `AUDIENCE` panel ("N
+  people on site", unique people over five minutes, a sixty-minute sparkline,
+  per-country and per-host chips, bots and monitors shown as excluded) and the
+  nexus gains a gold viewer headline with each visitor's country drawn as a
+  labelled body. When the audience source is request-only the panel says so
+  rather than inventing a visitor count. Hidden entirely when
+  `features.audience` is false. Host chips and the wordmark come from your own
+  `brand`/`domain`, so nothing site-specific is baked in.
+- **Opt-in cinematic camera moves** (`ENABLE_CINEMATICS`, off by default;
+  `CINEMATICS_LAPS` sets the cadence; a screen can also be driven with
+  `?cinematics=on`). Every few tour laps, only at the full-estate overview, the
+  camera plays one scripted move in rotation — orbit through the topology,
+  explode the node tiers apart, close up on the busiest node with its real
+  stats, or fly a flow arc — then returns exactly to the tour pose. Mouse or a
+  DOOM takeover aborts instantly. Asked for in #1 by Noah-2012.
+- **One beat per stop.** The room lights and the TV are driven by the tour's
+  "beat"; it used to fire twice per leg (the stop key hands over at the travel
+  midpoint and again on arrival), which showed up as a brightness flutter.
+  Beats now fire once, on the travel-to-hold arrival.
+
+### Fixed — the documented deploy path did not work at all
+
+- **`deploy/install.sh` never copied `auth.py`.** It selected files from a
+  hand-written list that `auth.py` was never added to, so a fresh
+  `sudo ./deploy/install.sh` produced an `/opt` tree whose `app.py` opens with
+  `import auth` and nothing to import: `ModuleNotFoundError` on every start,
+  and `Restart=always` turning that into a permanent crash loop. It now copies
+  every top-level module by glob, and refuses to finish if `app.py` imports
+  something that did not land. `tests/test_deploy_install.py` checks this from
+  the script itself.
+
+### Fixed — a key with an accent in it locked you out of your own dashboard
+
+- **`hmac.compare_digest` raises on non-ASCII `str`.** Both gates compared
+  text, so `X-API-Key: ü` — from anyone, no credential needed — became an
+  unhandled exception and HTTP 500 rather than 401, through the header, `?key=`
+  and the session cookie; and `X-Setup-Token` did the same. Worse, a
+  `DASH_API_KEY` containing a non-ASCII character meant the *correct* key
+  raised too: every route 500ed for everybody, permanently, `/login` included.
+  Both gates now compare UTF-8 bytes, so every input is a yes or a no and never
+  a crash. Not a bypass — it always failed closed — but a lockout and a
+  one-request way to fill the journal with tracebacks.
+
+### Fixed — the wizard
+
+- **Apply killed the app.** `/api/setup/apply` re-executes in place, but
+  Werkzeug marks its listening socket inheritable and `os.execv` keeps
+  inheritable descriptors, so the new image met its own still-bound port and
+  exited with "Address already in use". Under systemd `Restart=always` hid it;
+  run the way the README says to (`python3 app.py`) the dashboard simply died
+  when you pressed Apply. Descriptors are now closed at exec.
+- **Save, reload, save again used to wipe every credential.** The wizard reads
+  through the `config.json` snapshot `config.py` takes at import, so after a
+  save it kept answering with blank fields — and a blank means "clear this" to
+  the save path. Two clicks destroyed the Proxmox token and the dashboard key.
+  `save()` now refreshes that layer, so what the wizard shows is what is
+  stored, masked, and is safe to post straight back.
+
+### Fixed — guardrails and the deploy kit
+
+- **The private-IP guardrail could not see inside a minified file.** It matched
+  per line with a keyword allowlist, and every demo fixture is one line —
+  `all.json` is 124 KB of it — so one incidental "example" excused all 133
+  addresses in the file that is most likely to carry a real one. Replaced by
+  `.github/ipscan.py`, which judges each address against the placeholder range
+  and nothing else. A home-router address planted in `all.json` now fails the
+  check; before, the same file passed it.
+- **The kiosk ran Chromium with `--remote-allow-origins=*` and DevTools always
+  on.** That pair removes the only thing stopping a page the kiosk browser has
+  open from driving the whole browser. Remote debugging is now opt-in via
+  `KIOSK_DEBUG_PORT` and bound to loopback.
+- **The kiosk readiness probe spun forever once `DASH_API_KEY` was set**, because
+  `curl -f` reads the gate's 401 as "not up yet". Any HTTP answer now counts.
+- **The audience exporter copied two client-controlled strings through to the
+  wall** — the Host header and `CF-IPCountry`, which is just a header on an
+  origin reachable without Cloudflare. The front end escapes them, so this was
+  not an exploitable injection, but the exporter now validates them itself.
+- **CI's "No credentials anywhere in history" job was permanently red.** A blob
+  arrives on stdin with no path, so `--stdin` judged every historical version
+  of a file by stricter rules than the current one, and a synthetic Proxmox
+  token in an older `tests/test_setup_api.py` failed the job on every push. The
+  sweep now receives the path the blob was committed at and applies the same
+  `ALLOW_PATH` rule as the working-tree scan. A gate that is always red is a
+  gate that gets switched off.
+- `deploy/edge/galaxy-cs-export.sh` gained `set -euo pipefail` and an explicit
+  directory mode; `install.sh` writes the env file with `install -m 0640`
+  instead of `cp` then `chmod`, and the unit's comment now matches the mode it
+  is actually given.
+- `requirements.txt` gained upper bounds on `requests` and `urllib3` to match
+  the one Flask already had, and an honest note that `nvidia-ml-py` installs
+  whether or not you have a GPU.
+
+### Docs
+
+- The README quickstart said `http://localhost:8080`; the app binds `0.0.0.0`.
+  Said so, next to the command.
+- A new "What is exposed" note under Security names what an unauthenticated
+  request returns, rather than leaving it implied.
+
+### Tests
+
+`tests/test_auth_non_ascii.py`, `tests/test_deploy_install.py`,
+`tests/test_setup_roundtrip.py`, `tests/test_ipscan.py`,
+`tests/test_edge_exporter.py` — each pinned to a failure reproduced first.
+
 ## 2.0.0 — the universe release
 
 The public repo had fallen a long way behind the version in the videos. This

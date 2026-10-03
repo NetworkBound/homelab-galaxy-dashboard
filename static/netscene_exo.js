@@ -45,9 +45,29 @@
                   red, and only at RED/BLACK. window.NETEXO.threat(evt) injects
                   a fake event for QA; every new seq also dispatches a
                   window 'galaxy:threat' CustomEvent (lightsync.js -> room lights).
-   * AUDIENCE   - edge.audience (Cloudflare zone analytics) when up: one gold
-                  mote per NEW unique viewer (delta of viewers_5m, <= 20) rides
-                  the HA strands on top of the request comets.
+   * AUDIENCE   - v7: edge.audience (real unique human visitors; monitors and
+                  bots excluded upstream). A rise in viewers_5m is N real people
+                  arriving: each one is a gold (#ffd166) 4-point comet that
+                  leaves the country ring at that visitor's cc segment, arcs to
+                  the tunnel station (which flashes gold on arrival) and rides
+                  an HA strand into the estate. A "VISITOR · CC / host" tag
+                  (pool of 3) marks the segment it left. Attribution: a cc whose
+                  1 h uniques grew this poll is certain; the remainder (a
+                  returning visitor) goes to the busiest country. Rate cap:
+                  <= 12 credited per poll, queue 24, one launch / 0.3 s, held
+                  while the exosphere is folded (dropped after 25 s). One
+                  'galaxy:viewer' CustomEvent per poll with arrivals (hero.js
+                  shows it in the audience panel). window.NETEXO.viewer(cc,
+                  host) injects one for QA.
+   * MOTION (v7) - everything that moves is keyed to a measurement: the head of
+                  an arrival comet carries a soft gold flare (flare pool, shared
+                  with the intrusion streaks) and its country's ring segment
+                  pulses gold for 1.2 s; every ring segment breathes at a rate
+                  set by that country's bps and every beacon halo at its AS's
+                  bps (still when there is no traffic); the station's torus spins
+                  with req/min. CINEMA.beat(2) fires when a visitor reaches the
+                  station and when the camera lands on a tour stop, so those
+                  land in the bloom the way a new intrusion (beat 3) already does.
 
    Labels opt into netscene's single collision pass with userData.lbl = true
    (lowest rank: the outside world never hides a host name) and are counted by
@@ -189,7 +209,11 @@
       lastStop: '', tourCol: '',
       /* threats (v6) */
       th: null, thSeq: null, thSeen: {}, thQueue: [], thT: -9, streaks: [], nodeRings: [],
-      audPrev: null
+      /* audience (v7) */
+      audPrev: null, audCC: {}, audHost: {}, audQ: [], audT: -9, audSeq: 0, stFlash: 0,
+      /* motion (v7) */
+      ringSeg: 0, ccSeg: {}, lastPhase: '',
+      rPulse: [{ on: false, cc: '', t0: 0 }, { on: false, cc: '', t0: 0 }, { on: false, cc: '', t0: 0 }, { on: false, cc: '', t0: 0 }]
     };
     EX.grp.name = 'exosphere'; EX.grp.visible = false;
     NS.scene.add(EX.grp);
@@ -228,9 +252,15 @@
     EX.rGeo.setAttribute('position', new THREE.BufferAttribute(EX.rPos, 3).setUsage(THREE.DynamicDrawUsage));
     EX.rGeo.setAttribute('color', new THREE.BufferAttribute(EX.rCol, 3).setUsage(THREE.DynamicDrawUsage));
     EX.rGeo.setDrawRange(0, 0); EX.rGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 6000);
+    /* v7: the built colours are kept in rBase; tick writes the breathing /
+       pulsed colours into rCol every frame from them (no allocation) */
+    EX.rBase = new Float32Array(RS * 2 * 3); EX.segU = new Float32Array(RS);
     EX.ring = new THREE.LineSegments(EX.rGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false }));
     EX.ring.frustumCulled = false; EX.grp.add(EX.ring);
     EX.ccLabels = []; for (var ci = 0; ci < 6; ci++) { var cl = mkLabel(40, false); EX.grp.add(cl); EX.ccLabels.push(cl); }
+    /* v7: visitor arrival tags (gold, pill 2) - a fixed pool of 3 sprites */
+    EX.audL = [];
+    for (var vl = 0; vl < 3; vl++) { var alb = mkLabel(72, false); EX.grp.add(alb); EX.audL.push(alb); }
 
     /* talker paths: dynamic LineSegments, <= 3 talkers x 10 hops */
     EX.tPos = new Float32Array(3 * 10 * 2 * 3);
@@ -400,18 +430,33 @@
       ha + ' conn · ' + (+cf.req_per_min || 0).toFixed(0) + ' req/min · ' + (cf.locations || []).join(' '), '#e8c9a0', 2);
     else EX.cfLbl.userData.set('CLOUDFLARE EDGE', '#7a6a60', 32, 'tunnel metrics unavailable', '#6b6b7a', 1);
 
-    /* audience (Cloudflare zone analytics): real unique viewers. Each NEW
-       viewer since the last poll is one gold mote down the HA strands. When
-       the block is not up nothing extra runs (the req/min comets already do). */
+    /* audience (v7): real unique visitors. A rise in viewers_5m is N people
+       arriving; each is queued as one gold comet from the country ring (see
+       launchViewer). WHERE from: by_country carries the 1 h uniques per cc, so
+       a cc whose count grew this poll is a certain attribution; anyone left
+       over (a returning visitor inside the hour) is credited to the busiest
+       country - the most probable origin. WHICH site: the host whose uniques
+       grew, else the busiest host. The first poll is the baseline and never
+       fires; the block being down runs nothing (the req/min comets already do). */
     var au = edge && edge.audience;
     if (au && au.up) {
-      var v5 = +au.viewers_5m || 0;
+      var v5 = +au.viewers_5m || 0, ccNow = {}, hostNow = {}, cc, hn;
+      (au.by_country || []).forEach(function (c) { if (c && c.cc) ccNow[c.cc] = +c.uniques || 0; });
+      (au.by_host || []).forEach(function (h) { if (h && h.host) hostNow[h.host] = +h.uniques || 0; });
       if (EX.audPrev !== null && v5 > EX.audPrev) {
-        var nv = Math.min(20, v5 - EX.audPrev);
-        for (var vi = 0; vi < nv; vi++) if (EX.P.length < P_CAP - 1) EX.P.push({ kind: 'viewer', s: vi % Math.max(1, ha), p: -vi * 0.09, rate: 0.30 });
+        var nv = Math.min(12, v5 - EX.audPrev), from = [], top = '', topN = -1;
+        for (cc in ccNow) { var dcc = ccNow[cc] - (EX.audCC[cc] || 0); for (var q = 0; q < dcc && from.length < nv; q++) from.push(cc); }
+        for (cc in ccNow) if (ccNow[cc] > topN) { topN = ccNow[cc]; top = cc; }
+        while (from.length < nv) from.push(top);
+        var host = '', hostN = -1;
+        for (hn in hostNow) if (hostNow[hn] > (EX.audHost[hn] || 0)) { host = hn; break; }
+        if (!host) for (hn in hostNow) if (hostNow[hn] > hostN) { hostN = hostNow[hn]; host = hn; }
+        var nowMs = Date.now();
+        for (var vi = 0; vi < from.length; vi++) if (EX.audQ.length < 24) EX.audQ.push({ cc: from[vi], host: host, t: nowMs });
+        announceViewer(from, host, v5);
       }
-      EX.audPrev = v5;
-    } else EX.audPrev = null;
+      EX.audPrev = v5; EX.audCC = ccNow; EX.audHost = hostNow;
+    } else { EX.audPrev = null; EX.audCC = {}; EX.audHost = {}; }
 
     /* threats: the level plate follows the poll too (the stream only speaks
        on a new event) */
@@ -468,6 +513,7 @@
       EX.bCol[o] = _c2.r; EX.bCol[o + 1] = _c2.g; EX.bCol[o + 2] = _c2.b;
       var H = EX.halos[b.slot]; H.visible = true; H.position.set(b.x, b.y, b.z);
       var hs = 8 + 22 * u; H.scale.set(hs, hs, 1); H.material.color.copy(_c); H.material.opacity = 0.14 + 0.26 * u;
+      H.userData.op = 0.14 + 0.26 * u; H.userData.u = u;      // v7: tick breathes from these
       var L = EX.labels[b.slot]; L.position.set(b.x, b.y - 9 - hs * 0.25, b.z); L.userData.on = true; L.userData.base = L.userData.top ? 1 : 0.66 + 0.2 * u;
       /* arc: quadratic, peaks up and slightly outward */
       var ax = w.x - 4, ay = w.y + 10, az = w.z, mx = (ax + b.x) / 2, my = Math.max(ay, b.y) + 26 + 18 * u, mz = (az + b.z) / 2;
@@ -491,6 +537,7 @@
     cs.forEach(function (c) { c._w = Math.sqrt(Math.max(0, +c.bytes || 0)); tot += c._w; });
     var seg = 0;
     EX.ccAng = EX.ccAng || {}; var CA = EX.ccAng; for (var ck in CA) delete CA[ck];
+    var SGm = EX.ccSeg; for (var sk in SGm) delete SGm[sk];
     if (tot > 0) {
       var a0 = -ARC_SPAN, span = 2 * ARC_SPAN, gap = 0.035;
       cs.forEach(function (c, ci) {
@@ -499,12 +546,15 @@
         var nseg = Math.max(1, Math.round(w2 / span * RS));
         var uo = bpsNorm(c.bps_out), ui = bpsNorm(c.bps_in), u = Math.max(uo, ui);
         _c.setHex(COL.ring).lerp(_c2.setHex(uo >= ui ? COL.out : COL.inb), 0.25 + 0.5 * u);
+        var segA = seg;
         for (k = 0; k < nseg && seg < RS; k++, seg++) {
+          EX.segU[seg] = u;
           var s0 = a0 + gap / 2 + (w2 - gap) * k / nseg, s1 = a0 + gap / 2 + (w2 - gap) * (k + 1) / nseg, q2 = seg * 6;
           EX.rPos[q2] = w.x - Math.cos(s0) * RR; EX.rPos[q2 + 1] = w.y + 18; EX.rPos[q2 + 2] = w.z + Math.sin(s0) * RR;
           EX.rPos[q2 + 3] = w.x - Math.cos(s1) * RR; EX.rPos[q2 + 4] = w.y + 18; EX.rPos[q2 + 5] = w.z + Math.sin(s1) * RR;
           EX.rCol[q2] = _c.r; EX.rCol[q2 + 1] = _c.g; EX.rCol[q2 + 2] = _c.b; EX.rCol[q2 + 3] = _c.r; EX.rCol[q2 + 4] = _c.g; EX.rCol[q2 + 5] = _c.b;
         }
+        if (c.cc) { var sgr = SGm[c.cc] || (SGm[c.cc] = { s0: 0, s1: 0 }); sgr.s0 = segA; sgr.s1 = seg; }
         /* cc tag: round 1 drew it 20 world units wide (invisible at 1080p) and
            only for arcs > 0.09 rad; now a plated 40-unit tag for any arc wide
            enough to carry one */
@@ -517,6 +567,7 @@
       });
     }
     EX.rGeo.setDrawRange(0, seg * 2); EX.rGeo.attributes.position.needsUpdate = true; EX.rGeo.attributes.color.needsUpdate = true;
+    EX.ringSeg = seg; EX.rBase.set(EX.rCol);
 
     /* the tunnel station sits above/behind the WAN; strands go to the tunnel guest */
     EX.st.position.set(w.x + 22, w.y + 62, w.z - 26);
@@ -574,6 +625,54 @@
       var u = bpsNorm(t.bps), nr = Math.max(1, Math.round(1 + 3 * u));
       for (var r = 0; r < nr; r++) P.push({ kind: 'run', t: t, p: r / nr + ti * 0.13, rate: 0.10 + 0.22 * u, u: u });
     });
+  }
+
+  /* ---------------- audience arrivals (v7) ---------------- */
+  /* the panel (hero.js) and anything else on the page hear about real
+     arrivals here; one CustomEvent per poll that saw any, never per frame */
+  function announceViewer(ccs, host, v5) {
+    try {
+      window.dispatchEvent(new CustomEvent('galaxy:viewer', { detail: { ts: Date.now(), n: ccs.length, cc: ccs[0] || '', ccs: ccs.slice(), host: host || '', viewers_5m: v5 } }));
+    } catch (x) { }
+  }
+  /* the tag's second line: the public host relative to the configured domain
+     ('media.example.com' -> 'media'); 'visitor' when the feed carries no host */
+  function hostTag(h) {
+    h = String(h || ''); if (!h) return 'visitor';
+    var dom = String(((window.CONFIG || {}).domain) || '').toLowerCase();
+    if (dom && h.toLowerCase().slice(-(dom.length + 1)) === '.' + dom) return h.slice(0, -(dom.length + 1));
+    return h;
+  }
+  /* one real arrival: a 4-point gold comet (head + 3 trailing) that leaves the
+     ring at the visitor's cc segment, arcs to the station and rides strand
+     S.s down into the tunnel guest - all from the one particle pool, no new
+     draw call - plus a tag at the segment it left (pool of 3; a 4th in flight
+     goes untagged rather than growing the pool). */
+  function launchViewer(NS, w, t, A) {
+    var a = ccAngle(A.cc), nstr = EX.strandPts ? EX.strandPts.length : 0;
+    var s = nstr ? (EX.audSeq = (EX.audSeq + 1) % nstr) : -1;
+    /* the head carries a soft gold flare from the shared pool (a 7th in flight
+       goes bare); the flare is re-tinted red on release for the streaks */
+    var fl = -1;
+    for (var fi = 0; fi < EX.flares.length; fi++) if (!EX.flares[fi].visible) { fl = fi; break; }
+    if (fl >= 0) { EX.flares[fl].visible = true; EX.flares[fl].material.color.setHex(COL.gold); EX.flares[fl].material.opacity = 0; }
+    for (var tr = 0; tr < 4; tr++) if (EX.P.length < P_CAP - 1) EX.P.push({ kind: 'viewer', a: a, s: s, p: -tr * 0.045, rate: 0.55, tr: tr, hit: false, fl: tr === 0 ? fl : -1 });
+    /* the country's ring segment pulses gold for 1.2 s (see the ring pass in tick) */
+    for (var pi2 = 0; pi2 < EX.rPulse.length; pi2++) if (!EX.rPulse[pi2].on) { EX.rPulse[pi2].on = true; EX.rPulse[pi2].cc = A.cc || ''; EX.rPulse[pi2].t0 = t; break; }
+    var RR = RING_R * EX.k;
+    for (var i = 0; i < EX.audL.length; i++) {
+      var L = EX.audL[i]; if (L.userData.on) continue;
+      /* above the ring's own cc tag (which sits at y+18, 13 units outward) */
+      L.position.set(w.x - Math.cos(a) * RR, w.y + 18 + 26, w.z + Math.sin(a) * RR);
+      L.userData.set('VISITOR \u00b7 ' + (A.cc || '??'), '#ffd166', 34, hostTag(A.host), '#e8d3a0', 2);
+      L.userData.on = true; L.userData.t0 = t; NS._extScan = undefined;
+      break;
+    }
+  }
+  /* give a viewer head's flare back to the pool, tinted red again for the streaks */
+  function releaseFlare(S) {
+    if (!(S.fl >= 0)) return;
+    var F = EX.flares[S.fl]; F.visible = false; F.material.opacity = 0; F.material.color.setHex(0xff8a95); S.fl = -1;
   }
 
   /* ---------------- threats (v6) ---------------- */
@@ -771,6 +870,12 @@
       NR.lbl.material.opacity = NR.lbl.visible ? Math.min(1, ne * 3) * (nk < 0.75 ? 1 : 1 - (nk - 0.75) / 0.25) * (0.4 + 0.6 * foc) : 0;
     }
 
+    /* v7: the camera landing on a stop is a beat too (cinema.js only recaptions).
+       Keyed on the travel -> hold transition, the only moment the camera lands. */
+    var ph = NS.tour ? NS.tour.phase : '';
+    if (ph === 'hold' && EX.lastPhase === 'travel' && window.CINEMA && typeof window.CINEMA.beat === 'function') { try { window.CINEMA.beat(2); } catch (x) { } }
+    EX.lastPhase = ph;
+
     if (vis < 0.02) { if (EX.grp.visible) { EX.grp.visible = false; hideLabels(); } return; }
     EX.grp.visible = true;
     /* WAN moved (tween after a rebuild)? re-anchor */
@@ -794,6 +899,29 @@
     if (EX.shieldFlash > 0) EX.shieldFlash = Math.max(0, EX.shieldFlash - dt);
     EX.shield.material.opacity = (0.16 + 0.54 * EX.shieldFlash) * vis;
     EX.shield.material.color.setHex(0x5a3a55).lerp(_c2.setHex(COL.atk), EX.shieldFlash);
+    /* v7 ring pass: each segment breathes at a rate set by its country's
+       measured bps (u = 0 -> still), and a visitor's segment pulses gold for
+       1.2 s after launch. Reads rBase, writes rCol: 96 segments, no allocation. */
+    {
+      var nsg = EX.ringSeg, rc = EX.rCol, rb = EX.rBase, su = EX.segU, pAct = 0;
+      _c2.setHex(COL.gold);
+      for (var pj = 0; pj < EX.rPulse.length; pj++) {
+        var PU = EX.rPulse[pj]; if (!PU.on) continue;
+        if (t - PU.t0 > 1.2) { PU.on = false; continue; }
+        PU.k = 1 - (t - PU.t0) / 1.2; PU.rg = EX.ccSeg[PU.cc] || null; pAct++;
+      }
+      for (var sgi = 0; sgi < nsg; sgi++) {
+        var su1 = su[sgi], f = su1 > 0 ? 0.82 + 0.36 * su1 * (0.5 + 0.5 * Math.sin(t * (0.9 + 3 * su1) + sgi * 0.37)) : 1, gk = 0;
+        if (pAct) for (pj = 0; pj < EX.rPulse.length; pj++) { PU = EX.rPulse[pj]; if (PU.on && PU.rg && sgi >= PU.rg.s0 && sgi < PU.rg.s1 && PU.k > gk) gk = PU.k; }
+        var q6 = sgi * 6;
+        for (var vj = 0; vj < 6; vj += 3) {
+          rc[q6 + vj] = rb[q6 + vj] * f + (_c2.r * 1.6 - rb[q6 + vj]) * gk;
+          rc[q6 + vj + 1] = rb[q6 + vj + 1] * f + (_c2.g * 1.6 - rb[q6 + vj + 1]) * gk;
+          rc[q6 + vj + 2] = rb[q6 + vj + 2] * f + (_c2.b * 1.6 - rb[q6 + vj + 2]) * gk;
+        }
+      }
+      EX.rGeo.attributes.color.needsUpdate = true;
+    }
     /* beacon labels: top-N 1.0x -> 1.55x at the WAN stop, the rest 0.9x -> 1.25x;
        subordinate (smaller, dimmer) everywhere else. The pass's verdict for this
        frame (lpHid) is final - see labelPass() in netscene.js. */
@@ -802,6 +930,9 @@
       L.userData.setW(top ? 1 + 0.9 * big : 0.9 + 0.5 * big);
       L.visible = !!on && vis > 0.05 && !lpHid(L, NS) && !(EX.impN && nearImpact(L.position));
       L.material.opacity = L.visible ? L.userData.base * (top ? 1 : 0.8 + 0.2 * big) * vis : 0;
+      /* v7: the halo breathes at a rate set by the AS's measured bps */
+      var Hh = EX.halos[i];
+      if (Hh.visible) { var hu = Hh.userData.u || 0; Hh.material.opacity = (Hh.userData.op || 0.14) * (hu > 0 ? 0.8 + 0.35 * Math.sin(t * (1.1 + 2.4 * hu) + i * 1.7) : 1) * (0.6 + 0.4 * vis); }
     }
     for (var c = 0; c < EX.ccLabels.length; c++) {
       var CL = EX.ccLabels[c]; CL.userData.setW(1 + 0.3 * big);
@@ -814,9 +945,13 @@
 
     /* Cloudflare station */
     var cf = EX.cf, up = !!(cf && cf.up), rpm = up ? (+cf.req_per_min || 0) : 0;
-    EX.torus.rotation.z += dt * 0.35; EX.torus2.rotation.x += dt * 0.55;
+    EX.torus.rotation.z += dt * (0.25 + 0.06 * Math.min(10, rpm)); EX.torus2.rotation.x += dt * (0.4 + 0.08 * Math.min(10, rpm));   // v7: spin with req/min
     var pulse = up ? 0.6 + 0.4 * Math.sin(t * (1.0 + Math.min(4, rpm / 10))) : 0.15;
-    EX.halo.material.opacity = (0.25 + 0.35 * pulse) * vis;
+    /* v7: a visitor reaching the station flashes its halo gold (~0.6 s decay) */
+    if (EX.stFlash > 0) EX.stFlash = Math.max(0, EX.stFlash - dt * 1.7);
+    EX.halo.material.color.setHex(COL.cf).lerp(_c2.setHex(COL.gold), EX.stFlash);
+    var hsz = 52 * (1 + 0.55 * EX.stFlash); EX.halo.scale.set(hsz, hsz, 1);
+    EX.halo.material.opacity = (0.25 + 0.35 * pulse + 0.35 * EX.stFlash) * vis;
     EX.torus.material.opacity = (up ? 0.85 : 0.3) * vis; EX.torus2.material.opacity = (up ? 0.6 : 0.2) * vis; EX.core.material.opacity = vis;
     EX.strands.material.opacity = (up ? 0.40 + 0.22 * pulse : 0.08) * vis;
     EX.cfLbl.userData.setW(1 + 0.45 * big);
@@ -831,6 +966,23 @@
     for (var fi = EX.flecks.length - 1; fi >= 0; fi--) {
       var F = EX.flecks[fi]; F.t += dt; if (F.t > 1.3) { EX.flecks.splice(fi, 1); continue; }
       if (F.t >= 0 && !F.live) { F.live = true; var ang = hash32(F.kind + ':' + fi + ':' + Math.floor(t * 7)) % 628 / 100; F.dx = Math.cos(ang); F.dz = Math.sin(ang); F.dy = 0.4 + (hash32('y' + fi + t) % 100) / 200; if (EX.P.length < P_CAP - 1) EX.P.push({ kind: 'fleck', f: F }); }
+    }
+    /* v7: real arrivals from the queue, one per 0.3 s, only while the
+       exosphere is on screen (held through a close-up, dropped after 25 s) */
+    if (EX.audQ.length && (t - EX.audT) > 0.3) {
+      var nowQ = Date.now();
+      while (EX.audQ.length && nowQ - EX.audQ[0].t > 25000) EX.audQ.shift();
+      if (EX.audQ.length && vis > 0.5) { EX.audT = t; launchViewer(NS, w, t, EX.audQ.shift()); }
+    }
+    for (var ai = 0; ai < EX.audL.length; ai++) {
+      var AL = EX.audL[ai]; if (!AL.userData.on) { AL.visible = false; continue; }
+      var ae = t - AL.userData.t0, alife = 2.8;
+      if (ae > alife) { AL.userData.on = false; AL.visible = false; AL.material.opacity = 0; continue; }
+      AL.userData.setW(1 + 0.3 * big);
+      AL.visible = vis > 0.05 && !lpHid(AL, NS);
+      /* same HUD-safe band as the cc tags: never drawn through the DOM strips */
+      if (AL.visible && NS.cam) { _v.copy(AL.position).project(NS.cam); if (_v.z > 1 || _v.y < -0.58 || _v.y > 0.74 || _v.x < -0.9 || _v.x > 0.9) AL.visible = false; }
+      AL.material.opacity = AL.visible ? Math.min(1, ae * 4) * (ae < alife - 0.7 ? 1 : (alife - ae) / 0.7) * vis : 0;
     }
     /* CrowdSec impacts: one from the queue every 1.1 s */
     if (EX.queue.length && (t - (EX.impT || -9)) > 1.1) {
@@ -903,17 +1055,45 @@
         x = bz(B.ax, B.mx, B.x, tt); y = bz(B.ay, B.my, B.y, tt) + 1.2; z = bz(B.az, B.mz, B.z, tt);
         _c.setHex(S.dir > 0 ? COL.out : COL.inb); r = _c.r; g = _c.g; b2 = _c.b; al = 0.5 + 0.5 * S.u;
         var lane = S.dir * 2.2; x += lane * 0.3; z += lane;
-      } else if (S.kind === 'carrier' || S.kind === 'req' || S.kind === 'viewer') {
+      } else if (S.kind === 'carrier' || S.kind === 'req') {
         var SP = EX.strandPts && EX.strandPts[S.s];
         if (!SP) { P.splice(pi, 1); continue; }
         S.p += dt * S.rate;
         if (S.kind === 'carrier') { if (S.p >= 1) S.p -= 1; }
         else if (S.p >= 1) { P.splice(pi, 1); continue; }
         var tq = Math.max(0, S.p);
-        x = bz(SP.ax, SP.mx, SP.bx, tq); y = bz(SP.ay, SP.my, SP.by, tq) + (S.kind === 'viewer' ? 2.5 : 0); z = bz(SP.az, SP.mz, SP.bz, tq);
-        _c.setHex(S.kind === 'viewer' ? COL.gold : COL.cf); r = _c.r; g = _c.g; b2 = _c.b;
-        al = S.kind === 'carrier' ? 0.5 : S.kind === 'viewer' ? 1.6 : (S.tr === 0 ? 1.7 : 1.1 - S.tr * 0.17);
+        x = bz(SP.ax, SP.mx, SP.bx, tq); y = bz(SP.ay, SP.my, SP.by, tq); z = bz(SP.az, SP.mz, SP.bz, tq);
+        _c.setHex(COL.cf); r = _c.r; g = _c.g; b2 = _c.b;
+        al = S.kind === 'carrier' ? 0.5 : (S.tr === 0 ? 1.7 : 1.1 - S.tr * 0.17);
         if (S.p < 0) al = 0;
+      } else if (S.kind === 'viewer') {
+        /* v7 gold arrival comet: p<0 trail delay; 0..1 ring(cc) -> station on
+           an eased arc (head flashes the station); 1..2 down HA strand S.s;
+           gone when it reaches the tunnel guest. Positions follow the live WAN /
+           station / ring radius, so a fold mid-flight cannot strand it. */
+        S.p += dt * S.rate; var pv = S.p;
+        if (pv < 0) { al = 0; x = w.x; y = w.y; z = w.z; }
+        else if (pv < 1) {
+          var RRv = RING_R * EX.k, vx0 = w.x - Math.cos(S.a) * RRv, vz0 = w.z + Math.sin(S.a) * RRv, vy0 = w.y + 18;
+          var stp = EX.st.position, pe = pv * pv * (3 - 2 * pv);
+          x = bz(vx0, (vx0 + stp.x) / 2, stp.x, pe); y = bz(vy0, Math.max(vy0, stp.y) + 42, stp.y, pe); z = bz(vz0, (vz0 + stp.z) / 2, stp.z, pe);
+          if (S.tr === 0 && pv > 0.96 && !S.hit) {
+            S.hit = true; EX.stFlash = 1;      // the station flashes gold and the bloom kicks once
+            if (window.CINEMA && typeof window.CINEMA.beat === 'function') { try { window.CINEMA.beat(2); } catch (xx) { } }
+          }
+        } else {
+          var SPv = (S.s >= 0 && EX.strandPts) ? EX.strandPts[S.s] : null;
+          if (!SPv || pv >= 2) { releaseFlare(S); P.splice(pi, 1); continue; }
+          var tv = pv - 1;
+          x = bz(SPv.ax, SPv.mx, SPv.bx, tv); y = bz(SPv.ay, SPv.my, SPv.by, tv) + 2.5; z = bz(SPv.az, SPv.mz, SPv.bz, tv);
+        }
+        if (S.fl >= 0) {                       // head flare rides the head point
+          var VF = EX.flares[S.fl]; VF.position.set(x, y, z);
+          var vfs = pv < 1 ? 16 + 8 * pv : 22 - 8 * (pv - 1); VF.scale.set(vfs, vfs, 1);
+          VF.material.opacity = (pv < 0 ? 0 : 0.9) * vis;
+        }
+        _c.setHex(COL.gold); r = _c.r; g = _c.g; b2 = _c.b;
+        al = pv < 0 ? 0 : (S.tr === 0 ? 2.1 : 1.5 - S.tr * 0.32);
       } else if (S.kind === 'atk') {
         /* intrusion streak: head at S.p, tail points trail by 0.045 each,
            tapered; every point dies as it reaches the shield */
@@ -946,7 +1126,7 @@
     EX.pGeo.setDrawRange(0, n); EX.pGeo.attributes.position.needsUpdate = true; EX.pGeo.attributes.color.needsUpdate = true;
   }
   function hideLabels() {
-    var all = EX.labels.concat(EX.ccLabels, EX.impL, [EX.cfLbl, EX.thLbl]);
+    var all = EX.labels.concat(EX.ccLabels, EX.impL, EX.audL, [EX.cfLbl, EX.thLbl]);
     for (var i = 0; i < all.length; i++) { all[i].visible = false; all[i].material.opacity = 0; }
     for (var f = 0; f < EX.flares.length; f++) EX.flares[f].material.opacity = 0;
   }
@@ -987,6 +1167,13 @@
       e = Object.assign({}, e); e.id = e.id || ('qa:' + Date.now() + ':' + Math.random().toString(36).slice(2, 7));
       EX.thSeen[e.id] = 1; EX.thQueue.push(e); announce(e); return true;
     },
-    onThreat: null
+    onThreat: null,
+    /* QA: one fake arrival, the exact path a real one takes (queue, comet,
+       tag, station flash, 'galaxy:viewer' -> the panel). e.g. NETEXO.viewer('DE') */
+    viewer: function (cc, host) {
+      if (!EX) return false;
+      cc = cc || 'US'; host = host || '';
+      EX.audQ.push({ cc: cc, host: host, t: Date.now() }); announceViewer([cc], host, EX.audPrev); return true;
+    }
   };
 })();

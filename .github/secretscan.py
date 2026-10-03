@@ -75,6 +75,9 @@ def main():
     ap.add_argument("paths", nargs="*")
     ap.add_argument("--stdin", action="store_true")
     ap.add_argument("--label", default="<stdin>")
+    ap.add_argument("--allow-path", default="",
+                    help="the path this blob was committed at, so --stdin applies the same "
+                         "ALLOW_PATH rule the working-tree scan does")
     a = ap.parse_args()
 
     hits = []
@@ -86,7 +89,16 @@ def main():
         # rule the path scan below already applies.
         raw = sys.stdin.buffer.read()
         if b"\0" not in raw[:4096] and len(raw) <= 2_000_000:
-            hits += scan_text(raw.decode("utf-8", "replace"), a.label, False)
+            # The history sweep has to apply the same rule as the tree sweep.
+            # It did not: a blob arrives with no path, so `allow_fixtures` was
+            # hard-coded False and every historical version of a test file was
+            # judged by stricter rules than the current one. A synthetic
+            # Proxmox token in an old tests/test_setup_api.py turned the
+            # "No credentials anywhere in history" job permanently red — and a
+            # gate that is always red is a gate that gets switched off. The
+            # caller now passes the path the blob was committed at.
+            hits += scan_text(raw.decode("utf-8", "replace"), a.label,
+                              bool(a.allow_path and ALLOW_PATH.search(a.allow_path)))
     for p in a.paths:
         pp = pathlib.Path(p)
         if not pp.is_file() or pp.name.lower().endswith(SKIP_EXT):

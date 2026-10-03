@@ -4,9 +4,12 @@
 #
 #   sudo ./deploy/install.sh
 #
-# Creates a dedicated unprivileged service account, a virtualenv, a 0600
-# environment file, and the systemd unit. Safe to re-run: it upgrades an
-# existing install in place and never overwrites your environment file.
+# Creates a dedicated unprivileged service account, a virtualenv, a root-owned
+# 0640 environment file readable only by that account, and the systemd unit.
+# Safe to re-run: it upgrades an existing install in place and never overwrites
+# your environment file. Note that it does replace everything under
+# ${INSTALL_DIR}, so keep local add-ons somewhere else and point ADDONS_DIR at
+# them.
 #
 set -euo pipefail
 
@@ -40,13 +43,38 @@ install -d -o "${APP_USER}" -g "${APP_USER}" -m 0750 "${CONFIG_DIR}"
 install -d -o "${APP_USER}" -g "${APP_USER}" -m 0750 "${STATE_DIR}"
 
 # --- application code ------------------------------------------------------
+# Every top-level module by glob, never a hand-written list. A list is a thing
+# that goes stale: auth.py was added to the application and not to the list, so
+# a fresh install copied an app.py whose first job is `import auth`, crashed
+# with ModuleNotFoundError, and Restart=always turned that into a crash loop
+# that never served a page. tests/test_deploy_install.py now asserts the
+# installed tree can import what app.py imports.
 echo "==> Copying application"
-for item in app.py config.py pollers.py topology.py probe.py edge.py threats.py showtime.py \
-            gpu_render.py demo.py setup.py addons.py requirements.txt templates static addons demo; do
+shopt -s nullglob
+for item in "${SRC_DIR}"/*.py; do
+    name="$(basename "${item}")"
+    rm -rf "${INSTALL_DIR:?}/${name}"
+    cp "${item}" "${INSTALL_DIR}/"
+done
+shopt -u nullglob
+for item in requirements.txt templates static addons demo; do
     [[ -e "${SRC_DIR}/${item}" ]] || continue
     rm -rf "${INSTALL_DIR:?}/${item}"
     cp -r "${SRC_DIR}/${item}" "${INSTALL_DIR}/"
 done
+
+# Fail here, not in a restart loop five seconds from now: every module app.py
+# imports that lives beside it in the source tree must have landed in the
+# install tree.
+missing=""
+for mod in $(grep -oP '^\s*(?:import|from)\s+\K[A-Za-z_][A-Za-z0-9_]*' "${SRC_DIR}/app.py" | sort -u); do
+    [[ -f "${SRC_DIR}/${mod}.py" ]] || continue          # stdlib or third party: pip's problem
+    [[ -f "${INSTALL_DIR}/${mod}.py" ]] || missing+=" ${mod}.py"
+done
+if [[ -n "${missing}" ]]; then
+    echo "==> FAILED: app.py imports modules that were not installed:${missing}" >&2
+    exit 1
+fi
 
 # --- virtualenv ------------------------------------------------------------
 if [[ ! -d "${INSTALL_DIR}/.venv" ]]; then
@@ -61,7 +89,10 @@ echo "==> Installing Python dependencies"
 # Never clobber an existing env file — it holds the operator's credentials.
 if [[ ! -f "${CONFIG_DIR}/env" ]]; then
     echo "==> Seeding ${CONFIG_DIR}/env from .env.example"
-    cp "${SRC_DIR}/.env.example" "${CONFIG_DIR}/env"
+    # install(1), not cp: this file grows credentials the moment the operator
+    # edits it, and cp would create it world-readable for the instant before
+    # the chmod below.
+    install -o root -g "${APP_USER}" -m 0640 "${SRC_DIR}/.env.example" "${CONFIG_DIR}/env"
     NEEDS_CONFIG=1
 else
     echo "==> Keeping existing ${CONFIG_DIR}/env"

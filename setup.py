@@ -72,9 +72,21 @@ def get_token():
     return _token
 
 
+def _utf8(v):
+    """Bytes for ``hmac.compare_digest``, which raises on non-ASCII ``str``."""
+    return v if isinstance(v, bytes) else str(v).encode("utf-8", "surrogatepass")
+
+
 def _authorised(req):
+    """Constant-time, and total: any token at all is a yes or a no, never a 500.
+
+    Compared as bytes because ``compare_digest`` raises ``TypeError`` on a
+    ``str`` carrying a non-ASCII character — which turned ``X-Setup-Token: ü``
+    from an unauthenticated caller into a crash, and a ``SETUP_TOKEN`` with an
+    accent in it into a wizard nobody could open.
+    """
     sent = req.headers.get("X-Setup-Token") or req.args.get("token") or ""
-    return bool(sent) and hmac.compare_digest(sent, get_token())
+    return bool(sent) and hmac.compare_digest(_utf8(sent), _utf8(get_token()))
 
 
 # ---------------------------------------------------------------- values ----
@@ -267,6 +279,12 @@ def save(body):
         write_config(stored)
     except OSError as e:
         return {"ok": False, "error": f"cannot write {config.CONFIG_FILE}: {e}"}, 500
+    # Make what we just wrote the file the rest of this process reads. Without
+    # it, /api/setup/schema and /api/setup/config keep answering from the
+    # snapshot config.py took at import — all blanks on a first run — and a
+    # browser that reloads the wizard before pressing Apply, then saves again,
+    # posts those blanks straight back over the credentials it just stored.
+    config.reload_json_config()
     return {"ok": True, "restart": True, "config_file": config.CONFIG_FILE}, 200
 
 
@@ -448,6 +466,14 @@ def _test_emby(v):
     return "{} {} ({})".format(j.get("ProductName") or "Emby", j.get("Version", "?"), j.get("ServerName", "?"))
 
 
+def _test_snmp(v):
+    """One real poll per listed device. snmp.test_target names WHICH failure
+    happened -- timeout, authentication, no such object -- without the credential."""
+    import snmp
+    items = v if isinstance(v, list) else [v]
+    return "SNMP · " + " | ".join(snmp.test_target(it) for it in items[:8])
+
+
 def _test_generic(v):
     url = _url(v)
     r = requests.get(url, timeout=6, verify=False)
@@ -460,7 +486,7 @@ TESTS = {"pve": _test_pve, "zabbix": _test_zabbix, "unifi": _test_unifi, "frigat
          "ollama": _test_ollama, "grafana": _test_grafana, "prometheus": _test_prometheus,
          "ntopng": _test_ntopng, "netmap": _test_netmap, "cloudflared": _test_cloudflared,
          "crowdsec": _test_crowdsec, "akvorado": _test_akvorado, "secmon": _test_secmon,
-         "cloudflare": _test_cloudflare, "audience": _test_audience, "emby": _test_emby}
+         "cloudflare": _test_cloudflare, "audience": _test_audience, "emby": _test_emby, "snmp": _test_snmp}
 
 
 def test(section_id, values):
@@ -475,6 +501,35 @@ def test(section_id, values):
         return {"ok": True, "detail": fn(vals)}
     except Exception as e:
         return {"ok": False, "error": (f"{type(e).__name__}: {e}")[:200]}
+
+
+def _drop_inherited_fds():
+    """Close every inherited descriptor at ``execv`` except stdin/out/err.
+
+    Werkzeug deliberately marks its listening socket inheritable so the
+    auto-reloader can hand the bound port to a child. ``os.execv`` keeps
+    inheritable descriptors open across the exec, so the replacement image
+    found port 8080 still held by its own previous life, failed ``bind()``
+    with EADDRINUSE and exited — Apply killed the dashboard instead of
+    restarting it. Under systemd ``Restart=always`` papered over it five
+    seconds later; run straight from the README (``python3 app.py``) it simply
+    died, which is exactly how someone meets the wizard for the first time.
+
+    Clearing the inheritable flag makes the kernel close these at exec, so the
+    new image gets a free port and a clean slate. stdout/stderr stay open: the
+    journal (or the terminal) is the same file either way.
+    """
+    try:
+        fds = [int(name) for name in os.listdir("/proc/self/fd")]
+    except OSError:                       # not Linux: best effort over a plausible range
+        fds = range(3, 1024)
+    for fd in fds:
+        if fd <= 2:
+            continue
+        try:
+            os.set_inheritable(fd, False)
+        except OSError:
+            pass                          # already gone, or not a real descriptor
 
 
 # ---------------------------------------------------------------- routes ----
@@ -528,6 +583,7 @@ def install(app):
         def _reexec():
             time.sleep(0.6)
             sys.stdout.flush(); sys.stderr.flush()
+            _drop_inherited_fds()
             os.execv(sys.executable, [sys.executable] + sys.argv)
         threading.Thread(target=_reexec, daemon=True).start()
         return jsonify({"ok": True, "restarting": True})

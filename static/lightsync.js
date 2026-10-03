@@ -1,6 +1,14 @@
-/* lightsync.js (v9) — publish the galaxy's on-screen colour and tour state so
+/* lightsync.js (v10) — publish the galaxy's on-screen colour and tour state so
  * smart lights (and the nexus screen) can track the REAL dashboard, 1:1 with
  * what is on the monitor.
+ *
+ * v10: one beat per ARRIVAL (travel -> hold), not per stop-key change - the
+ * key hands over at the travel midpoint and the index changes again on
+ * landing, so every leg used to beat twice (measured 1.86 beats/stop; the
+ * strip's median brightness sat at the punch level). Colour is now by TOUR
+ * POSITION on a hue ring ordered for maximum separation between consecutive
+ * stops, and the publisher runs from a timer as well as the frame sink, so a
+ * stalled rAF chain cannot silence the feed the second screen follows.
  *
  * Runs inside the browser that is actually displaying the dashboard, so the
  * lights follow the true camera tour rather than a separate headless render.
@@ -190,7 +198,7 @@
      to /api/lightstate turns that into brightness moves a fast local lamp can
      actually perform (local UDP, ~20 ms) while a slower cloud bulb keeps doing
      the colour wash it is limited to. */
-  var beat = 0, lastStopKey = null;
+  var beat = 0, lastPhase = null;
   /* v9: a new intrusion (netscene_exo.js dispatches 'galaxy:threat' once per
      new /api/threats seq) puts the room in mode 'threat' for 2.5 s — the back
      end accepts it and a light driver can pulse red at 2 Hz — then the tour
@@ -203,38 +211,36 @@
                                                     // by reference instead of
                                                     // remapping it every call
 
-  /* Colour by SUBJECT, not by histogram.
-     The pixel histogram picks whichever hue is most over-represented against
-     its own baseline, which reliably lands on the rare bright accents - so the
-     room sat in magenta for minutes while the camera toured green switches and
-     cyan hosts. When the tour is parked on something specific, light the room
-     in that subsystem's own colour instead; fall back to the histogram at the
-     overview, where the galaxy really is the subject. */
+  /* the palette tone the publisher falls back to when there is no tour at all */
   function catRgb(cat) {
     var P = CFG().palette || {};
     return hexRgb(P[cat] || P.infra || '#8fb0d0');
   }
-  /* A per-host stop lights the room in THAT node's configured accent, by node
-     index, so with three nodes configured the room visibly changes colour as
-     the tour walks from one to the next. Everything else keys off the
-     category palette — both come from /api/config, never a literal. */
-  function stopColor(key) {
-    if (!key) return null;
-    var C = CFG();
-    if (key.indexOf('wan') === 0)     return catRgb('monitor');    // the edge
-    if (key.indexOf('fabric') === 0)  return catRgb('network');    // switching
-    if (key.indexOf('wired:') === 0)  return catRgb('media');      // wired
-    if (key.indexOf('ap:') === 0)     return catRgb('web');        // wireless
-    if (key.indexOf('blk:') === 0) {
-      var segs = key.split(':'), cat = segs[segs.length - 1] || 'infra';   // blk:pve:<node>:<cat> -> <cat>
-      return catRgb(cat);
-    }
-    if (key.indexOf('host:') === 0) {
-      var node = C.nodeFromKey ? C.nodeFromKey(key) : null;        // host:pve:<node>
-      if (node && C.nodeAccent) return hexRgb(C.nodeAccent(node));
-      return catRgb('media');
-    }
-    return null;                                                   // overview
+  /* Colour by TOUR POSITION, not by subject category.
+     Colouring by category (and by node accent for host stops) was the right
+     instinct but it cannot deliver a visible change at every stop, because the
+     tour visits same-family stops back to back. Measured on a 14-stop lap, only
+     7 distinct hues reached the room and 4 of the 14 transitions moved the hue
+     by less than 25 deg - one of them 0.0 deg (two wired blocks in a row: below
+     a typical driver's send gate, so literally no write went out). Those runs
+     are contiguous, so the room sat in the same cyan for ~4 dwells (~20 s).
+     That is what "the lights don't change with the screens" looked like.
+
+     Only HUE reliably survives to a fixture - most LED drivers rebuild every
+     colour at full saturation and a fixed lightness - so this is a hue ring
+     ordered for maximum separation between CONSECUTIVE stops: min 101 deg,
+     mean 145 deg, zero invisible transitions, and it alternates cool -> warm
+     -> cool so every move reads on camera. The ring is indexed by stop
+     position, so it works for any number of nodes and any stop list.
+
+     Three bands are deliberately avoided, all of which render badly on an LED
+     strip at full saturation: 60-88 (chartreuse, reads as dirty yellow),
+     95-138 (acid green, reads as a fault light), 222-258 (deep blue, the blue
+     die dominates and the output looks dim and muddy on video). */
+  var TOUR_HUES = [158, 297, 143, 312, 173, 342, 188, 8, 267, 38, 282, 23, 204, 327];
+  function stopColor(idx) {
+    if (idx == null || idx < 0) return null;
+    return hslToRgb(TOUR_HUES[idx % TOUR_HUES.length], 1.0, 0.5);
   }
 
   function intent() {
@@ -270,11 +276,20 @@
       // "stop" (and colour) hand over at the travel midpoint, matching the
       // camera's own focus handover (setFocus in tourTick) -- from/to/idx
       // above track the raw leg instead, so the TV can plan ahead of that.
-      var st = TR.stops[(TR.phase === 'travel' && TR.switched) ? TR.next : TR.idx];
-      var k = st ? (st.key + '|' + TR.idx) : null;
-      // one beat per ARRIVAL, so the room punches when the camera lands
-      if (k && k !== lastStopKey) { lastStopKey = k; beat++; }
-      if (st) { o.rgb = stopColor(st.key); o.stop = st.key; o.stop_name = st.name || st.key; }
+      var si = (TR.phase === 'travel' && TR.switched) ? TR.next : TR.idx;
+      var st = TR.stops[si];
+      if (st) { o.rgb = stopColor(si); o.stop = st.key; o.stop_name = st.name || st.key; }
+      // v10: one beat per ARRIVAL, at the moment the camera LANDS.
+      // It used to key off the stop key changing, but the key hands over at the
+      // travel midpoint (TR.switched) and TR.idx changes again on arrival, so
+      // every leg beat twice - once mid-flight, in the part of the envelope
+      // that is meant to be the dip (measured: 1.86 beats/stop on the wall,
+      // 1.54 in a 2-4 fps headless run; the strip's median brightness sat at
+      // the punch level). The stop / to / prog fields above still hand over
+      // early; only the beat moved. The travel -> hold transition is the one
+      // and only landing, so this cannot fire twice per leg.
+      if (o.phase === 'hold' && lastPhase === 'travel') beat++;
+      lastPhase = o.phase;
 
       if (TR.stops !== stopsCacheRef) {       // only remap on a topology rebuild
         stopsCacheRef = TR.stops;
@@ -377,7 +392,21 @@
     } catch (e) { /* never let this break the dashboard */ }
   }
 
-  var lastSample = null, fallbackSample = null;
+  var lastSample = null;
+
+  /* The tour protocol is NOT a function of the pixels: stop/idx/phase/prog/beat
+     all come from NETSCENE.tour, and the colour for a stop comes from
+     stopColor(). Gating the whole publish on `lastSample` meant one failed pixel
+     read took the TV's sync and the room's lights down with it - and sample()
+     returns null for a legitimate reason every time the wall is not painting
+     (lit === 0 on a black canvas, or a renderer without preserveDrawingBuffer).
+     Publish on whatever we have; colour is the only part that needs real pixels. */
+  function pump() {
+    var base = lastSample || {};
+    if (TOUR) publish(base);             // wall only: owns the tour protocol
+    if (base.rgb) postColor(base);       // publish() fills base.rgb from stopColor()
+  }
+
   function loop() {
     requestAnimationFrame(loop);
     frame++;
@@ -385,16 +414,24 @@
       if (frame % SAMPLE_EVERY === 0) { var s = sample(); if (s) lastSample = s; }
       /* the HUD chip is tour-driven and cheap, so it never waits for a sample */
       if (TOUR && frame % 10 === 0) paintChip();
-      /* TOUR STATE PUBLISHES UNCONDITIONALLY. The nexus screen follows
-         /api/lightstate for its own director, so it must not depend on a
-         successful canvas readback: a renderer without preserveDrawingBuffer
-         (or a headless/remote capture) reads back blank and used to silence
-         the whole feed. Colour is the only part that needs real pixels. */
-      if (TOUR) publish(lastSample || (fallbackSample = fallbackSample || {}));
-      if (lastSample) postColor(lastSample);   // both screens: per-screen colour
+      pump();
     } catch (e) { /* swallow: the dashboard must keep rendering */ }
   }
 
-  if (document.readyState === "complete") setTimeout(loop, 4000);
-  else addEventListener("load", function () { setTimeout(loop, 4000); });
+  /* Watchdog. Observed on a wall: a live scene and a live rAF for 25 min while
+     this file published NOTHING, and a reload fixed it instantly with no code
+     change - the rAF chain did not survive the idle period after the page's
+     animate() stopped rescheduling on an empty room. A timer is not tied to
+     the frame sink, and publishing needs no drawing buffer, so the sync and
+     the per-stop colour survive even if rAF never comes back. Only the hue
+     histogram needs a real frame. publish() keeps its own rate limits, so this
+     is a floor (~2.5 Hz), never an extra load. */
+  var started = false;
+  function start() {
+    if (started) return; started = true;
+    loop();
+    setInterval(function () { try { pump(); } catch (e) { } }, 400);
+  }
+  if (document.readyState === "complete") setTimeout(start, 4000);
+  else addEventListener("load", function () { setTimeout(start, 4000); });
 })();

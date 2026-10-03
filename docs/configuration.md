@@ -21,7 +21,7 @@ in order of precedence:
     "features": {"doom": true, "lights": false}}
    ```
 
-   A list section (`pve`, `ollama`, `svc`, `fleet`, `gpux`, `aisrv`) is a JSON
+   A list section (`pve`, `ollama`, `snmp`, `svc`, `fleet`, `gpux`, `aisrv`) is a JSON
    array; its section-level fields live under `<id>_settings`. The file may
    hold credentials, so the wizard writes it mode `0600`.
 3. **Defaults** in the `SECTIONS` table.
@@ -61,8 +61,9 @@ re-executes the process (`os.execv`, same PID) so the pollers start with the
 new configuration. Connection tests actually try the backend (Proxmox
 `/api2/json/version` + node list, Zabbix `apiinfo.version` + login + host
 count, UniFi login + client count, Frigate `/api/stats`, Ollama `/api/tags`,
-Prometheus `/-/ready`, Emby `/System/Info`, a plain GET for the rest) and
-never log the credential.
+Prometheus `/-/ready`, Emby `/System/Info`, one real SNMP poll per listed
+device that names which of timeout / authentication / no-such-object happened,
+a plain GET for the rest) and never log the credential.
 
 ## Indexed lists
 
@@ -150,6 +151,16 @@ An indexed list set in the environment replaces the whole list from
 | `NTOPNG_IFNAME` | `vmbr0` | Capture interface resolved to an ntopng interface id. |
 | `NTOPNG_IFID` | `0` | Fallback id when the name cannot be resolved (`0` = none). |
 | `ENABLE_PROBE` | `false` | fping RTT/jitter/loss per node plus a subnet sweep for hosts nothing else lists. Needs `fping`. |
+| `SNMP_<n>_HOST` | — | A managed switch or router to poll directly (indexed list; see `data-sources.md`). Needs `pip install pysnmp`. |
+| `SNMP_<n>_NAME` | *empty* | Label printed instead of its `sysName`. |
+| `SNMP_<n>_VERSION` | `2c` | `2c` or `3`. |
+| `SNMP_<n>_COMMUNITY` | *empty* | v2c read-only community. **Secret.** Required for v2c. |
+| `SNMP_<n>_USER` | *empty* | v3 user. Required for v3. |
+| `SNMP_<n>_AUTH_PROTO` / `SNMP_<n>_AUTH_PASS` | `sha` / *empty* | v3 auth: `none`, `md5`, `sha`, `sha224`, `sha256`, `sha384`, `sha512`. The passphrase is a **secret**. |
+| `SNMP_<n>_PRIV_PROTO` / `SNMP_<n>_PRIV_PASS` | `none` / *empty* | v3 privacy: `none`, `des`, `3des`, `aes`, `aes192`, `aes256`. Needs an auth protocol too, and `pip install cryptography`. The passphrase is a **secret**. |
+| `SNMP_<n>_PORT` | `161` | |
+| `SNMP_<n>_ROLE` | `switch` | `switch`, `router`, `gateway`, `ap`. A `gateway` is drawn as the first hop inside the internet edge; the rest are placed by LLDP/CDP. |
+| `SNMP_POLL_S` | `30` | Counter/status poll interval. Structure and neighbours refresh every 5 min. |
 | `NP_CERT_HOSTS` | *empty* | Comma-separated `host[:port]` list for TLS expiry. |
 | `TOPOLOGY_CLIENT_OVERRIDES` | `[]` | JSON list of `{"mac", "alt_macs": [], "ip", "cat", "label"}`. `alt_macs` merge a multi-NIC machine into one node. |
 | `TOPOLOGY_ALIASES` | `{}` | JSON: UniFi device name → what the screens print. |
@@ -182,6 +193,8 @@ An indexed list set in the environment replaces the whole list from
 | `ENABLE_DOOM` | `true` | `features.doom` — true only when `static/doom/js-dos.js` also exists. |
 | `ENABLE_CAMERAS` | `true` | `features.cameras` — true only with a Frigate URL. |
 | `ENABLE_THREATS` | `true` | `features.threats` — true only with a CrowdSec export or Security Monitor. |
+| `ENABLE_CINEMATICS` | `false` | `features.cinematics`; scripted camera moves every few laps. A screen can override with `?cinematics=on`. |
+| `CINEMATICS_LAPS` | `3` | Tour laps between cinematic moves (clamped 1..50 by the front end). |
 
 ### Lists
 
@@ -193,6 +206,7 @@ An indexed list set in the environment replaces the whole list from
 | `FLEET_<n>_` | `NAME`, `HOST`, `PORT` | TCP reachability checks |
 | `GPUX_<n>_` | `NAME`, `URL` | Remote `nvidia_gpu_exporter` endpoints |
 | `AISRV_<n>_` | `NAME`, `IP` | Hosts shown with Ollama + node_exporter readouts (guests matching `AI_MARKERS` are discovered too) |
+| `SNMP_<n>_` | `HOST`, `NAME`, `VERSION`, `COMMUNITY`, `USER`, `AUTH_PROTO`, `AUTH_PASS`, `PRIV_PROTO`, `PRIV_PASS`, `PORT`, `ROLE` | Switches and routers polled over SNMP (max 32) |
 
 `FLEET_STATS_URL` is a single optional JSON endpoint whose top-level keys are
 rendered as rows in the fleet panel. `ADDONS_DIR` points the add-on loader at
@@ -281,9 +295,10 @@ the wizard with the setup token.
 **Things that will need the key once you set one**
 
 - `deploy/lights/galaxy-lights.py` — set `DASH_API_KEY` in its environment too.
-- The kiosk unit's `ExecStartPre` readiness `curl`, and any uptime monitor
-  polling `/`: both see `401`. Point them at a URL carrying `?key=`, send the
-  header, or treat `401` as up.
+- Any uptime monitor polling `/` sees `401`. Point it at a URL carrying
+  `?key=`, send the header, or treat `401` as up. The kiosk's own readiness
+  probe in `deploy/kiosk/xinitrc.example` already treats any HTTP answer as
+  "serving", so it is not affected.
 - Anything of your own that scrapes `/api/all`.
 
 **What this is not.** One shared key, no user accounts, no rate limiting, no
@@ -295,7 +310,18 @@ reason to put the dashboard on the internet.
 - Nothing here is logged. Pollers print the *name* of a failing backend and the
   exception, never the credential; the wizard's connection tests do the same.
 - Keep `.env` at mode `0600` and owned by the service account. `config.json`
-  is written `0600` by the wizard. The installer in `deploy/` sets both up.
+  is written `0600` by the wizard. The installer in `deploy/` sets both up:
+  `/etc/homelab-galaxy-dashboard/env` is created `root:dashboard` mode `0640`
+  (the service reads it; nobody else can), and the config directory is `0750`
+  owned by the service account so the wizard can write `config.json` into it.
+- The wizard's **Test** button sends the *stored* secret when a field still
+  shows `••••`, to whatever URL is in the form beside it. That is what makes
+  "change the host, keep the password" work, and it also means anyone holding
+  the setup token can point a section at a host they control and read a stored
+  credential back out of it. Treat `SETUP_TOKEN` as equivalent to the
+  credentials it configures — it already lets the holder rewrite `config.json`
+  and restart the process — and set `SETUP_UI=false` on an install that is
+  finished being configured.
 - Prefer a dedicated read-only account per backend over reusing an admin login.
 - `/api/config` never contains a credential; `/api/setup/config` masks them.
 - The dashboard has **no login of its own unless you set `DASH_API_KEY`** (see

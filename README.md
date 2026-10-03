@@ -20,6 +20,12 @@ pip install -r requirements.txt
 DEMO=1 python3 app.py      # → http://localhost:8080  (no configuration, no network)
 ```
 
+It binds `0.0.0.0`, so that is also `http://<this machine>:8080` from anywhere
+on your network. In demo mode there is nothing real behind it; with your own
+cluster configured there very much is, so see
+[Security notes](#security-notes) before you leave it that way. `LISTEN_HOST=127.0.0.1`
+keeps it to this machine.
+
 That is the whole demo. It runs on anonymised fixture data, so you can see every
 layer — galaxies, the fabric, threats, viewers, the 4K view — before you give it
 a single credential.
@@ -112,6 +118,7 @@ change your cluster.
 | Ollama | Per-instance loaded models and VRAM, plus the in-scene chat box |
 | Prometheus | Hypervisor temperatures, fan speeds, drive health, whatever you scrape |
 | ntopng | Host-to-host flow arcs with measured bandwidth and protocol |
+| Any managed switch or router (SNMP) | Real infrastructure nodes for non-UniFi gear: per-port state and measured throughput, LLDP/CDP links, merged onto what the map already knows. No NMS needed |
 | LibreNMS (or any SNMP topology JSON) | Devices that no controller knows about |
 | Akvorado | External flows by country and autonomous system — the exosphere |
 | cloudflared | Tunnel health, request rate, edge locations |
@@ -279,6 +286,16 @@ Cloudflare analytics or the origin-log exporter for real unique viewers.
   read-only picture of your whole infrastructure, so put it behind your reverse
   proxy, SSO or a trusted VLAN, and do not expose it to the internet. That
   advice is unchanged and is still the real answer.
+- **What that means concretely.** With no `DASH_API_KEY`, which is the default,
+  one unauthenticated `GET /api/all` returns every VM and container with its
+  id, name, state and IP address; the full network topology with every client,
+  its MAC and what it is attached to; UniFi and Zabbix state and open problems;
+  CrowdSec decisions; your camera names, with live frames at `/cam/<name>.jpg`;
+  storage layout, pool names and capacities; and whatever your add-ons report.
+  `/api/config` names the brand, domain and nodes. None of it can be written
+  to — the app issues no writes to any backend — but all of it can be read by
+  anything that can open the port. That is the whole threat model: it is a
+  read-only window with no curtain unless you hang one.
 - **Optional shared key: `DASH_API_KEY`.** Set it (env, or `/setup` -> Access
   control) and every page, API route and stream requires it; leave it unset and
   nothing changes, which is what every existing install gets on upgrade. It is

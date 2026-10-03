@@ -49,6 +49,12 @@ from flask import Response, g, jsonify, redirect, request
 
 import config
 
+
+def _utf8(v):
+    """Bytes for ``hmac.compare_digest``, which refuses non-ASCII ``str``."""
+    return v if isinstance(v, bytes) else str(v).encode("utf-8", "surrogatepass")
+
+
 COOKIE = "galaxy_session"
 COOKIE_MAX_AGE = 30 * 24 * 3600      # a wall display should not be asked again every day
 
@@ -73,27 +79,90 @@ def _session_value():
 def _matches(sent, expected):
     """Constant-time compare in which an empty or missing value never matches.
 
-    Both halves matter. ``compare_digest`` because a plain ``!=`` on a secret
-    leaks its prefix by timing (``setup.py`` does the same for its token). And
-    the emptiness check first, because ``"" == ""`` is true: a gate that only
-    compares lets ``X-API-Key:`` with no value through on any install that
-    never configured a key — open to anyone who sends an empty header, while
-    still 401ing the dashboard's own front end. Fail closed on both sides.
+    Three things matter here. ``compare_digest`` because a plain ``!=`` on a
+    secret leaks its prefix by timing (``setup.py`` does the same for its
+    token). The emptiness check first, because ``"" == ""`` is true: a gate
+    that only compares lets ``X-API-Key:`` with no value through on any install
+    that never configured a key — open to anyone who sends an empty header,
+    while still 401ing the dashboard's own front end.
+
+    And bytes, not ``str``: ``compare_digest`` raises ``TypeError`` when either
+    side is a string holding a non-ASCII character. Comparing text meant that
+    ``X-API-Key: ü`` from anyone at all turned the gate into an unhandled
+    exception and a 500, and — worse — that a key with an accent in it locked
+    its own owner out, because presenting the *correct* key raised too. Encode
+    first and the comparison is total: every input is either a match or a
+    refusal, never a crash.
     """
     if not sent or not expected:
         return False
-    return hmac.compare_digest(str(sent), str(expected))
+    exp = _forms(expected)
+    ok = False
+    for cand in _forms(sent):
+        for e in exp:
+            ok |= hmac.compare_digest(cand, e)      # no early exit: keep it constant-time
+    return ok
 
 
 def _presented_key(req):
+    """The key as BYTES, decoded with the codec the source actually used.
+
+    This matters for any key outside ASCII. WSGI hands header and cookie text
+    to Werkzeug as latin-1, one character per wire byte, so ``ü`` sent as UTF-8
+    arrives as the two-character string ``Ã¼``. Encoding *that* as UTF-8 yields
+    four bytes and never matches the two the owner configured. Query strings
+    are percent-decoded as UTF-8, so they need no recovery.
+
+    Encoding the wire bytes back out of the latin-1 string is what makes a
+    non-ASCII key usable. Getting this wrong does not crash and does not let
+    anyone in - it locks the owner out of their own dashboard, with a 401 that
+    looks exactly like a wrong key, which is why it survived the first fix.
+    """
     return req.headers.get("X-API-Key") or req.args.get("key") or ""
+
+
+def _wire_bytes(v):
+    """Recover the bytes that were actually on the wire from latin-1 text."""
+    if isinstance(v, bytes):
+        return v
+    try:
+        return v.encode("latin-1")
+    except UnicodeEncodeError:       # already real text, not a latin-1 carrier
+        return _utf8(v)
+
+
+def _forms(v):
+    """Every byte string this value could legitimately be on the wire.
+
+    HTTP defines no charset for header values, and clients disagree in
+    practice: curl puts the shell's UTF-8 bytes on the wire, while Python's
+    http.client latin-1-encodes the same str, so the same key arrives as
+    different octets depending on who sent it. A key outside ASCII therefore
+    has no single correct encoding to compare against, and picking one locks
+    out everybody using the other client.
+
+    Comparing against both candidates costs one extra constant-time compare
+    and leaks nothing: a caller learns only that neither matched. ASCII keys -
+    which is what operators should use, and what the startup check nudges them
+    towards - produce one identical candidate and are unaffected.
+    """
+    if isinstance(v, bytes):
+        return (v,)
+    out = [_utf8(v)]
+    try:
+        lat = v.encode("latin-1")
+    except UnicodeEncodeError:
+        return tuple(out)
+    if lat not in out:
+        out.append(lat)
+    return tuple(out)
 
 
 def check(req):
     """``(authenticated, fresh)``; ``fresh`` means a key was just presented and is owed a cookie."""
     if _matches(_presented_key(req), config.DASH_API_KEY):
         return True, True
-    return _matches(req.cookies.get(COOKIE), _session_value()), False
+    return _matches(req.cookies.get(COOKIE) or "", _session_value()), False
 
 
 def _https(req):

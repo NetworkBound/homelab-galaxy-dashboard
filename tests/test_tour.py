@@ -66,7 +66,7 @@ UNI = {
         body("vm:pve2:121", "PBS", "guest_lxc", "sys:pve2", m={"vmid": 121}),
         body("vm:pve2:132", "freeradius", "guest_lxc", "sys:pve2", "FreeRADIUS", m={"vmid": 132}),
         body("vm:pve2:136", "cloudflared", "guest_lxc", "sys:pve2", m={"vmid": 136}),
-        body("vm:pve2:108", "pterodactyl-wings", "guest_lxc", "sys:pve2", "ptero-wings", m={"vmid": 108}),
+        body("vm:pve2:108", "game-wings", "guest_lxc", "sys:pve2", "ptero-wings", m={"vmid": 108}),
         body("vm:pve2:9200", "debian-12-tmpl", "guest_vm", "sys:pve2", status="down",
              down_why="stopped", m={"vmid": 9200}),
         body("vm:pve1:111", "Ollama", "guest_lxc", "sys:pve1", m={"vmid": 111}),
@@ -107,8 +107,8 @@ DATA = {
     "health": [{"name": "emby", "up": True, "ip": "10.0.0.121"}, {"name": "zabbix", "up": False}] +
               [{"name": "x%d" % i, "up": True} for i in range(8)],
     "zabbix": {"hosts": 122, "problems": 35, "alert_hosts": {
-        "Zabbix": {"n": 1, "sev": 4, "names": ["Zabbix (VM 115) is unreachable"],
-                   "top": [{"name": "Zabbix (VM 115) is unreachable", "sev": 4}]},
+        "Zabbix": {"n": 1, "sev": 4, "names": ["Zabbix (VM 301) is unreachable"],
+                   "top": [{"name": "Zabbix (VM 301) is unreachable", "sev": 4}]},
         "pve2": {"n": 16, "sev": 4, "names": ["Proxmox: VM [pve2/debian-12-tmpl (qemu/9200)]: Not r"],
                          "top": [{"name": "Interface nic1(): Link down", "sev": 4},
                                  {"name": "Proxmox: VM [pve2/debian-12-tmpl (qemu/9200)]: Not running", "sev": 3}]},
@@ -125,9 +125,9 @@ DATA = {
 
 SHOW = {
     "polled": {"ollama": NOW - 2, "emby": NOW - 2, "frigate": NOW - 2, "gpu_series": NOW - 1},
-    "ollama": [{"name": "chat", "up": True, "gpu_label": "3080 Ti", "vram_used_mb": 6058,
+    "ollama": [{"name": "chat", "up": True, "gpu_label": "GPU 0", "vram_used_mb": 6058,
                 "loaded": [{"name": "qwen2.5:14b", "vram_mb": 6058}]},
-               {"name": "big", "up": True, "gpu_label": "3080 Ti + 1080 Ti", "vram_used_mb": 0, "loaded": []}],
+               {"name": "big", "up": True, "gpu_label": "GPU 0 + GPU 1", "vram_used_mb": 0, "loaded": []}],
     "emby": {"up": True, "configured": True, "count": 4,
              "sessions": [{"user": "alice"}] * 4,
              "playing": [{"user": "alice", "title": "Some Film", "type": "Movie", "transcode": True, "paused": False},
@@ -290,8 +290,8 @@ class Missing(unittest.TestCase):
 
 class ProblemText(unittest.TestCase):
     CASES = [
-        ("Zabbix (VM 115) is unreachable", "Zabbix", "unreachable"),
-        ("pterodactyl-wings (CT 108) is unreachable", "pterodactyl-wings", "unreachable"),
+        ("Zabbix (VM 301) is unreachable", "Zabbix", "unreachable"),
+        ("game-wings (CT 201) is unreachable", "game-wings", "unreachable"),
         ("Proxmox: VM [pve2/debian-12-tmpl (qemu/9200)]: Not r", "pve2", "VM 9200 not running"),
         ("Proxmox: LXC [pve1/scratch-tools (lxc/977)]: Not running", "pve1", "CT 977 not running"),
         ("Proxmox: VM [pve1/scratch-sel]: has been restarted", "pve1", "scratch-sel restarted"),
@@ -301,7 +301,7 @@ class ProblemText(unittest.TestCase):
         ("Interface 0/25(SFP+ 1): Link down", "usw-pro-max-24", "SFP+ 1 link down"),
         ("Interface nic1(): Link down", "pve2", "nic1 link down"),
         ("pve2: Too many processes running (>3000)", "pve2", "too many processes"),
-        ("High CPU on ubuntu (VM 122)", "ubuntu", "high CPU"),
+        ("High CPU on ubuntu (VM 302)", "ubuntu", "high CPU"),
         ("Linux: High swap space usage (less than 50% free)", "pve1", "high swap use"),
         ("freeradius: FreeRADIUS port 1812 not responding", "freeradius", "port 1812 not responding"),
         ("DEMO: CRC errors on gi1/0/48 (synthetic)", "demo-access-a", "CRC errors on gi1/0/48"),

@@ -167,7 +167,7 @@
   /* ---- auto-tour timings (see tourTick) ---- */
   /* 2026-10-07: travel grew 1.7-4.0 -> 2.2-3.2 s for the cinematic legs, so
      the dwells gave back ~0.5 s each and a lap stays about as long */
-  /* 2026-10-13 (Connor: "the tour improved and faster to the lights in the server room so it looks insane"):
+  /* 2026-10-13 (faster tour, tuned for room lights that follow the wall):
      dwells 3.3/4.8 -> 2.4/3.4 s and legs 2.2-3.2 -> 1.5-2.3 s; a lap ~2m38s -> ~1m50s. The room lights now predict
      each arrival from travel_s/prog, so a shorter beat still lands exactly on the camera's touchdown. */
   var T_HOLD = 2.4;                     // s dwell at a focused stop
@@ -2895,7 +2895,7 @@
 
   /* FOLLOW THE STREAM (2026-10-08): one stop per lap rides the strongest
      MEASURED system-to-system stream (netscene_traffic.js), from the galaxy it
-     leaves toward the one it reaches - Noah's "zoom along one strong arc".
+     leaves toward the one it reaches - a "zoom along one strong arc" move.
      It is an ordinary stop for the protocol (its own arrival beat, its own
      key and name; the TV and the lights follow it like any other), placed
      right after the source galaxy's stops so the ride continues the story.

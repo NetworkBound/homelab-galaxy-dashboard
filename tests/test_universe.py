@@ -1550,7 +1550,7 @@ class TestShortNames(unittest.TestCase):
     def test_every_short_fits_and_is_deterministic(self):
         labels = ["averyveryverylonghostnamewithoutseparators", "Some Very Long Device Name Here",
                   "a-b-c-d-e-f-g-h-i-j-k-l-m", "Living Room Samsung QN90B Television", "x" * 40,
-                  "security-monitor", "pterodactyl-wings", "mock-network-lab", "TP-Link Deco Node 3"]
+                  "security-monitor", "game-wings", "mock-network-lab", "TP-Link Deco Node 3"]
         for lb in labels:
             s = U.short_name(lb, "unknown")
             self.assertTrue(s and len(s) <= U.SHORT_MAX, (lb, s))

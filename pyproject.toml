@@ -24,3 +24,9 @@ ignore = [
     "SIM105", # bare try/except/pass is the poller-isolation idiom, documented
               # in README troubleshooting; contextlib.suppress hides it less well
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# Ported test suites for the universe registry and the tour: dense table-driven
+# fixtures where short lambdas, `l` loop names and printf strings read best.
+"tests/test_universe.py" = ["E731", "E741", "F841", "B905", "B017", "UP031", "SIM117"]
+"tests/test_tour.py" = ["UP031"]

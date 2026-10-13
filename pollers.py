@@ -411,10 +411,37 @@ def poll_ai_servers():
 # =========================================================================
 # Extra pollers
 # =========================================================================
+class PveError(RuntimeError):
+    pass
+
+
 def _pve_get(n, path, timeout=6):
+    """GET a Proxmox API path. Any non-200 or a body without `data` RAISES: returning
+    None used to read as "nothing there" to every caller, so an unreachable backup
+    server showed as 0 archives and every guest as never backed up."""
     H = {"Authorization": f"PVEAPIToken={n['token']}"}
     r = requests.get(f"{n['url']}/api2/json{path}", headers=H, verify=False, timeout=timeout)
-    return r.json().get("data")
+    if r.status_code != 200:
+        try:
+            msg = (r.json() or {}).get("message") or r.reason
+        except Exception:
+            msg = r.reason
+        raise PveError(f"HTTP {r.status_code} {path}: {' '.join(str(msg).split())[:160]}")
+    data = r.json().get("data")
+    if data is None:
+        raise PveError(f"no data field: {path}")
+    return data
+
+
+_logged = {}
+
+
+def _log_change(key, msg):
+    """Print once per distinct message per key (pollers loop every few seconds)."""
+    if _logged.get(key) != msg:
+        _logged[key] = msg
+        if msg:
+            print(f"[{key}] {msg}", flush=True)
 
 
 # ---------- 1. per-node detail: cpu/mem/rootfs/load/uptime/kernel (+temp via node-exporter) ----------
@@ -512,53 +539,312 @@ def poll_zfs_detail():
         time.sleep(60)
 
 
-# ---------- 3. backups: newest vzdump/PBS backup per guest; stale >7d and never-backed counts ----------
+# ---------- 3. backups: newest backup per guest; stale >7d and never-backed counts ----------
+# Preferred source: a PBS exporter scraped by Prometheus (per-VM last snapshot, count,
+# verify). Fallback: the Proxmox storage-content listing. Beware the listing with a
+# read-only (PVEAuditor) token: PVE filters backup volumes unless the caller holds
+# Datastore.AllocateSpace AND VM.Backup and answers HTTP 200 with an EMPTY list, which
+# must never be read as "no backups" -- an empty listing is reported as unknown. The PVE
+# side is always asked which backup storages exist and which are failing, so a dead
+# backup-server link is shown as an error, not as "never backed up".
+BACKUP_S = 300
+_bk = {"good": None, "good_at": 0.0}
+
+
+def _prom_vector(expr, timeout=10):
+    r = requests.get(f"{PROM}/api/v1/query", params={"query": expr}, timeout=timeout)
+    if r.status_code != 200:
+        raise RuntimeError(f"prometheus HTTP {r.status_code}")
+    j = r.json()
+    if j.get("status") != "success":
+        raise RuntimeError(f"prometheus: {j.get('error') or j.get('status')}")
+    return j["data"]["result"]
+
+
+def _pbs_series():
+    """[{ns, vm_id, vm_name, datastore, ts, count, verify}] from the PBS exporter."""
+    out = {}
+    for metric, field in (("pbs_snapshot_vm_last_timestamp", "ts"), ("pbs_snapshot_vm_count", "count"),
+                          ("pbs_snapshot_vm_last_verify", "verify")):
+        for s in _prom_vector(metric):
+            m = s.get("metric") or {}
+            if m.get("vm_id") is None:
+                continue
+            k = (m.get("datastore") or "", m.get("namespace") or "", str(m["vm_id"]))
+            e = out.setdefault(k, {"ns": m.get("namespace") or "", "vm_id": str(m["vm_id"]),
+                                   "vm_name": m.get("vm_name") or "", "datastore": m.get("datastore") or ""})
+            try:
+                e[field] = float(s["value"][1])
+            except (KeyError, TypeError, ValueError, IndexError):
+                pass
+    return [e for e in out.values() if e.get("ts")]
+
+
+def match_pbs(guests, series, node_names):
+    """(node, vmid) -> the PBS series that backs that guest up. vmids repeat across
+    standalone nodes, and a node may back up into a namespace named after it: a series
+    in ANOTHER node's namespace is never taken; then same-named namespace, same guest
+    name, newest."""
+    by_id = {}
+    for s in series:
+        by_id.setdefault(s["vm_id"], []).append(s)
+    nodes = set(node_names)
+    out = {}
+    for g in guests:
+        node, name = g.get("node"), g.get("name")
+        cands = [s for s in by_id.get(str(g.get("id")), []) if not (s["ns"] in nodes and s["ns"] != node)]
+        if cands:
+            out[(node, g.get("id"))] = max(cands, key=lambda s: (s["ns"] == node, s["vm_name"] == name, s.get("ts") or 0.0))
+    return out
+
+
+def summarize_backups(guests, series, node_names, now, storages=(), errors=()):
+    """Lab guests (`lab: true`: PVE tag `lab` or UNIVERSE_LAB_VMIDS) are scratch boxes
+    nobody backs up on purpose: they are left out of guests/backed/missing/stale/
+    unverified and counted as `lab_skipped` instead (with `lab_backed`, how many of
+    them happen to have a backup anyway), so the screens can say so."""
+    lab = [g for g in guests if g.get("lab")]
+    guests = [g for g in guests if not g.get("lab")]
+    m = match_pbs(guests, series, node_names)
+    worst, stale, missing, unverified = [], 0, 0, 0
+    for g in guests:
+        s = m.get((g.get("node"), g.get("id")))
+        if s is None:
+            missing += 1
+            worst.append({"id": g.get("id"), "name": g.get("name"), "node": g.get("node"), "age_d": None})
+            continue
+        age = (now - s["ts"]) / 86400.0
+        if age > 7:
+            stale += 1
+            worst.append({"id": g.get("id"), "name": g.get("name"), "node": g.get("node"), "age_d": round(age, 1)})
+        if not s.get("verify"):
+            unverified += 1
+    worst.sort(key=lambda w: (-1e9 if w["age_d"] is None else -w["age_d"], str(w["name"])))
+    newest = max((s["ts"] for s in m.values()), default=0)
+    return {"src": "pbs_exporter", "storages": sorted(set(storages)), "ts": int(now),
+            "archives": int(sum(s.get("count") or 0 for s in series)),
+            "guests": len(guests), "backed": len(guests) - missing, "stale7": stale, "missing": missing,
+            "unverified": unverified, "worst": worst[:8],
+            "lab_skipped": len(lab), "lab_backed": len(match_pbs(lab, series, node_names)),
+            "newest_age_h": round((now - newest) / 3600.0, 1) if newest else None,
+            "storage_errors": list(errors)}
+
+
+def _backup_storages(nodes):
+    """(storage ids with backup content, [{node, storage, error}] for the failing ones)."""
+    ids, errors = set(), []
+    for n in nodes:
+        try:
+            for s in _pve_get(n, f"/nodes/{n['node']}/storage", timeout=15) or []:
+                if "backup" not in (s.get("content") or ""):
+                    continue
+                ids.add(s["storage"])
+                if s.get("enabled", 1) and not s.get("active", 1):
+                    try:     # ask the listing only to learn WHY (its error names the cause)
+                        _pve_get(n, f"/nodes/{n['node']}/storage/{s['storage']}/content?content=backup", timeout=20)
+                        why = "storage inactive"
+                    except Exception as e:
+                        why = str(e).split(": ", 1)[-1][:160]
+                    errors.append({"node": n["node"], "storage": s["storage"], "error": why})
+        except Exception as e:
+            errors.append({"node": n["node"], "storage": None, "error": f"{type(e).__name__}: {e}"[:160]})
+    return ids, errors
+
+
+# ---- backup RUNS: the most recent vzdump task per node (PVE task history) ----
+# Read-only: /nodes/{node}/tasks?typefilter=vzdump + /tasks/{upid}/log. A PVEAuditor token
+# (Sys.Audit) sees the scheduled vzdump tasks of other users and their logs. A finished
+# task never changes, so each log is parsed once.
+_VZ_START = re.compile(r"^INFO: Starting Backup of VM (\d+)")
+_VZ_DONE = re.compile(r"^INFO: Finished Backup of VM (\d+)")
+_VZ_FAIL = re.compile(r"^ERROR: Backup of VM (\d+) failed")
+_vz_logs = {}            # upid -> parsed log summary (finished tasks only)
+_vz_last = {}            # node -> (last good run dict, at)
+
+
+def parse_vzdump_log(lines):
+    """Task log lines -> {guests, ok, failed, failed_ids}. A guest that started but has
+    neither a Finished nor an ERROR line (task killed, node rebooted) counts as failed."""
+    started, ok, failed = [], set(), set()
+    for ln in lines:
+        m = _VZ_START.match(ln)
+        if m:
+            if m.group(1) not in started:
+                started.append(m.group(1))
+            continue
+        m = _VZ_DONE.match(ln)
+        if m:
+            ok.add(m.group(1))
+            continue
+        m = _VZ_FAIL.match(ln)
+        if m:
+            failed.add(m.group(1))
+    failed |= {v for v in started if v not in ok}
+    ok -= failed
+    ids = sorted(failed, key=lambda v: int(v))
+    return {"guests": len(set(started) | ok | failed), "ok": len(ok), "failed": len(failed),
+            "failed_ids": [int(v) for v in ids[:12]]}
+
+
+def summarize_vzdump(node, tasks, log_of, now):
+    """The node's most recent backup run from its vzdump task list (newest first or not).
+    Job runs (task id "", i.e. a backup job or "all") win over a one-guest manual backup,
+    which only stands in when the node has no job run in the list. A run still in progress
+    is reported as `running` on the last finished run (or alone when there is none)."""
+    vz = [t for t in tasks or [] if t.get("type") == "vzdump" and t.get("starttime")]
+    vz.sort(key=lambda t: -float(t["starttime"]))
+    jobs = [t for t in vz if not t.get("id")] or vz
+    if not jobs:
+        return {"node": node, "none": True}
+    done = [t for t in jobs if t.get("endtime")]
+    active = [t for t in jobs if not t.get("endtime") and (not done or t["starttime"] > done[0]["starttime"])]
+    run = {"node": node}
+    if done:
+        t = done[0]
+        st = str(t.get("status") or "")
+        run.update({"start": int(t["starttime"]), "end": int(t["endtime"]),
+                    "duration_s": max(0, int(t["endtime"]) - int(t["starttime"])),
+                    "manual_single": bool(t.get("id"))})
+        try:
+            run.update(log_of(t))
+        except Exception as e:                   # the counts are unknown, the status is not
+            run["log_error"] = f"{type(e).__name__}: {e}"[:160]
+        if st == "OK":
+            run["state"] = "ok" if not run.get("failed") else "partial"
+        else:
+            run["state"] = "partial" if run.get("ok") else "failed"
+            run["error"] = " ".join(st.split())[:160]
+        run["age_h"] = round((now - run["end"]) / 3600.0, 1)
+    if active:
+        t = active[0]
+        r = {"start": int(t["starttime"]), "elapsed_s": max(0, int(now - float(t["starttime"])))}
+        try:
+            p = log_of(t, finished=False)
+            r.update({"done": p["ok"] + p["failed"], "ok": p["ok"], "failed": p["failed"]})
+        except Exception:
+            pass
+        run["running"] = r
+        if not done:
+            run["state"] = "running"
+    return run
+
+
+def _vz_log(n, t, finished=True):
+    upid = t.get("upid") or ""
+    if finished and upid in _vz_logs:
+        return _vz_logs[upid]
+    from urllib.parse import quote
+    data = _pve_get(n, f"/nodes/{n['node']}/tasks/{quote(upid, safe='')}/log?limit=50000", timeout=20)
+    p = parse_vzdump_log([x.get("t", "") for x in data or []])
+    if finished:
+        if len(_vz_logs) > 64:
+            _vz_logs.clear()
+        _vz_logs[upid] = p
+    return p
+
+
+def backup_runs(nodes, now):
+    """[{node, start, end, duration_s, state, guests, ok, failed, ...}] one per node. A node
+    whose task list cannot be read keeps its last good run marked `stale` with its age, or
+    reads `unknown`: never an invented "0 ok"."""
+    out = []
+    for n in nodes:
+        try:
+            tasks = _pve_get(n, f"/nodes/{n['node']}/tasks?typefilter=vzdump&limit=30&source=all", timeout=10)
+            run = summarize_vzdump(n["node"], tasks, lambda t, finished=True, n=n: _vz_log(n, t, finished), now)
+            _vz_last[n["node"]] = (run, now)
+            _log_change("backup-runs " + n["node"], None)
+        except Exception as e:
+            msg = f"{type(e).__name__}: {e}"[:160]
+            _log_change("backup-runs " + n["node"], msg)
+            last = _vz_last.get(n["node"])
+            run = (dict(last[0], stale=True, stale_s=int(now - last[1]), error_fetch=msg) if last
+                   else {"node": n["node"], "unknown": True, "error_fetch": msg})
+        out.append(run)
+    return out
+
+
+def backups_once(now=None):
+    """One backups pass; sets and returns DATA["backups"]. Never reports a guest as
+    missing because a source failed: on error it keeps the last good answer, marked
+    stale with its age, or reports `unknown` with no counts at all.
+    `runs` (the last vzdump run per node) is fetched independently of the PBS side."""
+    now = now or time.time()
+    runs = None
+    try:
+        runs = backup_runs(pve_nodes(), now)
+    except Exception as e:
+        _log_change("backup-runs", f"{type(e).__name__}: {e}"[:200])
+    out = _backups_summary(now)
+    if runs is not None:
+        out = DATA["backups"] = dict(out, runs=runs)
+    return out
+
+
+def _listing_series(nodes, storages):
+    """The PVE storage-content listing as PBS-exporter-shaped series (fallback). An
+    empty result is NOT "no backups" (see above): the caller treats it as unknown."""
+    out, seen = {}, set()
+    for n in nodes:
+        for sid in sorted(storages):
+            try:
+                items = _pve_get(n, f"/nodes/{n['node']}/storage/{sid}/content?content=backup", timeout=20) or []
+            except Exception:
+                continue
+            for it in items:
+                key, vd, ct = it.get("volid"), it.get("vmid"), it.get("ctime") or 0
+                if key in seen or not vd or not ct:
+                    continue
+                seen.add(key)
+                k = (sid, "", str(vd))
+                e = out.setdefault(k, {"ns": "", "vm_id": str(vd), "vm_name": "", "datastore": sid, "count": 0})
+                e["count"] += 1
+                if ct > (e.get("ts") or 0):
+                    e["ts"] = float(ct)
+                    e["verify"] = 1.0 if (it.get("verification") or {}).get("state") == "ok" else 0.0
+    return list(out.values())
+
+
+def _backups_summary(now):
+    try:
+        guests = DATA.get("guests") or []
+        if not guests:
+            raise RuntimeError("guest list not loaded yet")
+        nodes = pve_nodes()
+        storages, errors = _backup_storages(nodes)
+        series, src, why = [], "pbs_exporter", "no PBS exporter series"
+        if PROM:
+            try:
+                series = _pbs_series()
+            except Exception as e:
+                why = f"PBS exporter: {type(e).__name__}: {e}"[:160]
+        else:
+            why = "no Prometheus configured"
+        if not series:
+            series, src = _listing_series(nodes, storages), "pve_storage"
+        if not series:
+            raise RuntimeError(f"no backup source answered ({why}; empty storage listing)")
+        summ = summarize_backups(guests, series, [n["node"] for n in nodes], now, storages, errors)
+        summ["src"] = src
+        _bk.update(good=summ, good_at=now)
+        DATA["backups"] = summ
+        _log_change("backups", "; ".join(f"{e['node']}/{e['storage']}: {e['error']}" for e in errors) or None)
+    except Exception as e:
+        msg = f"{type(e).__name__}: {e}"[:200]
+        _log_change("backups", msg)
+        if _bk["good"] is not None:          # last good, visibly aged
+            DATA["backups"] = dict(_bk["good"], stale=True, age_s=int(now - _bk["good_at"]), error=msg)
+        else:                                # nothing known yet: unknown, no counts at all
+            DATA["backups"] = {"unknown": True, "error": msg, "ts": int(now)}
+    return DATA["backups"]
+
+
 def poll_backups():
     while True:
-        try:
-            latest = {}          # vmid -> newest ctime
-            stores, seen = set(), set()
-            for n in pve_nodes():
-                try:
-                    for s in _pve_get(n, f"/nodes/{n['node']}/storage") or []:
-                        if "backup" not in (s.get("content") or "") or not s.get("active", 1): continue
-                        sid = s["storage"]
-                        try:
-                            items = _pve_get(n, f"/nodes/{n['node']}/storage/{sid}/content?content=backup", timeout=20) or []
-                        except Exception:
-                            continue
-                        stores.add(sid)
-                        for it in items:
-                            key = it.get("volid")
-                            if key in seen: continue          # a shared PBS store shows on every node
-                            seen.add(key)
-                            vd, ct = it.get("vmid"), it.get("ctime", 0)
-                            if vd and ct and ct > latest.get(int(vd), 0): latest[int(vd)] = ct
-                except Exception as e:
-                    print("[backups]", n["node"], e, flush=True)
-            guests = DATA.get("guests") or []
-            now = time.time()
-            summ = {"storages": sorted(stores), "archives": len(seen), "ts": int(now)}
-            if guests:
-                worst = []
-                stale = missing = 0
-                for g in guests:
-                    ct = latest.get(int(g["id"])) if g.get("id") is not None else None
-                    if not ct:
-                        missing += 1; worst.append({"id": g["id"], "name": g["name"], "age_d": None})
-                    else:
-                        age = (now - ct) / 86400
-                        if age > 7:
-                            stale += 1; worst.append({"id": g["id"], "name": g["name"], "age_d": round(age, 1)})
-                worst.sort(key=lambda w: (-1e9 if w["age_d"] is None else -w["age_d"]))
-                newest = max(latest.values()) if latest else 0
-                summ.update({"guests": len(guests), "backed": len(guests) - missing, "stale7": stale,
-                             "missing": missing, "worst": worst[:8],
-                             "newest_age_h": round((now - newest) / 3600, 1) if newest else None})
-            DATA["backups"] = summ
-        except Exception as e:
-            print("[backups]", e, flush=True)
-        time.sleep(900)
+        b = backups_once()
+        # nothing known yet (right after a restart the guest list is still loading):
+        # retry shortly instead of showing "unknown" for a whole BACKUP_S interval
+        time.sleep(15 if b.get("unknown") else BACKUP_S)
 
 
 # ---------- 4. Frigate detail: per-cam fps, detector inference, recording storage + retention ----------

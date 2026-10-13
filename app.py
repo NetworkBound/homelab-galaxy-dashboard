@@ -25,6 +25,7 @@ Frigate / Emby feeds, display modes, presence), ``addons`` (panels dropped into
 """
 import json
 import os
+import re
 import socket
 import sqlite3
 import threading
@@ -130,19 +131,31 @@ def poll_pve():
     while True:
         guests = []; storage = []; nodes = []; pools = []
         ok = False          # did ANY call this tick actually return data?
+        done_urls, seen = set(), set()
         for n in pollers.pve_nodes():
             H = {"Authorization": f"PVEAPIToken={n['token']}"}
-            try:
-                r = requests.get(f"{n['url']}/api2/json/cluster/resources?type=vm", headers=H, verify=False, timeout=5)
-                if r.status_code != 200: raise RuntimeError(f"HTTP {r.status_code}")
-                data = r.json().get("data")
-                if data is None: raise RuntimeError("no data field")
-                ok = True
-                for g in data:
-                    guests.append({"id": g.get("vmid"), "name": g.get("name", str(g.get("vmid"))), "type": g.get("type"),
-                        "status": g.get("status"), "node": g.get("node", n["node"]), "cpu": round(g.get("cpu", 0) * 100, 1),
-                        "mem": g.get("mem", 0), "maxmem": g.get("maxmem", 1), "cat": categorize(g.get("name"))})
-            except Exception as e: print("[pve]", n["node"], e, flush=True)
+            # /cluster/resources answers for EVERY member of a cluster: ask once per
+            # endpoint and key guests on (node, vmid), or a clustered node doubles them
+            if n["url"] not in done_urls:
+                try:
+                    r = requests.get(f"{n['url']}/api2/json/cluster/resources?type=vm", headers=H, verify=False, timeout=5)
+                    if r.status_code != 200: raise RuntimeError(f"HTTP {r.status_code}")
+                    data = r.json().get("data")
+                    if data is None: raise RuntimeError("no data field")
+                    ok = True; done_urls.add(n["url"])
+                    for g in data:
+                        k = (g.get("node", n["node"]), g.get("vmid"))
+                        if k in seen: continue
+                        seen.add(k)
+                        gd = {"id": g.get("vmid"), "name": g.get("name", str(g.get("vmid"))), "type": g.get("type"),
+                              "status": g.get("status"), "node": g.get("node", n["node"]), "cpu": round(g.get("cpu", 0) * 100, 1),
+                              "mem": g.get("mem", 0), "maxmem": g.get("maxmem", 1), "cat": categorize(g.get("name"))}
+                        tg = config.parse_tags(g.get("tags"))
+                        if tg: gd["tags"] = tg
+                        # operator-declared scratch box (PVE tag `lab` / UNIVERSE_LAB_VMIDS): kept apart in backups
+                        if config.is_lab_guest(gd["node"], gd["id"], tg): gd["lab"] = True
+                        guests.append(gd)
+                except Exception as e: print("[pve]", n["node"], e, flush=True)
             try:
                 r = requests.get(f"{n['url']}/api2/json/nodes/{n['node']}/storage", headers=H, verify=False, timeout=5)
                 for s in r.json().get("data", []):
@@ -233,6 +246,15 @@ def poll_zbx():
                 probs = [p for p in probs if tmap.get(p.get("objectid"))]
                 sev = {}
                 for p in probs: sev[int(p.get("severity", 0))] = sev.get(int(p.get("severity", 0)), 0) + 1
+                # bench gear: hosts in UNIVERSE_LAB_GROUPS are informational (LAB badge, never red)
+                labhosts = set()
+                if config.UNIVERSE_LAB_GROUPS:
+                    try:
+                        lg = requests.post(ZBX_URL, headers=H, json={"jsonrpc": "2.0", "method": "hostgroup.get", "params": {"output": ["groupid"], "filter": {"name": config.UNIVERSE_LAB_GROUPS}, "selectHosts": ["host"]}, "id": 5}, timeout=8).json().get("result", [])
+                        for g in lg: labhosts.update(h["host"] for h in (g.get("hosts") or []) if h.get("host"))
+                    except Exception:
+                        pass
+                labnames = {str(h).strip().lower() for h in config.UNIVERSE_LAB_HOSTS or []}
                 alert_hosts = {}
                 for p in probs:
                     hn = tmap.get(p.get("objectid"))
@@ -241,6 +263,10 @@ def poll_zbx():
                     a["sev"] = max(a["sev"], int(p.get("severity", 0))); a["n"] += 1
                     if str(p.get("acknowledged")) != "1": a["unack"] += 1
                     if len(a["names"]) < 3: a["names"].append(p.get("name", "")[:60])
+                    a.setdefault("top", []).append({"name": p.get("name", "")[:120], "sev": int(p.get("severity", 0))})
+                    if hn in labhosts or hn.lower() in labnames: a["lab"] = True
+                for a in alert_hosts.values():   # worst 5 per host, for /api/tour's problem vocabulary
+                    a["top"] = sorted(a.get("top", []), key=lambda t: -t["sev"])[:5]
                 DATA["zabbix"] = {"hosts": int(hosts or 0), "problems": len(probs), "sev": sev, "alert_hosts": alert_hosts}
             else:
                 DATA["zabbix"] = {"error": "auth"}
@@ -498,6 +524,8 @@ def api_config():
         "chat": bool(demo or OLLAMA),
         "snmp": bool(config.SNMP_TARGETS or (demo and DATA.get("snmp"))),
         "cinematics": bool(config.ENABLE_CINEMATICS),
+        "universe": True,
+        "tour": True,
     }
     return jsonify({
         "version": config.VERSION, "demo": demo,
@@ -507,7 +535,23 @@ def api_config():
         "cinematics": {"laps": config.CINEMATICS_LAPS,
                        "moves": ["roll", "explode", "closeup", "arc"]},
         "features": features, "addons": sorted(DATA.get("addons") or {}),
+        "featured_node": _featured_node(),
+        "sites": [{"id": "sys:" + str(st["id"]), "label": str(st.get("label") or st["id"]),
+                   "accent": str(st.get("accent") or "")} for st in config.UNIVERSE_SITES],
     })
+
+
+def _featured_node():
+    """The node whose galaxy gets a stop per guest category: UI_FEATURED_NODE, else the
+    node with the most guests (ties: configured order)."""
+    names = [n["id"] for n in config.node_entries(_node_names())]
+    if config.UI_FEATURED_NODE and config.UI_FEATURED_NODE in names:
+        return config.UI_FEATURED_NODE
+    count = {}
+    for g in DATA.get("guests") or []:
+        count[g.get("node")] = count.get(g.get("node"), 0) + 1
+    best = max(names, key=lambda nm: (count.get(nm, 0), -names.index(nm)), default=None)
+    return best
 
 
 @app.route("/api/topology")
@@ -627,6 +671,13 @@ def api_lightstate():
                     "stops": _ls_clamp_stops(d.get("stops")),
                     "ts": time.time(),
                 }
+                # optional cinematic leg style, so the TV can fly its own version of the
+                # wall's move. Whitelisted like every other field: a short lowercase token
+                # and a direction of -1/+1. Absent when the wall sends none.
+                mv = re.sub(r"[^a-z0-9_-]", "", str(d.get("move") or "").lower())[:24]
+                if mv:
+                    new_state["move"] = mv
+                    new_state["move_dir"] = -1 if str(d.get("move_dir", 1)).strip() in ("-1", "-1.0") else 1
             except (TypeError, ValueError):
                 return jsonify({"ok": False, "err": "bad rgb"}), 400
             with _ls_cond:
@@ -900,6 +951,7 @@ DEMO_FEED = None
 if config.DEMO:
     import demo
     DEMO_FEED = demo.install(app, DATA)
+    demo.install_universe(app, DATA)
     try:   # the lights slot starts from the fixture instead of the neutral default
         with open(os.path.join(demo.FIXTURES, "lightstate.json")) as fh:
             LIGHTSTATE = dict(LIGHTSTATE, **json.load(fh)); LIGHTSTATE["ts"] = time.time()
@@ -915,6 +967,18 @@ else:
     if config.SETUP_UI:
         import setup
         setup.install(app)
+    try:   # /api/universe: one deduplicated device registry with a stable, append-only layout
+        import universe
+        universe.install(app, DATA)
+    except Exception as e:
+        print("[universe] not installed:", e, flush=True)
+
+# /api/tour: the aspect stops + the clean problem list both screens share (demo or live)
+try:
+    import tour
+    tour.install(app, DATA)
+except Exception as e:
+    print("[tour] not installed:", e, flush=True)
 
 
 def start_background_pollers():

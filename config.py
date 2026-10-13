@@ -371,6 +371,44 @@ SECTIONS = [
            help="UniFi device name -> what the screens print."),
          F("TOPOLOGY_CLIENT_CAP", "client_cap", "Anonymous client cap", type="int", default=120),
      ]},
+    {"id": "universe", "title": "Universe registry", "hidden": True,
+     "help": "GET /api/universe: one deduplicated, append-only registry of every device, grouped into systems "
+             "(the network core, one galaxy per Proxmox node, home clients, and any remote sites declared here). "
+             "Nothing here is required; every key has a working default.",
+     "fields": [
+         F("UNIVERSE_SITES", "sites", "Remote sites", type="json", default=[],
+           help="[{\"id\": \"branch\", \"label\": \"Branch office\", \"cidr\": \"192.0.2.0/24\", \"accent\": \"#fc8181\"}]. "
+                "Each site becomes its own system (sys:<id>); devices whose address falls in a site's CIDR join it."),
+         F("UNIVERSE_CAMERA_SITE", "camera_site", "Camera site",
+           help="Site id the NVR cameras belong to. Default: the site holding the NVR address (NP_NVR_IP), else home."),
+         F("UNIVERSE_LAB_GROUPS", "lab_groups", "Lab host groups (Zabbix)", type="csv", default=[],
+           help="Zabbix host groups whose hosts are bench gear: a LAB badge, never counted as down, never red."),
+         F("UNIVERSE_LAB_HOSTS", "lab_hosts", "Lab hosts", type="csv", default=[],
+           help="Host names or addresses that are bench gear (same effect as the Zabbix lab groups)."),
+         F("UNIVERSE_LAB_VMIDS", "lab_vmids", "Lab guests", type="csv", default=[],
+           help="Proxmox guests that are scratch boxes, as vmid or node:vmid. A guest tagged `lab` in Proxmox counts too."),
+         F("UNIVERSE_TUNNELS", "tunnels", "Site-to-site tunnels", type="json", default=[],
+           help="[{\"host\": \"<Zabbix host>\", \"if\": \"wg0\", \"local\": \"sys:core\", \"remote\": \"sys:branch\", "
+                "\"local_ip\": \"\", \"remote_ip\": \"\", \"label\": \"WireGuard core - branch\"}]. Interface rates are read "
+                "from Zabbix (net.if.in/out items) to measure traffic between systems."),
+         F("UNIVERSE_NAME_PREFIXES", "name_prefixes", "Name prefixes to drop", type="csv", default=[],
+           help="Leading words removed from device names for the short on-screen name, e.g. your site name "
+                "(\"Acme UDM\" -> \"UDM\")."),
+         F("UNIVERSE_DIR", "dir", "Registry directory", default="",
+           help="Where the slot store and the optional operator files (universe_names.json, universe_same.json, "
+                "universe_declared.json, universe_traffic.json) live. Default: DATA_DIR."),
+         F("UI_FEATURED_NODE", "featured_node", "Featured node",
+           help="The Proxmox node whose galaxy gets a stop per guest category. Default: the node with the most guests."),
+     ]},
+    {"id": "tour", "title": "Tour", "hidden": True,
+     "help": "GET /api/tour: the aspect stops (internet, security, Wi-Fi, storage, ...) both screens fly to.",
+     "fields": [
+         F("TOUR_ASPECTS", "aspects", "Aspects", type="csv", default=[],
+           help="Aspect keys to include, in order (default: all ten, e.g. asp:internet,asp:storage)."),
+         F("TOUR_ANCHORS", "anchors", "Anchor overrides", type="json", default={},
+           help="{\"asp:ai\": \"vm:pve1:111\"}: the /api/universe body id the camera flies to for an aspect."),
+         F("TOUR_TZ", "tz", "Time zone", help="IANA zone for times on screen (e.g. the last backup). Default: server local time."),
+     ]},
     {"id": "addons", "title": "Add-ons", "hidden": True,
      "fields": [
          F("ADDONS_DIR", "dir", "Add-ons directory", default="",
@@ -605,6 +643,46 @@ FLEET_STATS_URL = get("FLEET_STATS_URL")
 TOPOLOGY_CLIENT_OVERRIDES = get("TOPOLOGY_CLIENT_OVERRIDES") if isinstance(get("TOPOLOGY_CLIENT_OVERRIDES"), list) else []
 TOPOLOGY_ALIASES = get("TOPOLOGY_ALIASES") if isinstance(get("TOPOLOGY_ALIASES"), dict) else {}
 TOPOLOGY_CLIENT_CAP = get("TOPOLOGY_CLIENT_CAP")
+
+# Universe registry + tour (universe.py, tour.py).
+UNIVERSE_SITES = [s for s in (get("UNIVERSE_SITES") if isinstance(get("UNIVERSE_SITES"), list) else [])
+                  if isinstance(s, dict) and s.get("id")]
+UNIVERSE_CAMERA_SITE = get("UNIVERSE_CAMERA_SITE")
+UNIVERSE_LAB_GROUPS = get("UNIVERSE_LAB_GROUPS")
+UNIVERSE_LAB_HOSTS = get("UNIVERSE_LAB_HOSTS")
+UNIVERSE_LAB_VMIDS = get("UNIVERSE_LAB_VMIDS")
+UNIVERSE_TUNNELS = [t for t in (get("UNIVERSE_TUNNELS") if isinstance(get("UNIVERSE_TUNNELS"), list) else [])
+                    if isinstance(t, dict)]
+UNIVERSE_NAME_PREFIXES = get("UNIVERSE_NAME_PREFIXES")
+UI_FEATURED_NODE = get("UI_FEATURED_NODE")
+TOUR_ASPECTS = get("TOUR_ASPECTS")
+TOUR_ANCHORS = get("TOUR_ANCHORS") if isinstance(get("TOUR_ANCHORS"), dict) else {}
+TOUR_TZ = get("TOUR_TZ")
+
+
+def parse_tags(tags):
+    """Proxmox guest tags ("lab;web" or "lab,web") -> sorted lower-case list."""
+    if not tags:
+        return []
+    if isinstance(tags, (list, tuple)):
+        parts = tags
+    else:
+        parts = str(tags).replace(",", ";").replace(" ", ";").split(";")
+    return sorted({str(p).strip().lower() for p in parts if str(p).strip()})
+
+
+def is_lab_guest(node, vmid, tags=None):
+    """An operator-declared scratch guest: PVE tag `lab`, or listed in
+    UNIVERSE_LAB_VMIDS as ``vmid`` or ``node:vmid``. Never inferred."""
+    if "lab" in parse_tags(tags):
+        return True
+    v = str(vmid)
+    for e in UNIVERSE_LAB_VMIDS or []:
+        e = str(e).strip()
+        if e == v or e == f"{node}:{v}":
+            return True
+    return False
+
 
 # Add-ons.
 _HERE = os.path.dirname(os.path.abspath(__file__))

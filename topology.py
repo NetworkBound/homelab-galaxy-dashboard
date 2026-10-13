@@ -959,7 +959,9 @@ def _build(devices, stas, wan, guests, now, unifi_fresh, pve_fresh, health_fresh
                         if running and g.get("diskread") is not None else None),
              "dw": _rnd(_rate(f"guest.{gnode}.{vmid}.dw", g.get("diskwrite"), now)
                         if running and g.get("diskwrite") is not None else None),
-             "up": g.get("uptime") if running else None})
+             "up": g.get("uptime") if running else None,
+             # operator-declared scratch box: PVE tag `lab` or UNIVERSE_LAB_VMIDS (never inferred)
+             "lab": True if config.is_lab_guest(gnode, vmid, g.get("tags")) else None})
         if parent:
             link(parent, nid, rx, tx, None)
 

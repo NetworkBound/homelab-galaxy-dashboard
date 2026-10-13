@@ -420,6 +420,8 @@ def _trigger_set(DATA):
     for host, a in (z.get("alert_hosts") or {}).items():
         if int(a.get("sev") or 0) < ALERT_SEV:
             continue
+        if a.get("lab"):                     # bench gear is informational, never a red wall
+            continue
         names = a.get("names") or []
         if names and all(ALERT_IGNORE.search(str(n)) for n in names):
             continue

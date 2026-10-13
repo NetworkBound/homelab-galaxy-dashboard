@@ -178,15 +178,18 @@
      texture arrives, so a slow fetch just delays the disc, never the scene) ---- */
   var ASSETS = '/static/assets/';
   var LOADER = null;
+  var PENDING = 0;     // baked textures still in flight (boot veil waits for 0)
   function loadTex(name, cb) {
     LOADER = LOADER || new THREE.TextureLoader();
+    PENDING++;
     LOADER.load(ASSETS + name, function (tex) {
+      PENDING--;
       tex.encoding = THREE.sRGBEncoding;
       tex.minFilter = THREE.LinearMipmapLinearFilter; tex.generateMipmaps = true;
       var r = window.rndr && window.rndr.capabilities;
       if (r && r.getMaxAnisotropy) tex.anisotropy = Math.min(8, r.getMaxAnisotropy());
       cb(tex);
-    }, undefined, function () { });
+    }, undefined, function () { PENDING--; });
   }
   /* one baked spiral disc: one draw call, additive, never writes depth,
      opacity tuned so only the nucleus approaches the bloom threshold */
@@ -201,16 +204,21 @@
     if (i < 0) return '';
     return NODE_DISC[i % NODE_DISC.length];
   }
+  /* clean pass (2026-10-07) made the background galaxies quieter and cooler
+     (0.55, a grey-blue tint). The look pass (2026-10-08, contracts 8: "graphics
+     to pop ... like a real galaxy", the 10-04/05 frames) restores them: full
+     strength, natural colour */
+  var BG_K = 1.0;
   function mkDisc(spec) {
     var mat = new THREE.MeshBasicMaterial({
       map: null, transparent: true, opacity: 0, depthWrite: false, fog: false,
-      blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+      blending: THREE.AdditiveBlending, side: THREE.DoubleSide, color: 0xffffff
     });
     mat.visible = false;
     var m = new THREE.Mesh(new THREE.PlaneGeometry(spec.size, spec.size), mat);
     m.renderOrder = -20; m.userData.bg = true; m.frustumCulled = false;
     var d = { key: spec.key, mesh: m, op: spec.op, spin: spec.spin, phase: spec.phase || 0,
-              f: 1, fT: 1, baseQ: new THREE.Quaternion(), inGroup: !!spec.inGroup };
+              f: 1, fT: 1, appear: 1, baseQ: new THREE.Quaternion(), inGroup: !!spec.inGroup };
     if (!spec.inGroup) {
       m.position.copy(spec.pos);
       /* billboard toward the mean camera, then a fixed tilt so it reads as a
@@ -222,9 +230,33 @@
       d.baseQ.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
       m.quaternion.copy(d.baseQ);
     }
-    loadTex(spec.tex, function (tex) { mat.map = tex; mat.opacity = spec.op; mat.visible = true; mat.needsUpdate = true; });
+    /* a late texture fades in (appear 0 -> 1) instead of popping at full strength */
+    loadTex(spec.tex, function (tex) { mat.map = tex; d.appear = 0; mat.opacity = 0; mat.visible = true; mat.needsUpdate = true; });
     DISCS.push(d);
     return d;
+  }
+
+  /* clean pass (2026-10-07): the baked sky's nebulae (a saturated red one sits
+     under every close-up that looks down past the estate) are backdrop, not
+     subject. Once, at load: pull saturation most of the way down - hardest on
+     the reds and magentas - and trim a little exposure, on a half-size copy. */
+  function restrainSky(tex) {
+    var img = tex.image; if (!img || !img.width) return tex;
+    var w = Math.min(4096, img.width), h = Math.round(w * img.height / img.width);
+    var cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    var x = cv.getContext('2d'); x.drawImage(img, 0, 0, w, h);
+    var im = x.getImageData(0, 0, w, h), d = im.data;
+    for (var i = 0; i < d.length; i += 4) {
+      var r = d[i], g = d[i + 1], b = d[i + 2], l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      var warm = r > b && r > g ? Math.min(1, (r - Math.max(g, b)) / 60) : 0;   // red / magenta / amber
+      var k = 0.42 + 0.33 * warm;                                               // share of saturation removed
+      d[i] = (r + (l - r) * k) * 1.02; d[i + 1] = (g + (l - g) * k) * 1.02; d[i + 2] = (b + (l - b) * k) * 1.02;   // 2026-10-08: the chrome lost its bright plates; the backdrop carries a touch more of the frame
+    }
+    x.putImageData(im, 0, 0);
+    var t = new THREE.CanvasTexture(cv);
+    t.encoding = tex.encoding; t.minFilter = THREE.LinearFilter; t.generateMipmaps = false;
+    tex.dispose();
+    return t;
   }
 
   /* ---------------- points helper ---------------- */
@@ -250,6 +282,58 @@
     sp.scale.set(sx, sy, 1); sp.position.copy(p);
     sp.renderOrder = -15; sp.userData.bg = true;
     return sp;
+  }
+
+  /* Nebula puffs, batched (2026-10-04). Each puff used to be its own
+     THREE.Sprite - 122 sprites, i.e. up to 122 draw calls a frame for pure
+     decoration, more than the whole topology graph. They are now ONE
+     instanced, camera-facing quad draw per nebula (5 total) that reproduces
+     SpriteMaterial exactly: screen-space rotation, colour x texel, opacity,
+     additive, no depth test, tone-mapped like the built-in material, and it
+     inherits the group's breathing scale the way a child sprite did. */
+  var PUFF_VS = [
+    'attribute vec3 iPos; attribute vec3 iSRot; attribute vec4 iCol; attribute float iTex;',
+    'varying vec2 vUv; varying vec4 vCol; varying float vTex;',
+    'void main(){',
+    '  vec4 mv = modelViewMatrix * vec4(iPos, 1.0);',
+    '  float sc = length(modelMatrix[0].xyz);',
+    '  vec2 c = position.xy * iSRot.xy * sc;',
+    '  float cs = cos(iSRot.z), sn = sin(iSRot.z);',
+    '  mv.xy += vec2(cs * c.x - sn * c.y, sn * c.x + cs * c.y);',
+    '  vUv = uv; vCol = iCol; vTex = iTex;',
+    '  gl_Position = projectionMatrix * mv;',
+    '}'].join('\n');
+  var PUFF_FS = [
+    'uniform sampler2D t0; uniform sampler2D t1;',
+    'varying vec2 vUv; varying vec4 vCol; varying float vTex;',
+    'void main(){',
+    '  vec4 tx = vTex < 0.5 ? texture2D(t0, vUv) : texture2D(t1, vUv);',
+    '  gl_FragColor = vec4(vCol.rgb * tx.rgb, vCol.a * tx.a);',
+    '  #include <tonemapping_fragment>',
+    '}'].join('\n');
+  function puffBatch(list) {
+    var base = new THREE.PlaneGeometry(1, 1), g = new THREE.InstancedBufferGeometry();
+    g.index = base.index; g.setAttribute('position', base.attributes.position); g.setAttribute('uv', base.attributes.uv);
+    var n = list.length, P = new Float32Array(n * 3), S = new Float32Array(n * 3), C = new Float32Array(n * 4), T = new Float32Array(n);
+    for (var i = 0; i < n; i++) {
+      var q = list[i];
+      P[i * 3] = q[0]; P[i * 3 + 1] = q[1]; P[i * 3 + 2] = q[2];
+      S[i * 3] = q[3]; S[i * 3 + 1] = q[4]; S[i * 3 + 2] = q[5];
+      C[i * 4] = q[6]; C[i * 4 + 1] = q[7]; C[i * 4 + 2] = q[8]; C[i * 4 + 3] = q[9];
+      T[i] = q[10];
+    }
+    g.setAttribute('iPos', new THREE.InstancedBufferAttribute(P, 3));
+    g.setAttribute('iSRot', new THREE.InstancedBufferAttribute(S, 3));
+    g.setAttribute('iCol', new THREE.InstancedBufferAttribute(C, 4));
+    g.setAttribute('iTex', new THREE.InstancedBufferAttribute(T, 1));
+    g.instanceCount = n;
+    var m = new THREE.Mesh(g, new THREE.ShaderMaterial({
+      uniforms: { t0: { value: TEX.lump1 }, t1: { value: TEX.lump2 } },
+      vertexShader: PUFF_VS, fragmentShader: PUFF_FS,
+      transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending
+    }));
+    m.frustumCulled = false; m.renderOrder = -15; m.userData.bg = true;
+    return m;
   }
 
   /* ---------------- star shells (parallax layers) ---------------- */
@@ -353,6 +437,7 @@
     var C = skyPos(opts.pitch, opts.yaw, opts.R);
     grp.position.copy(C);
     var hues = opts.hues;                     // [core hue, fringe hue]
+    var puffs = [];
     var np = [], nc = [], col = new THREE.Color();
     for (var i = 0; i < opts.puffs; i++) {
       /* r2 (2026-09-19): measured on the wall - at 7-9k units a 600 u puff is a
@@ -363,12 +448,13 @@
       var p = new THREE.Vector3(
         (rnd() * 2 - 1) * opts.ex * 0.7, (rnd() * 2 - 1) * opts.ey * 0.7, (rnd() * 2 - 1) * opts.ez * 0.7);
       var core = p.length() < Math.max(opts.ex, opts.ez) * 0.45;
-      col.setHSL(core ? hues[0] : hues[1], 0.55 + rnd() * 0.2, 0.52 + rnd() * 0.12);
+      col.setHSL(core ? hues[0] : hues[1], 0.55 + rnd() * 0.2, 0.52 + rnd() * 0.12);   // 2026-10-08: back to the 10-04 saturation (0.30-0.42 muted it)
       var s = opts.size * 0.36 * (0.5 + rnd() * 0.9) * (core ? 1 : 1.35);
-      var tex = rnd() > 0.5 ? TEX.lump1 : TEX.lump2;
-      grp.add(sprite(tex, col.getHex(), opts.op * 1.15 * (core ? 1.25 : 0.7),
-        s, s * (0.7 + rnd() * 0.5), p, rnd() * 6.28));
+      var ti = rnd() > 0.5 ? 0 : 1;
+      var sy = s * (0.7 + rnd() * 0.5), rot = rnd() * 6.28;   // same rnd() order as the old sprite() call
+      puffs.push([p.x, p.y, p.z, s, sy, rot, col.r, col.g, col.b, opts.op * (window.NB_HDR ? 0.55 : 1.15) * (core ? 1.25 : 0.7), ti]);
     }
+    grp.add(puffBatch(puffs));
     // embedded young stars
     for (i = 0; i < opts.stars; i++) {
       np.push((rnd() * 2 - 1) * opts.ex, (rnd() * 2 - 1) * opts.ey, (rnd() * 2 - 1) * opts.ez);
@@ -520,17 +606,17 @@
 
     sky.add(buildGalaxy(rnd));
 
-    /* the two satellite discs. The SECOND node (cyan): just past the overview
-       frame's left edge (the sway brings it in beyond the exosphere ring) and
-       in the lower-right quadrant of that node's tour stop (camera az 1.15),
-       where it is the sky behind the subject. THE EDGE (violet): top-right
-       corner at the overview (sway brings it in and out), upper-right at the
-       WAN stop (az -0.5), i.e. the sky beyond the edge as the camera looks at
-       it. Both sit in the top / bottom bands the graph never reaches. */
-    var gpu = mkDisc({ key: 'n1', tex: 'galaxy_gpu.png', size: 3400, op: 0.42, spin: 0.0052, phase: 1.3,
+    /* the two satellite discs. The SECOND node's disc (cyan): just past the
+       overview frame's left edge (the sway brings it in beyond the exosphere
+       ring) and in the lower-right quadrant of that node's tour stop (camera az
+       1.15), where it is the sky behind the subject. THE EDGE (violet):
+       top-right corner at the overview (sway brings it in and out), upper-right
+       at the WAN stop (az -0.5), i.e. the sky beyond the edge as the camera
+       looks at it. Both sit in the top / bottom bands the graph never reaches. */
+    var gpu = mkDisc({ key: 'n1', tex: 'galaxy_gpu.png', size: 3400, op: 0.28, spin: 0.0052, phase: 1.3,
                        pos: skyPos(-44, 40, 9200), tilt: 0.42 });
     sky.add(gpu.mesh); G.n1Disc = gpu;
-    var edge = mkDisc({ key: 'edge', tex: 'galaxy_edge.png', size: 2600, op: 0.40, spin: -0.0044, phase: 2.6,
+    var edge = mkDisc({ key: 'edge', tex: 'galaxy_edge.png', size: 2600, op: 0.27, spin: -0.0044, phase: 2.6,
                         pos: skyPos(-13, -50, 9600), tilt: 0.5 });
     sky.add(edge.mesh); G.edgeDisc = edge;
 
@@ -539,6 +625,7 @@
        the bake is deliberately dim, luminance < 0.35) */
     loadTex('sky.jpg', function (tex) {
       try {
+        if (!window.NB_HDR) tex = restrainSky(tex);   // 2026-10-08: the photographic pipeline keeps the sky's own colour
         tex.mapping = THREE.EquirectangularReflectionMapping;
         var rt = new THREE.WebGLCubeRenderTarget(1024, { generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
         rt.fromEquirectangularTexture(window.rndr, tex);
@@ -563,10 +650,12 @@
     nebs.forEach(function (o) { var n = buildNebula(rnd, o); G.nebs.push(n); sky.add(n); });
 
     // distant background galaxies — depth storytelling, very faint
+    G.dgals = [];
     [[-24, -18, 11500, 0.5], [-56, 10, 12500, 1.1], [-11, 14, 12000, 2.2], [-38, 55, 11000, 0.3]]
       .forEach(function (d) {
         var s = 340 + rnd() * 320;
-        sky.add(sprite(TEX.dgal, 0xc4d2ee, 0.46, s, s, skyPos(d[0], d[1], d[2]), d[3]));
+        var sp = sprite(TEX.dgal, 0xc4d2ee, 0.46, s, s, skyPos(d[0], d[1], d[2]), d[3]);
+        G.dgals.push(sp); sky.add(sp);
       });
 
     // milky band: a faint stellar girdle crossing the lower frame diagonally
@@ -589,7 +678,8 @@
         var b = (0.27 + rnd() * 0.42) * gdamp;
         col.push(c.r * b, c.g * b, c.b * b);
       }
-      sky.add(mkPoints(pos, col, 2.2, 0.52, TEX.soft, false));
+      G.milky = mkPoints(pos, col, 2.2, 0.52, TEX.soft, false);
+      sky.add(G.milky);
     })();
 
     sky.add(buildFlares(rnd));
@@ -600,6 +690,284 @@
 
     G.sky = sky;
     return sky;
+  }
+
+  /* ---------------- the asset world (galaxy2, 2026-10-08) ----------------
+     The Blender renders (static/assets/galaxy2/manifest.json): a seamless
+     4096x2048 deep sky (a Milky Way band, faint nebulae, cirrus, ~9000 tiny galaxies)
+     as a sky sphere at infinity, and photographic fillers for the wide shots (inclined,
+     edge-on, lenticular, irregular and elliptical galaxies, three kinds of cluster, an
+     Halpha and an OIII veil). The owner's rules: RAW sampling, white tint, straight alpha
+     (rgb * a = light), additive; sky tint ~0.3 at close-ups, a little more at wide shots;
+     background galaxies 0.3-0.6, clusters 0.5-0.9, nebulae 0.4-1.0. They retire the old
+     procedural backdrop pieces that would double up (the old disc art, the puffs, the
+     drawn Milky Way, the four tiny sprites); the star shells, flares, dust and meteors
+     stay for parallax and life. No manifest (or no HDR): everything as before. */
+  var GA = { base: '/static/assets/galaxy2/', man: null, done: false, applied: false, tex: {}, sky: null, pending: 0 };
+  (function () {
+    if (!window.NB_HDR || /[?&]g2=off/.test(location.search)) { GA.done = true; return; }
+    fetch(GA.base + 'manifest.json', { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('no galaxy2'); return r.json(); })
+      .then(function (m) { GA.man = m; GA.done = true; })['catch'](function () { GA.done = true; });
+  })();
+  function gaTex(file, mip) {
+    if (GA.tex[file]) return GA.tex[file];
+    GA.pending++;
+    var t = new THREE.TextureLoader().load(GA.base + file, function () { GA.pending--; }, undefined, function () { GA.pending--; });
+    t.encoding = THREE.LinearEncoding;
+    if (mip) { t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; } else { t.generateMipmaps = false; t.minFilter = THREE.LinearFilter; }
+    GA.tex[file] = t;
+    return t;
+  }
+  var SKY_VS = 'varying vec3 vDir; void main(){ vDir = position; vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }';
+  var SKY_FS = [
+    'uniform sampler2D map; uniform float uTint; uniform float uU0; varying vec3 vDir;',
+    'void main(){',
+    '  vec3 d = normalize(vDir);',
+    '  float u1 = fract(atan(d.x, -d.z) / 6.2831853 + uU0), u2 = fract(u1 + 0.5) - 0.5;',
+    '  float u = fwidth(u1) <= fwidth(u2) + 1e-5 ? u1 : u2;',            // no seam where longitude wraps
+    '  float v = 0.5 + asin(clamp(d.y, -1.0, 1.0)) / 3.14159265;',
+    '  gl_FragColor = vec4(texture2D(map, vec2(u, v)).rgb * uTint, 1.0);',
+    '}'].join('\n');
+  function applyAssets() {
+    GA.applied = true;
+    var m = GA.man;
+    if (m.sky && m.sky.file) {
+      var mesh = new THREE.Mesh(new THREE.SphereGeometry(1000, 64, 32), new THREE.ShaderMaterial({
+        uniforms: { map: { value: gaTex(m.sky.file, false) }, uTint: { value: 0.32 }, uU0: { value: 0.64 } },
+        vertexShader: SKY_VS, fragmentShader: SKY_FS, side: THREE.BackSide, depthWrite: false, depthTest: false
+      }));
+      mesh.renderOrder = -100; mesh.frustumCulled = false; mesh.userData.bg = true;
+      G.grp.add(mesh); GA.sky = mesh; G.assetSky = true;
+      if (window.scene) window.scene.background = new THREE.Color(0x000000);
+    }
+    /* retire what the asset world replaces */
+    if (G.gal) G.gal.visible = false;
+    [G.n1Disc, G.edgeDisc].forEach(function (d) { if (d) { d.mesh.visible = false; d.retired = true; } });
+    (G.nebs || []).forEach(function (n) { n.visible = false; });
+    (G.dgals || []).forEach(function (sp) { sp.visible = false; });
+    if (G.milky) G.milky.visible = false;
+    if (G.nuc) G.nuc.visible = false;
+  }
+  /* the fillers, through the same wide-shot frames as the procedural deep field */
+  var DFA_FS = [
+    'uniform sampler2D map; uniform float uK; varying vec2 vUv; varying vec3 vCol;',
+    'void main(){ vec4 t = texture2D(map, vUv); vec3 c = t.rgb * t.a * vCol * uK; if (c.r + c.g + c.b < 0.0004) discard; gl_FragColor = vec4(c, 1.0); }'].join('\n');
+  function assetField(frames, rnd) {
+    var ds = GA.man.deep_sky || {}, gal = ds.galaxies || {}, clu = ds.clusters || {}, neb = ds.nebulae || {};
+    var gfiles = Object.keys(gal).map(function (k) { return gal[k].file; }).filter(Boolean);
+    var cfiles = Object.keys(clu).map(function (k) { return clu[k].file; }).filter(Boolean);
+    var nfiles = Object.keys(neb).filter(function (k) { return !neb[k].tileable; }).map(function (k) { return neb[k].file; }).filter(Boolean);
+    var by = {};                                     // file -> instances
+    function put(file, P, q, size, b) { (by[file] = by[file] || []).push({ p: P, q: q, size: size, cell: 0, b: b }); }
+    var gi = 0, ci = 0, ni = 0;
+    frames.forEach(function (fr) {
+      var F = fr.F;
+      fr.gal.forEach(function (sp, k) {
+        var dir = rayOf(F, sp[0] + (rnd() - 0.5) * 0.10, sp[1] + (rnd() - 0.5) * 0.08);
+        var D = 6500 + rnd() * 2500, P = F.cam.clone().addScaledVector(dir, D);
+        var q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir.clone().negate());
+        q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rnd() * 6.28));
+        var cluster = cfiles.length && (k % 5 === 3);
+        var file = cluster ? cfiles[ci++ % cfiles.length] : gfiles[gi++ % gfiles.length];
+        if (!file) return;
+        /* galaxies at 1/4-1/2 of a system galaxy, 0.3-0.6; clusters a little smaller, 0.5-0.9 */
+        var px = Math.min(fr.cap || 170, sp[2]) * (fr.k || 1) * (cluster ? 0.75 : 1) * (0.8 + rnd() * 0.4);
+        var b = cluster ? 0.5 + 0.35 * rnd() : 0.32 + 0.26 * rnd();
+        if (Math.abs(sp[0]) < 0.45 && sp[1] < -0.6) b *= 0.7;          // behind the caption: quieter
+        put(file, P, q, px * D / F.pxU * 0.5, b);
+      });
+      fr.neb.forEach(function (sp) {
+        if (!nfiles.length) return;
+        var dir = rayOf(F, sp[0], sp[1]), D = 7600 + rnd() * 800, P = F.cam.clone().addScaledVector(dir, D);
+        var q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir.clone().negate());
+        q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rnd() * 6.28));
+        /* subordinate: the Halpha veil at the bottom of the owner's range (a crimson
+           cloud competes with the galaxies and red is a status colour in the UI) */
+        var nf = nfiles[ni++ % nfiles.length], hb = /_ha\b|neb_ha/.test(nf);
+        put(nf, P, q, sp[2] * 1.15 * D / F.pxU * 0.5, (hb ? 0.40 + 0.10 * rnd() : 0.65 + 0.30 * rnd()) * (fr.nk || 1));
+      });
+    });
+    /* a sprinkle of small galaxies elsewhere below the horizon, for every other camera */
+    for (var j = 0; j < 20 && gfiles.length; j++) {
+      var ph = -0.12 - rnd() * 1.3, yw = rnd() * 6.283, dir2 = new THREE.Vector3(Math.cos(ph) * Math.sin(yw), Math.sin(ph), Math.cos(ph) * Math.cos(yw));
+      var D2 = 7000 + rnd() * 2500;
+      var q2 = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir2.clone().negate());
+      q2.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rnd() * 6.28));
+      put(gfiles[j % gfiles.length], dir2.clone().multiplyScalar(D2), q2, (50 + rnd() * 90) * D2 / (innerHeight / (2 * Math.tan(29 * Math.PI / 180))) * 0.5, 0.28 + 0.25 * rnd());
+    }
+    DF.assetMeshes = [];
+    Object.keys(by).forEach(function (file) {
+      var isNeb = nfiles.indexOf(file) >= 0;
+      var mm = atlasBatch(gaTex(file, true), 1, by[file], isNeb ? -20 : -19, DFA_FS);
+      G.sky.add(mm); DF.assetMeshes.push(mm);
+    });
+  }
+
+  /* ---------------- the deep field (2026-10-08, contracts 8a) ----------------
+     A zoomed-out shot should fill the frame, never look empty in parts. The negative space around the estate fills with REAL deep-sky content,
+     never UI: distant galaxies of every type (grand-design and flocculent spirals,
+     ellipticals, dwarfs) at random inclinations, a few star clusters, all far
+     behind the estate. Placed through the OVERVIEW camera the tour actually flies
+     (NETSCENE.ovFit), aimed at the frame's empty bands (the top, the bottom, the
+     corners and round the side panels) so the wide shot reads full; fixed in the
+     world after that (a later re-fit moves nothing). ONE baked atlas texture
+     (galaxy_bake.js, 16 cells) and ONE instanced draw for every galaxy; one
+     Points draw for the clusters. Additive, unfogged, faint: subordinate to the
+     estate. Builds once the overview fit exists (a few seconds after load). */
+  var DF = { built: false, mesh: null, tries: 0 };
+  var DF_VS = [
+    'attribute vec3 iPos; attribute vec4 iQ; attribute vec3 iSz; attribute vec3 iCol;',
+    'uniform float uCells; varying vec2 vUv; varying vec3 vCol;',
+    'vec3 qrot(vec4 q, vec3 v){ return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v); }',
+    'void main(){',
+    '  vec3 p = iPos + qrot(iQ, vec3(position.xy * iSz.x, 0.0));',
+    '  vUv = (iSz.yz + uv) / uCells; vCol = iCol;',
+    '  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);',
+    '}'].join('\n');
+  /* the atlases are log-encoded RGBA8 (galaxy_bake.js NB_GALAXY.DEC_GLSL decodes) */
+  function dfFS() {
+    return ['uniform sampler2D map; uniform float uK; varying vec2 vUv; varying vec3 vCol;',
+      (window.NB_GALAXY && window.NB_GALAXY.DEC_GLSL) || 'vec3 nbDec(vec3 v){ return v; }',
+      'void main(){ vec3 c = nbDec(texture2D(map, vUv).rgb) * vCol * uK; if (c.r + c.g + c.b < 0.0005) discard; gl_FragColor = vec4(c, 1.0); }'].join('\n');
+  }
+  /* a wide shot's camera, as netscene's tourPose flies it at the start of a hold */
+  function shotFrame(c, el, az, d) {
+    var cam = new THREE.Vector3(c.x + d * Math.cos(el) * Math.sin(az), c.y + d * Math.sin(el), c.z + d * Math.cos(el) * Math.cos(az));
+    var fwd = c.clone().sub(cam).normalize(), right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
+    var up = new THREE.Vector3().crossVectors(right, fwd).normalize();
+    var tv = Math.tan(29 * Math.PI / 180);
+    return { cam: cam, fwd: fwd, right: right, up: up, tv: tv, th: tv * (innerWidth / innerHeight), pxU: innerHeight / (2 * tv) };
+  }
+  function rayOf(F, nx, ny) { return F.fwd.clone().addScaledVector(F.right, nx * F.th).addScaledVector(F.up, ny * F.tv).normalize(); }
+  /* an instanced, oriented, textured-quad batch reading an atlas (cols x cols) */
+  function atlasBatch(tex, cols, inst, order, fs) {
+    var base = new THREE.PlaneGeometry(2, 2), g = new THREE.InstancedBufferGeometry();
+    g.index = base.index; g.setAttribute('position', base.attributes.position); g.setAttribute('uv', base.attributes.uv);
+    var N = inst.length, IP = new Float32Array(N * 3), IQ = new Float32Array(N * 4), IS = new Float32Array(N * 3), IC = new Float32Array(N * 3);
+    inst.forEach(function (it, k) {
+      IP[k * 3] = it.p.x; IP[k * 3 + 1] = it.p.y; IP[k * 3 + 2] = it.p.z;
+      IQ[k * 4] = it.q.x; IQ[k * 4 + 1] = it.q.y; IQ[k * 4 + 2] = it.q.z; IQ[k * 4 + 3] = it.q.w;
+      IS[k * 3] = it.size; IS[k * 3 + 1] = it.cell % cols; IS[k * 3 + 2] = Math.floor(it.cell / cols);
+      IC[k * 3] = it.b; IC[k * 3 + 1] = it.b; IC[k * 3 + 2] = it.b;
+    });
+    g.setAttribute('iPos', new THREE.InstancedBufferAttribute(IP, 3));
+    g.setAttribute('iQ', new THREE.InstancedBufferAttribute(IQ, 4));
+    g.setAttribute('iSz', new THREE.InstancedBufferAttribute(IS, 3));
+    g.setAttribute('iCol', new THREE.InstancedBufferAttribute(IC, 3));
+    g.instanceCount = N;
+    var m = new THREE.Mesh(g, new THREE.ShaderMaterial({
+      uniforms: { map: { value: tex }, uK: { value: 1 }, uCells: { value: cols } },
+      vertexShader: DF_VS, fragmentShader: fs || dfFS(), transparent: true, depthWrite: false, depthTest: true, side: THREE.DoubleSide,
+      blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+      blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor
+    }));
+    m.frustumCulled = false; m.renderOrder = order; m.userData.bg = true;
+    return m;
+  }
+  function deepField() {
+    if (DF.built || !window.NB_GALAXY || !window.NB_HDR || !window.rndr) return;
+    if (!GA.done) return;                                  // the asset world, or the procedural one
+    var NS = window.NETSCENE, fit = NS && NS.ovFit;
+    if (!fit || !fit.c) { if (++DF.tries < 1800) return; fit = { c: [0, 0, 300], el: 1.0, az: 0, d: 1300 }; }   // ~30 s: give up waiting, use a typical fit
+    DF.built = true;
+    var rnd = mulberry32(0x0DEE9F1E);
+    /* 16 galaxy types for the atlas */
+    var HUES = [[0.60, 0.76, 1.00], [1.00, 0.78, 0.50], [0.78, 0.62, 1.00], [0.50, 0.95, 0.80], [1.00, 0.55, 0.72],
+                [0.62, 0.92, 1.00], [1.00, 0.90, 0.62], [0.70, 0.70, 1.00]];
+    var specs = [];
+    for (var i = 0; i < 16; i++) {
+      var kind = i < 9 ? 'spiral' : i < 12 ? 'elliptical' : i < 14 ? 'dwarf' : 'grand';
+      specs.push({ size: 512, seed: 1000 + i * 7919, kind: kind, rIn: 0.10 + rnd() * 0.12, rOut: 0.42 + rnd() * 0.18,
+                   twist: 1.6 + rnd() * 2.4, arms: rnd() < 0.7 ? 2 : 3, armW: 0.30 + rnd() * 0.25, bulge: 0.06 + rnd() * 0.07,
+                   core: 3 + rnd() * 4, bright: 1, hii: 0.6 + rnd() * 0.6, dust: 0.6 + rnd() * 0.4, haze: 1, tilt: rnd() * 6.28,
+                   accent: HUES[(rnd() * HUES.length) | 0], sectors: null });
+    }
+    /* Halpha pink-magenta rather than pure red (red is a status colour in the UI), OIII teal hearts */
+    var nspecs = [{ seed: 11, a: [0.95, 0.34, 0.58], b: [0.25, 0.85, 0.90] }, { seed: 222, a: [0.95, 0.48, 0.42], b: [0.95, 0.78, 0.45] },
+                  { seed: 3333, a: [0.80, 0.34, 0.75], b: [0.35, 0.65, 1.00] }, { seed: 44444, a: [0.92, 0.36, 0.62], b: [0.30, 0.92, 0.82] }];
+    var gtex, ntex, assets = !!(GA.man && GA.man.deep_sky);
+    if (!assets) {
+      try { gtex = window.NB_GALAXY.bakeAtlas(window.rndr, specs, 4, 2048); ntex = window.NB_GALAXY.bakeNebulaAtlas(window.rndr, nspecs, 2, 2048); }
+      catch (e) { return; }
+    }
+    /* the wide shots: the overview (netscene's fit) and the Internet edge stop */
+    var frames = [{ F: shotFrame(new THREE.Vector3().fromArray(fit.c), fit.el, fit.az, fit.d * 1.03),
+      gal: [[-0.62, 0.80, 210], [-0.20, 0.90, 120], [0.18, 0.86, 140], [0.50, 0.80, 175], [0.92, 0.62, 150], [-0.95, 0.60, 160],
+            [-0.70, -0.92, 190], [-0.30, -0.95, 120], [0.32, -0.93, 135], [0.72, -0.90, 185], [0.96, -0.55, 150], [-0.97, -0.50, 140],
+            [-0.42, 0.55, 80], [0.70, 0.40, 90], [-0.75, -0.20, 70], [0.88, 0.05, 85], [0.10, -0.75, 70], [-0.05, 0.72, 75],
+            [-0.76, -0.93, 170], [-0.47, -0.77, 120], [0.22, -0.97, 110], [0.86, -0.86, 150], [0.55, -0.62, 120]],
+      /* nebulae keep clear of the status bar / caption band (red is a status colour there) */
+      neb: [[0.02, 0.86, 480, 0], [-0.66, -0.66, 460, 1], [0.70, -0.64, 440, 3], [0.86, 0.70, 440, 2], [-0.86, 0.78, 440, 1]] }];
+    /* growth (contracts 8a): a new Proxmox galaxy joins the compute rows on the right and
+       the overview re-frames wider; fillers on the edges of that wider frame keep its
+       corners full too (off-screen, so free, until the estate grows) */
+    var gc = new THREE.Vector3().fromArray(fit.c).add(new THREE.Vector3(0.10 * fit.d, 0, -0.03 * fit.d));
+    frames.push({ F: shotFrame(gc, Math.min(1.25, fit.el + 0.10), fit.az, fit.d * 1.3), k: 1.0,
+      gal: [[-0.92, 0.86, 170], [-0.30, 0.94, 140], [0.35, 0.92, 150], [0.92, 0.84, 170], [-0.96, 0.10, 150], [0.96, 0.05, 160],
+            [-0.90, -0.88, 170], [-0.35, -0.95, 130], [0.30, -0.95, 140], [0.88, -0.90, 180], [0.62, -0.80, 120], [0.50, -0.62, 120]],
+      neb: [[0.80, -0.78, 420, 3], [-0.80, 0.80, 400, 2]] });
+    var wst = null;
+    (NS.tour && NS.tour.stops || []).forEach(function (st) { if (st.key === 'wan' && st.c) wst = st; });
+    /* the Internet edge looks out past the estate toward the horizon: its upper half and
+       the band under the Internet star are the voids (bigger, brighter fill than the overview) */
+    if (wst) frames.push({ F: shotFrame(wst.c, wst.el || 0.46, wst.az || -0.5, (wst.dist || 900) * 1.02), k: 1.35, nk: 1.3, cap: 220,
+      gal: [[-0.78, 0.74, 200], [-0.40, 0.86, 150], [0.02, 0.90, 130], [-0.95, 0.22, 150], [-0.55, 0.38, 110], [-0.86, -0.86, 160],
+            [-0.30, -0.92, 120], [0.35, 0.80, 110], [-0.50, -0.80, 150], [-0.12, -0.94, 120], [0.30, 0.93, 140], [-0.95, 0.62, 160],
+            [0.66, 0.93, 120], [-0.20, 0.62, 90], [-0.10, 0.55, 150], [0.18, 0.70, 170], [-0.62, 0.92, 140]],
+      neb: [[-0.62, 0.58, 520, 2], [-0.12, 0.84, 460, 0], [-0.74, -0.62, 420, 3], [-0.40, -0.80, 420, 1]] });
+    if (assets) { assetField(frames, rnd); return; }      // the asset set carries its own clusters
+    var ginst = [], ninst = [];
+    frames.forEach(function (fr) {
+      var F = fr.F;
+      fr.gal.forEach(function (sp, k) {
+        var dir = rayOf(F, sp[0] + (rnd() - 0.5) * 0.10, sp[1] + (rnd() - 0.5) * 0.08);
+        var D = 6500 + rnd() * 2500, P = F.cam.clone().addScaledVector(dir, D);
+        var n = dir.clone().negate(), ax = new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).cross(n).normalize();
+        var q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
+        q.premultiply(new THREE.Quaternion().setFromAxisAngle(ax, Math.acos(0.15 + 0.85 * rnd())));
+        q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rnd() * 6.28));
+        var b = (0.28 + 0.42 * rnd()) * (sp[2] > 130 ? 1.0 : 0.75);
+        if (Math.abs(sp[0]) < 0.45 && sp[1] < -0.6) b *= 0.6;          // behind the caption: quieter
+        ginst.push({ p: P, q: q, size: sp[2] * (fr.k || 1) * (0.8 + rnd() * 0.45) * D / F.pxU * 0.5, cell: (ginst.length * 7) % 16, b: b });
+      });
+      fr.neb.forEach(function (sp) {
+        var dir = rayOf(F, sp[0], sp[1]), D = 7600 + rnd() * 800, P = F.cam.clone().addScaledVector(dir, D);
+        var q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir.clone().negate());
+        q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rnd() * 6.28));
+        ninst.push({ p: P, q: q, size: sp[2] * D / F.pxU * 0.5, cell: sp[3], b: (0.40 + 0.18 * rnd()) * (fr.nk || 1) });
+      });
+    });
+    /* a sprinkle elsewhere below the horizon, for every other camera of the tour */
+    for (var j = 0; j < 22; j++) {
+      var ph = -0.12 - rnd() * 1.3, yw = rnd() * 6.283, dir2 = new THREE.Vector3(Math.cos(ph) * Math.sin(yw), Math.sin(ph), Math.cos(ph) * Math.cos(yw));
+      var D2 = 7000 + rnd() * 2500, P2 = dir2.clone().multiplyScalar(D2);
+      var n2 = dir2.clone().negate(), ax2 = new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).cross(n2).normalize();
+      var q2 = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), n2);
+      q2.premultiply(new THREE.Quaternion().setFromAxisAngle(ax2, Math.acos(0.15 + 0.85 * rnd())));
+      ginst.push({ p: P2, q: q2, size: (60 + rnd() * 120) * D2 / (innerHeight / (2 * Math.tan(29 * Math.PI / 180))) * 0.5, cell: (rnd() * 16) | 0, b: 0.22 + 0.4 * rnd() });
+    }
+    var gm = atlasBatch(gtex, 4, ginst, -19), nm = atlasBatch(ntex, 2, ninst, -20);
+    G.sky.add(nm); G.sky.add(gm);
+    DF.mesh = gm; DF.nebulae = nm; G.deepField = gm;
+    addClusters(frames, rnd);
+  }
+  /* globular / open clusters as points (3D, a little parallax): dense knots of stars in the overview's bands */
+  function addClusters(frames, rnd) {
+    var F0 = frames[0].F, cp = [], cc = [], col = new THREE.Color();
+    for (var k2 = 0; k2 < 7; k2++) {
+      var s2 = frames[0].gal[(k2 * 5 + 3) % frames[0].gal.length];
+      var dirc = rayOf(F0, s2[0] + (rnd() - 0.5) * 0.5, s2[1] + (rnd() - 0.5) * 0.3);
+      var Dc = 5200 + rnd() * 1500, C0 = F0.cam.clone().addScaledVector(dirc, Dc), rc = (14 + rnd() * 16) * Dc / F0.pxU, glob = k2 % 2 === 0;
+      col.setHSL(glob ? 0.10 : 0.60, glob ? 0.45 : 0.55, 0.72);
+      for (var m2 = 0; m2 < (glob ? 260 : 60); m2++) {
+        var rr = rc * (glob ? Math.pow(rnd(), 2.2) : 0.3 + 0.7 * rnd()), t1 = rnd() * 6.283, t2 = Math.acos(2 * rnd() - 1);
+        cp.push(C0.x + rr * Math.sin(t2) * Math.cos(t1), C0.y + rr * Math.cos(t2), C0.z + rr * Math.sin(t2) * Math.sin(t1));
+        var bb = (glob ? 0.35 : 0.6) + 0.6 * Math.pow(rnd(), 3);
+        cc.push(col.r * bb, col.g * bb, col.b * bb);
+      }
+    }
+    var cl = mkPoints(cp, cc, 2.2, 0.85, TEX.soft, false);
+    cl.renderOrder = -18; G.sky.add(cl); DF.clusters = cl;
   }
 
   function ensure() {
@@ -625,6 +993,12 @@
     FOC.key = key;
     var hot = '';
     if (/^wan/.test(key)) hot = 'edge';
+    else if (/^asp:/.test(key) && st) {
+      /* an aspect stop lights the galaxy its subject lives in */
+      var stA = TR.stops[(TR.phase === 'travel' && TR.switched) ? TR.next : TR.idx];
+      var Cf = window.CONFIG, aNode = stA && stA.sysId && Cf && Cf.nodeFromSys ? Cf.nodeFromSys(stA.sysId) : null;
+      hot = stA && stA.edge ? 'edge' : aNode ? discKeyForNode(aNode) : '';
+    }
     else {
       var C = window.CONFIG;
       var node = (C && C.nodeFromKey) ? C.nodeFromKey(key) : null;   // host:pve:<id> / blk:pve:<id>:<cat>
@@ -642,14 +1016,24 @@
     G.t = t;
     /* the baked sky becomes the background once it exists (and stays it: a
        scene re-init would put netscene's flat colour back) */
-    if (G.skyTex && window.scene.background !== G.skyTex) window.scene.background = G.skyTex;
+    if (GA.done && GA.man && !GA.applied && G.grp) applyAssets();
+    if (GA.sky) {
+      var cmr = window.cam || (window.NETSCENE && window.NETSCENE.cam);
+      if (cmr) GA.sky.position.copy(cmr.position);
+      /* the owner's exposure: 0.30-0.35 at close-ups, 0.40-0.45 at the wide shots
+         (the overviews and the Internet edge); eased with the camera's moves */
+      var wide = /^(over|wan)/.test(FOC.key || 'over') ? 1 : 0;
+      GA.tintW = (GA.tintW == null ? wide : GA.tintW) + (wide - (GA.tintW == null ? wide : GA.tintW)) * (1 - Math.exp(-dt / 0.8));
+      GA.sky.material.uniforms.uTint.value = 0.31 + 0.10 * GA.tintW;
+    } else if (G.skyTex && window.scene.background !== G.skyTex) window.scene.background = G.skyTex;
     focusTargets();
     var ease = 1 - Math.exp(-dt / 0.5);              // ~1.5 s to settle (3 tau)
     for (var di = 0; di < DISCS.length; di++) {
       var D = DISCS[di];
       D.f += (D.fT - D.f) * ease;
       var mat = D.mesh.material;
-      if (mat.map) mat.opacity = D.op * D.f;
+      if (mat.map) { if (D.appear < 1) D.appear = Math.min(1, D.appear + dt / 1.2); mat.opacity = D.op * D.f * D.appear * BG_K; }
+      if (D.retired) D.mesh.visible = false;
       if (!D.inGroup) {                               // spin about its own normal
         D.mesh.quaternion.copy(D.baseQ);
         D.mesh.rotateZ(D.phase + t * D.spin);
@@ -673,9 +1057,16 @@
       G.nebs[i].scale.set(s, s, s);
     }
     if (G.dust) G.dust.rotation.y = t * 0.004;
+    if (!DF.built) deepField();
     meteorTick(t);
   }
 
+  /* boot veil: the sky and the baked discs are in (or failed) */
+  /* the deep field is built before the reveal too (its bake + shader compile is a
+     one-time cost the veil should hide); NB_BOOT's 7 s cap still applies */
+  G.ready = function () { return !!G.sky && PENDING === 0 && GA.done && GA.pending === 0 && (DF.built || !window.NB_GALAXY || !window.NB_HDR); };
+  G.ga = GA;
+  G.df = DF;                    // QA: the deep field's parts (galaxies, nebulae, clusters)
   window.GALAXY = G;
   window.galaxyTick = tick;
 

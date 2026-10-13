@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en"><head>
+<html lang="en"><head><link rel="icon" href="data:,">
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Galaxy · wall</title>
 <style>
@@ -50,19 +50,63 @@
   --railL:228px; --railR:236px; /* rail widths                     */
   --cL:296px; --cR:316px;       /* centre column inset from edges  */
   --gap:12px;                   /* vertical rhythm everywhere      */
+  /* 2026-10-08 product type (contracts 7a): one family, tabular numerals */
+  --ui-font:Inter,"Inter Variable",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --t1:#e6e9ee; --t2:#9aa4b1; --t3:#6b7584; --ok:#3fb950; --warn:#d29922; --crit:#f85149; --unk:#6e7681;
 }
 
 /* ---- 2. ground + backdrop -------------------------------------- */
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%;color:var(--fg);overflow:hidden;
-  font:12.5px/1.45 ui-monospace,Menlo,Consolas,monospace;
+  font:12px/1.5 var(--ui-font);letter-spacing:0;font-variant-numeric:tabular-nums;
   background:radial-gradient(ellipse 120% 80% at 50% 42%,#0a1b3d 0,#040b1e 34%,#01030a 74%,#000 100%)}
 #c{position:fixed;inset:0}
-body:before{content:"";position:fixed;inset:0;z-index:2;pointer-events:none;opacity:.7;
-  background:
-    radial-gradient(55% 38% at 14% 6%,rgba(90,215,255,.06),transparent 70%),
-    repeating-linear-gradient(0deg,rgba(0,0,0,.18) 0 1px,transparent 1px 3px)}
-@keyframes thb{0%,100%{opacity:1}50%{opacity:.45}}
+
+/* ---- boot veil (2026-10-05 perf pass) ----------------------------
+   Nothing is shown until the first fully dressed frame exists: universe
+   bodies placed, Blender atlas/flipbooks/turntables uploaded, sky baked,
+   shaders compiled, HUD numbers in. Then the scene fades up out of the page's
+   own backdrop (no black flash: the canvas is transparent-by-opacity over the
+   same gradient) and the HUD follows with a shorter fade. index.html's
+   NB_BOOT decides the moment; a hard 7 s cap means it never hangs. */
+#c{transition:opacity 1.6s cubic-bezier(.25,.6,.25,1)}
+body.nb-boot #c{opacity:0}
+#nbveil{position:fixed;inset:0;z-index:60;pointer-events:none;display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(ellipse 120% 80% at 50% 42%,#0a1b3d 0,#040b1e 34%,#01030a 74%,#000 100%);
+  opacity:1;transition:opacity .9s ease .35s}
+body:not(.nb-boot) #nbveil{opacity:0}
+/* ---- asleep (2026-10-05) ------------------------------------------
+   The room is empty: the render loop stops (presence guard), but it used
+   to leave a frozen mid-flight frame with "APPROACHING ..." and a LIVE
+   timecode stuck in the past. Now the scene settles to a dim still (the
+   loop keeps drawing through the 2.4 s fade, then stops), every transient
+   banner leaves, and one quiet STANDBY line says what is going on. Waking
+   lifts the dim with the same 1.6 s curve as the dressed boot reveal. */
+body.nb-asleep #c{opacity:.2;transition:opacity 2.4s ease}
+/* the scene's text layer (netscene.js paints labels on #nblbl) sleeps and boots with the scene */
+#nblbl{transition:opacity 1.6s cubic-bezier(.25,.6,.25,1)}
+body.nb-boot #nblbl{opacity:0}
+body.nb-asleep #nblbl{opacity:.2;transition:opacity 2.4s ease}
+body.nb-asleep #cin,body.nb-asleep #st-live,body.nb-asleep #st-alert,body.nb-asleep #alerts,
+body.nb-asleep #tip,body.nb-asleep #st-frame{opacity:0 !important;transition:opacity 1.2s ease}
+body.nb-asleep #herotop,body.nb-asleep #herobot,body.nb-asleep .st,body.nb-asleep #title,
+body.nb-asleep #railL,body.nb-asleep #railR,body.nb-asleep #stat,body.nb-asleep #data,body.nb-asleep #st-alist,
+body.nb-asleep #h-aud{opacity:.45 !important;transition:opacity 2.4s ease}
+#nbsleep{position:fixed;left:0;right:0;bottom:calc(var(--sy) + 150px);z-index:9;pointer-events:none;text-align:center;
+  font:400 13px/1.6 var(--ui-font);letter-spacing:0;color:var(--t2);
+  opacity:0;transition:opacity 1.2s ease}
+#nbsleep b{display:block;font-weight:500;font-size:15px;color:var(--t1);margin-bottom:2px}
+body.nb-asleep #nbsleep{opacity:1;transition:opacity 2.4s ease 1.2s}
+/* showtime.js rewrites the LIVE pill's frame counter 60x a second: keep that
+   style/layout work inside the pill instead of re-checking the whole HUD */
+#st-live{contain:layout style}
+#nbveil .mk{font:500 15px/1 var(--ui-font);letter-spacing:0;color:var(--t2);animation:nbveil 2.4s ease-in-out infinite}
+@keyframes nbveil{0%,100%{opacity:.35}50%{opacity:.9}}
+/* 2026-10-08 (contracts 8, "not like it was 3d rendered"): the CRT scanlines and
+   the cyan corner wash over the scene are gone; the grade's grain + vignette are
+   the only finish on the image */
+body:before{content:none}
+@keyframes thb{0%,100%{opacity:1}50%{opacity:.62}}
 
 /* ---- 3. panel chrome ------------------------------------------- */
 .panel{position:relative;pointer-events:auto;overflow:hidden;
@@ -100,7 +144,7 @@ h3{color:var(--ink3);font-size:8.5px;font-weight:600;letter-spacing:1.3px;
 .chip.good:before{background:var(--ok);box-shadow:0 0 5px rgba(62,207,142,.7)}
 .chip.bad{border-color:rgba(255,90,106,.45);background:rgba(255,90,106,.07);color:#ff8b96}
 .chip.bad:before{background:var(--down);box-shadow:0 0 6px var(--down);
-  animation:thb 1.6s ease-in-out infinite}
+  animation:thb 3.2s ease-in-out infinite}
 #chip-light i{width:6px;height:6px;border-radius:50%;background:#5ad7ff;box-shadow:0 0 6px currentColor;display:inline-block}
 a#nexus-hint{color:var(--accent);border-color:rgba(90,215,255,.35)}
 
@@ -249,7 +293,7 @@ body.no-chat #chat{display:none!important}
 #stat .n{font-size:16px;font-weight:600;color:var(--ink1);font-variant-numeric:tabular-nums}
 #stat .n.ok{color:var(--ink1)}
 #stat .n.warn{color:var(--warn)}
-#stat .n.bad{color:var(--down);animation:thb 1.6s ease-in-out infinite}
+#stat .n.bad{color:var(--down);animation:thb 3.2s ease-in-out infinite}
 #stat .l{font-size:8px;letter-spacing:1.2px;color:var(--ink3)}
 
 .kv{display:flex;justify-content:space-between;align-items:baseline;gap:6px;
@@ -403,7 +447,7 @@ body:after{content:"";position:fixed;inset:0;z-index:1;pointer-events:none;
   background:radial-gradient(ellipse 82% 74% at 50% 47%,transparent 60%,rgba(0,2,8,.40) 100%)}
 /* numerals never jitter */
 #stat .n,#hstats b,#herobot b,#st-live .tc,#cin .cstats,#focuscard .fm b,#clk{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
-#hbrand .wm{text-shadow:0 0 22px var(--tour-glow)}
+#hbrand .wm{text-shadow:none}
 /* LIVE pill: a broadcast bug, not a chip */
 body #st-live{background:linear-gradient(180deg,rgba(14,20,34,.94),rgba(6,10,20,.90));
   border:1px solid rgba(255,90,106,.32);border-radius:999px;
@@ -412,12 +456,9 @@ body #st-live .live{text-shadow:0 0 10px rgba(255,90,106,.55)}
 body #st-live .dot{animation:st-livedot 2s ease-in-out infinite}
 @keyframes st-livedot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
 /* lower third: soft plate, tour-coloured underline and progress tick */
-body #cin{padding:8px 22px 9px;border-radius:8px;
-  background:linear-gradient(90deg,transparent,rgba(6,10,20,.74) 20%,rgba(6,10,20,.74) 80%,transparent)}
-body #cin:before{content:"";position:absolute;left:50%;bottom:0;width:240px;height:1px;transform:translateX(-50%);
-  background:linear-gradient(90deg,transparent,var(--tour),transparent);opacity:.85;transition:background .9s ease}
-body #cin .cname{text-shadow:0 0 16px var(--tour-glow),0 1px 2px rgba(0,0,0,.85)}
-body #cin .cbar i.now{background:var(--tour);box-shadow:0 0 8px var(--tour-glow)}
+body #cin{padding:6px 18px 6px;border-radius:6px;background:none}
+body #cin .cname{text-shadow:0 1px 2px rgba(0,0,0,.6)}
+body #cin .cbar i.now{background:rgba(230,233,238,.85);box-shadow:none}
 /* the whole scene shares one tour hue at the panel hairlines; keep #tip readable on any palette */
 #tip{background:rgba(4,10,22,.97);border-color:var(--tour-soft);box-shadow:0 8px 24px rgba(0,0,0,.6),0 0 0 1px rgba(0,0,0,.5)}
 
@@ -431,9 +472,11 @@ body #cin .cbar i.now{background:var(--tour);box-shadow:0 0 8px var(--tour-glow)
    would sit on top of the right rail. */
 #clockbar .chip{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;line-height:1.75}
 #clockbar .chip.good:before,#clockbar .chip.bad:before{display:inline-block;margin-right:5px;vertical-align:1px}
-body:not(.hero) #h-aud{display:none!important}
-</style></head><body>
+body:not(.hero) #st-ai,body:not(.hero) #st-emby,body:not(.hero) #h-aud{display:none!important}
+</style></head><body class="nb-boot">
+<div id="nbveil"><div class="mk" id="nbveil-brand"></div></div>
 
+<div id="nbsleep"><b>Standby</b>The room is empty. The wall resumes when someone walks in.</div>
 <canvas id="c"></canvas>
 
 <div id="railL">
@@ -446,7 +489,7 @@ body:not(.hero) #h-aud{display:none!important}
 
 <div id="railR">
   <div id="gpu" class="panel"><h3>GPU Telemetry</h3><div id="gpus"></div><div id="gpuhist"></div></div>
-  <div id="ops" class="panel"><h3>Mission Ops</h3><div id="opsgrid"></div></div>
+  <div id="ops" class="panel"><h3>Operations</h3><div id="opsgrid"></div></div>
   <div id="flows" class="panel"><h3>Live Flows <span id="flowhd"></span></h3><div id="flowlist"></div></div>
   <div id="feeds" class="panel"><h3>Cameras · live</h3><div class="grid" id="cams"></div></div>
 </div>
@@ -466,8 +509,8 @@ body:not(.hero) #h-aud{display:none!important}
 
 
 <script>window.NP_NO_AUTOPOLL=true;</script>
-<script src="/static/config.js?v=1"></script>
-<script src="/static/new_panels.js?v=1"></script>
+<script src="/static/config.js?v=2"></script>
+<script src="/static/new_panels.js?v=2"></script>
 <script src="/static/vendor/three.min.js"></script>
 <script src="/static/vendor/OrbitControls.js"></script>
 <script src="/static/vendor/CopyShader.js"></script>
@@ -502,7 +545,7 @@ function renderAddons(d){
   if(stat){stat.textContent=up+'/'+ids.length;stat.className='n '+(up===ids.length?'ok':up?'warn':'bad');}
 }
 function startHudFallback(){
-  if(window.HUD_STARTED||window.SCENE_OK)return; window.HUD_STARTED=true;
+  if(window.HUD_STARTED||window.SCENE_OK)return; window.HUD_STARTED=true;document.body.classList.remove('nb-boot');
   if(window.__hudFallbackStarted)return;
   window.__hudFallbackStarted=true;
   const text=(v,fb='–')=>(v===undefined||v===null||v==='')?fb:v;
@@ -512,8 +555,7 @@ function startHudFallback(){
     try{d=await (await fetch('/api/all')).json();}catch(e){}if(window.renderNewPanels){try{window.renderNewPanels(d);}catch(e){}}
     try{const g=await (await fetch('/api/gpu')).json();gpu=g.gpus||g||[];}catch(e){}
     const byHost={};gpu.forEach(g=>{const h=g.host||'gpu';(byHost[h]=byHost[h]||[]).push(g);});
-    document.getElementById('s-run').textContent=text((d.running||0)+(d.ai_servers||[]).filter(s=>s.up).length);
-    document.getElementById('s-tot').textContent=text((d.guests||[]).length+(d.ai_servers||[]).reduce((a,s)=>a+1+(s.gpus||[]).length,0));
+    {const gc=guestCounts(d);document.getElementById('s-run').textContent=text(gc.run);document.getElementById('s-tot').textContent=text(gc.tot);}
     document.getElementById('s-cli').textContent=text(d.unifi&&d.unifi.clients);
     document.getElementById('s-gpu').textContent=gpu.length?Math.round(gpu.reduce((a,g)=>a+Number(g.util||0),0)/gpu.length)+'%':'–';
     document.getElementById('s-net').textContent=d.netmap?`${d.netmap.up}/${d.netmap.total}`:'–';
@@ -559,6 +601,7 @@ setTimeout(()=>{if(!window.SCENE_OK&&document.getElementById('s-run').textConten
 /* ---- brand / features from /api/config, applied before the scene boots ---- */
 function applyConfig(C){
   document.title=C.brand+' · wall';
+  var vb=document.getElementById('nbveil-brand');if(vb)vb.textContent=C.brand;
   var b=document.getElementById('brand');if(b)b.innerHTML=C.brandHtml();
   var tl=document.getElementById('tagline');if(tl)tl.textContent=C.tagline;
   document.body.classList.toggle('no-cameras',!C.features.cameras);
@@ -580,12 +623,88 @@ const R=150;
 
 const scene=new THREE.Scene();scene.fog=new THREE.FogExp2(0x01020a,0.00018);
 const cam=new THREE.PerspectiveCamera(58,innerWidth/innerHeight,0.5,18000);cam.position.set(0,330,1080);
-const rndr=new THREE.WebGLRenderer({canvas:c,antialias:true,powerPreference:'high-performance'});rndr.setSize(innerWidth,innerHeight);rndr.setPixelRatio(Math.min(devicePixelRatio,2));
-rndr.toneMapping=THREE.ACESFilmicToneMapping;rndr.toneMappingExposure=1.2;
+/* RENDER SCALE (2026-10-05 perf pass). The canvas is drawn at the display's own
+   resolution and holds only two things: the graded scene and the crisp text
+   overlay. The 3D scene renders into the composer's targets at NB_RS.S x CSS
+   pixels, which cinema.js adapts from measured GPU frame time. Until now the
+   canvas was 2x supersampled (3840x2160 + MSAA) while the composer actually
+   rendered at 1x and the grade pass merely upscaled into the big canvas, so the
+   4x pixels bought nothing but a 4K grade pass, a 4K MSAA resolve and a 4K
+   compositor downscale. antialias:false: MSAA on the default framebuffer never
+   reached the scene (composer targets have none) and blocks the cheap
+   framebuffer blit lightsync now samples from. */
+const NB_RS=window.NB_RS={S:1,cpr:Math.min(devicePixelRatio||1,2),K:2,ptH:2*innerHeight,
+  set:function(S){this.S=S;this.K=2*S/this.cpr;this.ptH=2*innerHeight*S;}};
+NB_RS.set(1);
+/* Point sizes are in framebuffer pixels. Everything was tuned (and approved)
+   with pixelRatio 2 feeding three's PointsMaterial and drawingBufferHeight 2160
+   feeding the custom point shaders, while the points landed in a 1x target. K
+   keeps every point exactly that size on screen at any canvas ratio and scene
+   scale; the shaders read NB_RS.ptH instead of drawingBufferHeight. */
+(function(){const P=THREE.PointsMaterial.prototype,cp=P.copy;
+  Object.defineProperty(P,'size',{configurable:true,get:function(){return (this._nbSize==null?1:this._nbSize)*NB_RS.K;},set:function(v){this._nbSize=v;}});
+  P.copy=function(src){cp.call(this,src);this._nbSize=src._nbSize;return this;};})();
+const rndr=new THREE.WebGLRenderer({canvas:c,antialias:false,powerPreference:'high-performance'});rndr.setPixelRatio(NB_RS.cpr);rndr.setSize(innerWidth,innerHeight);
+/* ONE PHOTOGRAPHIC PIPELINE (2026-10-08, contracts 8). Was: three's ACES applied
+   per material (only the built-in materials; every custom shader - bodies, arms,
+   glows, streams - skipped it) into 8-bit targets that clipped at 1.0, so additive
+   light summed, clipped and bloomed from anything near white. Now the scene renders
+   LINEAR radiance into half-float targets (nothing tone-maps on its own), bloom
+   works on that HDR image (only genuinely bright light crosses its threshold), and
+   cinema.js's grade applies one exposure + one filmic curve to everything at once.
+   ?hdr=off restores the old path (A/B). Needs EXT_color_buffer_float (WebGL2). */
+const NB_HDR=window.NB_HDR=!/[?&]hdr=off/.test(location.search)&&rndr.capabilities.isWebGL2&&rndr.extensions.has('EXT_color_buffer_float');
+if(NB_HDR){rndr.toneMapping=THREE.NoToneMapping;rndr.toneMappingExposure=1;}
+else{rndr.toneMapping=THREE.ACESFilmicToneMapping;rndr.toneMappingExposure=1.2;}
 const ctrl=new THREE.OrbitControls(cam,rndr.domElement);ctrl.enableDamping=true;ctrl.maxDistance=6200;ctrl.minDistance=25;
 scene.add(new THREE.AmbientLight(0x44557a,.6));
-const composer=new THREE.EffectComposer(rndr);composer.addPass(new THREE.RenderPass(scene,cam));
+/* CRISPNESS (2026-10-05, round 4): the grade's 4-tap quarter-texel "resolve"
+   was a uniform half-pixel blur (it reproduced the old 2x upscale/downscale
+   softness). cinema.js now runs FXAA there instead: edges smoothed, interiors
+   of the 3D bodies, stars and text-like detail pixel-sharp. A real multisampled
+   scene target is available as ?msaa=2|4 (A/B): it looks marginally cleaner but
+   measured +0.6-0.8 ms/frame at the overview on the wall's GPU (two 1080p resolves
+   per frame), so it is off by default. ?aa=on|off|fxaa picks the grade path. */
+const NB_MSAA=window.NB_MSAA=(function(){const m=location.search.match(/[?&]msaa=(\d+)/),n=m?+m[1]:0;
+  return (rndr.capabilities.isWebGL2&&n>1&&THREE.WebGLMultisampleRenderTarget)?Math.min(n,rndr.capabilities.maxSamples||4):0;})();
+const NB_RTP={minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter,format:THREE.RGBAFormat,type:NB_HDR?THREE.HalfFloatType:THREE.UnsignedByteType};
+let NB_CRT;if(NB_MSAA){NB_CRT=new THREE.WebGLMultisampleRenderTarget(innerWidth,innerHeight,NB_RTP);NB_CRT.samples=NB_MSAA;NB_CRT.texture.name='EffectComposer.rt1';}
+else if(NB_HDR){NB_CRT=new THREE.WebGLRenderTarget(innerWidth,innerHeight,NB_RTP);NB_CRT.texture.name='EffectComposer.rt1';}
+const composer=new THREE.EffectComposer(rndr,NB_CRT);composer.setPixelRatio(NB_RS.S);composer.addPass(new THREE.RenderPass(scene,cam));
 const bloom=new THREE.UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),0.95,0.6,0.78);composer.addPass(bloom);
+/* HDR bloom: its own targets in half float too (an 8-bit chain clips the very
+   light it is meant to spread), a soft knee above the threshold instead of a
+   0.01 step, and the bloom added at full weight (the stock copy multiplies it
+   by the scene's accumulated alpha, which in float no longer clamps at 1) */
+/* the bloom chain stays 8-bit by default (?bloomhf=1: half float): it carries the bright
+   pass pre-scaled by NB_BLOOM_PRE (radiance up to 1/PRE survives, cores above that
+   saturate the glow, which is what a glow is) and the composite scales it back
+   (cinema.js). Half-float blur passes measured ~2x the GPU time when the wall's GPU was shared. */
+const NB_BLOOM_HF=window.NB_BLOOM_HF=NB_HDR&&/[?&]bloomhf=1/.test(location.search);
+const NB_BLOOM_PRE=window.NB_BLOOM_PRE=NB_HDR&&!NB_BLOOM_HF?0.5:1;
+if(NB_HDR){[bloom.renderTargetBright].concat(bloom.renderTargetsHorizontal,bloom.renderTargetsVertical).forEach(rt=>{if(NB_BLOOM_HF)rt.texture.type=THREE.HalfFloatType;});
+  bloom.highPassUniforms.smoothWidth.value=0.9;
+  /* HDR safety: in float targets a NaN / Inf pixel (one bad fragment anywhere) is no
+     longer clamped away; the bloom's blur would smear it over a whole mip and the grade
+     would print a black rectangle for that frame (seen once in ~20 s on the wall's GPU).
+     The bright pass zeroes non-finite texels and caps radiance, so nothing poisons the chain. */
+  bloom.materialHighPassFilter.fragmentShader=['uniform sampler2D tDiffuse;uniform vec3 defaultColor;uniform float defaultOpacity;',
+    'uniform float luminosityThreshold;uniform float smoothWidth;varying vec2 vUv;',
+    'void main(){vec4 texel=texture2D(tDiffuse,vUv);',
+    'if(any(isnan(texel))||any(isinf(texel)))texel=vec4(0.0);texel=clamp(texel,0.0,64.0);',
+    'float v=dot(texel.xyz,vec3(0.299,0.587,0.114));',
+    'gl_FragColor=mix(vec4(defaultColor.rgb,defaultOpacity),texel,smoothstep(luminosityThreshold,luminosityThreshold+smoothWidth,v))*'+NB_BLOOM_PRE.toFixed(3)+';}'].join('\n');
+  bloom.materialHighPassFilter.needsUpdate=true;
+  bloom.materialCopy.blending=THREE.CustomBlending;bloom.materialCopy.blendSrc=THREE.OneFactor;bloom.materialCopy.blendDst=THREE.OneFactor;
+  bloom.materialCopy.blendSrcAlpha=THREE.ZeroFactor;bloom.materialCopy.blendDstAlpha=THREE.OneFactor;}
+/* bloom keeps one size in SCREEN terms whatever the scene scale: its blur radii
+   are in texels, so a bloom that followed NB_RS.S would widen as the scene got
+   cheaper. Mip 0 = half the CSS size, exactly what was approved. */
+/* HDR (2026-10-08): only true cores cross the threshold now, so the glow is drawn at
+   half that resolution (a quarter of the pixels; it is a soft glow, its edges never
+   show) - the HDR frame's extra cost goes back into the budget. ?bloomq=0: full size */
+const NB_BLOOM_DIV=window.NB_BLOOM_DIV=NB_HDR&&!/[?&]bloomq=0/.test(location.search)?2:1;
+(function(){const bs=bloom.setSize.bind(bloom);bloom.setSize=function(){bs(Math.round(innerWidth/NB_BLOOM_DIV),Math.round(innerHeight/NB_BLOOM_DIV));};bloom.setSize();})();
 window.scene=scene;window.cam=cam;window.rndr=rndr;window.composer=composer;window.bloom=bloom;window.ctrl=ctrl;
 
 // ---- netscene.js renders the live network topology + flows ----
@@ -610,6 +729,11 @@ async function pollGpu(){try{const j=await (await fetch('/api/gpu')).json();GPU=
   }).join('');
   document.getElementById('s-gpu').textContent=(GPU.length?Math.round(GPU.reduce((a,g)=>a+Number(g.util||0),0)/GPU.length):0)+'%';
 }catch(e){}}
+/* "Guests running N / M" from ONE list (2026-10-09): d.running ignored guests on a
+   newly added Proxmox node while the total counted them (102 / 125). Both now count
+   the same set: every guest plus each AI server host, running = status running. */
+function guestCounts(d){const L=(d&&d.guests||[]).concat((d&&d.ai_servers||[]).map(s=>({status:s.up?'running':'stopped'})));
+  return {run:L.filter(g=>g&&g.status==='running').length,tot:L.length};}
 function aiServerPlanets(servers){
   const out=[];
   (servers||[]).forEach((s,si)=>{
@@ -618,7 +742,7 @@ function aiServerPlanets(servers){
   });
   return out;
 }
-async function pollAll(){try{const d=await (await fetch('/api/all')).json();if(d.topology&&window.netSceneUpdate){try{window.netSceneUpdate(d.topology);}catch(e){}}if(d.topology){try{renderFlows(d.topology);}catch(e){}}if(window.renderNewPanels){try{window.renderNewPanels(d);}catch(e){}}const allGuests=(d.guests||[]).concat(aiServerPlanets(d.ai_servers));window.GMAP={};allGuests.forEach(g=>GMAP[g.id]=g);document.getElementById('s-run').textContent=(d.running||0)+(d.ai_servers||[]).filter(s=>s.up).length;document.getElementById('s-tot').textContent=allGuests.length;document.getElementById('s-cli').textContent=(d.unifi&&d.unifi.clients)??'–';
+async function pollAll(){try{const d=await (await fetch('/api/all')).json();window.NB_ALL=d;setTimeout(()=>{try{window.dispatchEvent(new CustomEvent('nb:all',{detail:d}));}catch(e){}},0);if(d.topology&&window.netSceneUpdate){try{window.netSceneUpdate(d.topology);}catch(e){}}if(d.topology){try{renderFlows(d.topology);}catch(e){}}if(window.renderNewPanels){try{window.renderNewPanels(d);}catch(e){}}const allGuests=(d.guests||[]).concat(aiServerPlanets(d.ai_servers));window.GMAP={};allGuests.forEach(g=>GMAP[g.id]=g);{const gc=guestCounts(d);document.getElementById('s-run').textContent=gc.run;document.getElementById('s-tot').textContent=gc.tot;}document.getElementById('s-cli').textContent=(d.unifi&&d.unifi.clients)??'–';
   if(PLANETS.filter(p=>p.userData.g).length!==allGuests.length){buildGuests(allGuests);}
   const camList0=cfg().features.cameras?(d.cameras||[]):[];
   if(camScreens.length!==camList0.length)buildCameras(camList0);
@@ -695,8 +819,9 @@ const clock=new THREE.Clock();
 // panel) makes requestAnimationFrame skip a frame every 2-3 ticks unevenly,
 // which *looks* like stutter even though the average fps sounds fine. rAF is
 // already vsync-locked by the browser, so just render every tick: smooth by
-// construction, and per-frame cost (not frame count) is the real lever.
-let RENDER_ACTIVE=true,_animRunning=true;
+// construction, and per-frame cost (not frame count) was always the real
+// lever — see the antialias/bloom-resolution notes below.
+let RENDER_ACTIVE=true,_animRunning=true,SLEEP_STOP_AT=0;
 // data-doom is a compound string ("phase=off booted=true capture=live ..."), so it
 // is truthy and !== 'off' even when idle — comparing it to 'off' pinned the wall
 // rendering forever after the first takeover. Read the phase token instead.
@@ -705,7 +830,7 @@ function animate(now){
   // Room is empty: stop the rAF chain instead of scheduling another frame.
   // A presence SSE event flips RENDER_ACTIVE back and restarts it. Never
   // pause mid-DOOM-takeover even if presence lags the last keypress.
-  if(!RENDER_ACTIVE&&!doomActive()){_animRunning=false;return;}
+  if(!RENDER_ACTIVE&&!doomActive()&&now>=SLEEP_STOP_AT){_animRunning=false;return;}
   requestAnimationFrame(animate);
   const dt=Math.min(clock.getDelta(),.05),t=clock.getElapsedTime();
   if(window.netSceneTick){try{window.netSceneTick(t,dt);}catch(e){console.error(e);window.netSceneTick=null;}}
@@ -723,7 +848,95 @@ function animate(now){
   // (bloom itself is owned by cinema.js; the beat is handed over below
   // with CINEMA.beat, and only a fallback touches it here)
   if(!window.CINEMA){beatFlash=Math.max(0,beatFlash-dt*0.8);bloom.strength=BLOOM_BASE+beatFlash*0.9+(beatSev>=3?0.4:0);}
-  composer.render();}
+  NB_PERF.begin();
+  composer.render();
+  // scene text is drawn AFTER bloom + grade, straight to the screen (netscene.js renderOverlay)
+  if(window.NETSCENE&&NETSCENE.renderOverlay){try{NETSCENE.renderOverlay();}catch(e){NETSCENE.renderOverlay=null;}}
+  NB_PERF.end();
+  if(NB_PIXELS)NB_PIXELS.afterFrame();
+  if(!NB_BOOT.done)NB_BOOT.frame(now);}
+/* GPU frame time, measured, not guessed: rAF keeps reporting 60 fps while the
+   compositor drops frames under GPU contention (the wall's GPU also runs Ollama),
+   so cinema.js adapts the scene scale from TIME_ELAPSED queries around the
+   whole frame. Queries are pooled and read back a few frames late, never
+   waited on. No extension (SwiftShader, old drivers): ext=false and cinema.js
+   falls back to frame intervals. */
+const NB_PERF=window.NB_PERF=(function(){
+  const gl=rndr.getContext();let ext=null;try{ext=gl.getExtension('EXT_disjoint_timer_query_webgl2');}catch(e){}
+  const N=120,ring=new Float32Array(N),tmp=new Float32Array(N),pool=[],pend=[];
+  const P={ext:!!ext,n:0,ri:0,cur:null,f:0,lastAt:0,dropped:0};const born=[];
+  /* DEADLOCK FIX (2026-10-05): poll() ran only from end(), and end() returned
+     early when no query was open; begin() refuses once 6 are pending (easily
+     reached during the boot warm-up, when results lag). So after one slow
+     patch nothing ever polled again: measured on the wall's GPU, NB_PERF.n froze
+     at 14-36 for the life of the page, and when the frozen ring held a
+     15 ms boot sample cinema.js pinned the render scale at 0.6 (a soft wall).
+     end() now always polls. Belt and braces: a query unanswered for 90 frames
+     is dropped, and lastAt lets the reader ignore a stale ring. */
+  P.begin=function(){if(!ext||P.cur||pend.length>5)return;const q=pool.pop()||gl.createQuery();gl.beginQuery(ext.TIME_ELAPSED_EXT,q);P.cur=q;};
+  P.end=function(){P.f++;if(!P.cur){P.poll();return;}gl.endQuery(ext.TIME_ELAPSED_EXT);pend.push(P.cur);born.push(P.f);P.cur=null;P.poll();};
+  P.poll=function(){while(pend.length){const q=pend[0];if(!gl.getQueryParameter(q,gl.QUERY_RESULT_AVAILABLE)){
+        if(P.f-born[0]>90){pend.shift();born.shift();try{gl.deleteQuery(q);}catch(e){}P.dropped++;continue;}break;}
+      const bad=gl.getParameter(ext.GPU_DISJOINT_EXT),ns=gl.getQueryParameter(q,gl.QUERY_RESULT);pend.shift();born.shift();pool.push(q);
+      if(!bad){ring[P.ri]=ns/1e6;P.ri=(P.ri+1)%N;P.n++;P.lastAt=performance.now();}}};
+  /* percentile over the newest k samples (k<=N), allocation-free */
+  P.pct=function(p,k){k=Math.min(k||60,P.n,N);if(!k)return -1;for(let i=0;i<k;i++)tmp[i]=ring[(P.ri-1-i+N)%N];
+    const a=tmp.subarray(0,k);a.sort();return a[Math.min(k-1,Math.floor(p*k))];};
+  return P;})();
+/* Async pixel sample for lightsync.js. drawImage(webglCanvas)+getImageData used
+   to stall the main thread twice a second until the GPU drained (25-60 ms on
+   the Iris Xe, unbounded while Ollama holds the wall's GPU). Now: blit the finished
+   frame into a 128x72 renderbuffer, readPixels into a PBO, fence, and hand the
+   bytes over a few frames later once the fence has passed. Same pixels, same
+   RGBA layout (rows bottom-up, which a histogram does not care about). */
+const NB_PIXELS=window.NB_PIXELS=(function(){
+  const gl=rndr.getContext();if(typeof WebGL2RenderingContext==='undefined'||!(gl instanceof WebGL2RenderingContext))return null;
+  let fbo=null,rb=null,pbo=null,w=0,h=0,want=0,fence=null,buf=null,ready=null;
+  function ensure(W,H){if(W===w&&H===h)return;w=W;h=H;
+    if(!fbo){fbo=gl.createFramebuffer();rb=gl.createRenderbuffer();pbo=gl.createBuffer();}
+    gl.bindRenderbuffer(gl.RENDERBUFFER,rb);gl.renderbufferStorage(gl.RENDERBUFFER,gl.RGBA8,W,H);gl.bindRenderbuffer(gl.RENDERBUFFER,null);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER,fbo);gl.framebufferRenderbuffer(gl.DRAW_FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.RENDERBUFFER,rb);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER,pbo);gl.bufferData(gl.PIXEL_PACK_BUFFER,W*H*4,gl.STREAM_READ);gl.bindBuffer(gl.PIXEL_PACK_BUFFER,null);
+    buf=new Uint8Array(W*H*4);}
+  return {
+    /* returns the newest finished sample (or null) and asks for a fresh one */
+    request:function(W,H){want=[W,H];const r=ready;ready=null;return r;},
+    afterFrame:function(){
+      try{
+        if(fence){const st=gl.clientWaitSync(fence,0,0);if(st===gl.TIMEOUT_EXPIRED)return;
+          gl.deleteSync(fence);fence=null;if(st!==gl.WAIT_FAILED){gl.bindBuffer(gl.PIXEL_PACK_BUFFER,pbo);gl.getBufferSubData(gl.PIXEL_PACK_BUFFER,0,buf);gl.bindBuffer(gl.PIXEL_PACK_BUFFER,null);ready=buf;}}
+        if(!want)return;const W=want[0],H=want[1];want=0;ensure(W,H);
+        const cv=gl.canvas;gl.bindFramebuffer(gl.READ_FRAMEBUFFER,null);gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER,fbo);
+        gl.blitFramebuffer(0,0,cv.width,cv.height,0,0,W,H,gl.COLOR_BUFFER_BIT,gl.LINEAR);
+        gl.bindFramebuffer(gl.READ_FRAMEBUFFER,fbo);gl.bindBuffer(gl.PIXEL_PACK_BUFFER,pbo);gl.readPixels(0,0,W,H,gl.RGBA,gl.UNSIGNED_BYTE,0);gl.bindBuffer(gl.PIXEL_PACK_BUFFER,null);
+        fence=gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE,0);
+      }catch(e){}
+      finally{gl.bindFramebuffer(gl.FRAMEBUFFER,null);}   // what three's state cache believes is bound after the overlay
+    }};})();
+/* First dressed frame. Waits for everything the opening shot shows, then
+   compiles every program and uploads every texture in the scene in one go
+   (under the veil, where a long frame costs nothing visible), renders two more
+   frames with all of it warm, and only then lifts the veil. */
+const NB_BOOT=window.NB_BOOT=(function(){
+  const B={done:false,stage:0,t0:performance.now(),reason:''};const MAX_MS=7000;
+  function ready(){const NS=window.NETSCENE;if(!NS||!NS.graph)return false;
+    const U=window.NETUNI;if(U&&U.assetsReady&&!U.assetsReady())return false;
+    const G=window.GALAXY;if(G&&G.ready&&!G.ready())return false;
+    const r=document.getElementById('s-run');if(r&&r.textContent==='–')return false;
+    const au=document.querySelector('#h-aud .box');if(au&&!au.innerHTML)return false;return true;}
+  function texOf(m,f){for(const k in m){const v=m[k];if(v&&v.isTexture)f(v);}if(m.uniforms)for(const k in m.uniforms){const v=m.uniforms[k]&&m.uniforms[k].value;if(v&&v.isTexture)f(v);}}
+  function warm(){const t=performance.now();try{rndr.compile(scene,cam);}catch(e){}
+    const seen=new Set();scene.traverse(o=>{const ms=Array.isArray(o.material)?o.material:(o.material?[o.material]:[]);
+      ms.forEach(m=>texOf(m,tx=>{if(seen.has(tx))return;seen.add(tx);try{rndr.initTexture(tx);}catch(e){}}));});
+    B.warmMs=Math.round(performance.now()-t);B.textures=seen.size;}
+  B.frame=function(){const el=performance.now()-B.t0;
+    if(B.stage===0){if(ready()||el>MAX_MS){B.reason=el>MAX_MS?'timeout':'ready';B.stage=1;warm();}return;}
+    if(++B.stage<4)return;
+    B.done=true;B.revealAt=Math.round(performance.now());document.body.classList.remove('nb-boot');
+    window.NB_READY={revealAt:B.revealAt,reason:B.reason,warmMs:B.warmMs,textures:B.textures};
+    setTimeout(()=>{const v=document.getElementById('nbveil');if(v)v.remove();},2500);};
+  return B;})();
+setTimeout(()=>{if(document.body.classList.contains('nb-boot')){document.body.classList.remove('nb-boot');setTimeout(()=>{const v=document.getElementById('nbveil');if(v)v.remove();},2500);}},12000);   // belt and braces: never a blank wall
 let beatFlash=0,beatSev=0;const BLOOM_BASE=bloom.strength;
 /* SSE budget: Chrome allows 6 connections per host and every EventSource holds
    one. This page opens pulse (here + showtime.js), presence, takeover (doom.js)
@@ -731,7 +944,12 @@ let beatFlash=0,beatSev=0;const BLOOM_BASE=bloom.strength;
 (function connectPulse(){
   if(typeof window.EventSource!=='function')return;
   const es=new EventSource('/api/pulse/stream');
-  es.onmessage=(ev)=>{try{const d=JSON.parse(ev.data);beatFlash=1;beatSev=d.sev||0;if(window.CINEMA&&CINEMA.beat)CINEMA.beat(beatSev);}catch(e){}};
+  // one pulse stream for the whole page: showtime.js listens to nb:pulse instead
+  // of opening its own (it was the 6th EventSource on this page; 6 per host is
+  // Chrome's ceiling and a 6th stream has frozen the page before)
+  window.NB_PULSE_SHARED=true;
+  es.onmessage=(ev)=>{try{const d=JSON.parse(ev.data);beatFlash=1;beatSev=d.sev||0;if(window.CINEMA&&CINEMA.beat)CINEMA.beat(beatSev);}catch(e){}
+    try{window.dispatchEvent(new CustomEvent('nb:pulse',{detail:ev.data}));}catch(e){}};
 })();
 // Resume where we left off. getDelta() must be flushed or the first frame gets a
 // dt of the whole pause, but it also ADDS that gap to Clock.elapsedTime — and the
@@ -743,7 +961,11 @@ function wakeRender(){if(!_animRunning){_animRunning=true;const keep=clock.elaps
   const es=new EventSource('/api/presence/stream');
   es.onmessage=(ev)=>{try{
     const d=JSON.parse(ev.data);
-    RENDER_ACTIVE=('effective' in d)?d.effective:d.active;
+    const was=RENDER_ACTIVE;RENDER_ACTIVE=('effective' in d)?d.effective:d.active;
+    /* asleep: keep drawing through the CSS fade to the dim still (2.4 s),
+       then the loop stops as before; awake: lift the dim, resume */
+    document.body.classList.toggle('nb-asleep',!RENDER_ACTIVE);
+    if(was&&!RENDER_ACTIVE)SLEEP_STOP_AT=performance.now()+2500;
     if(RENDER_ACTIVE)wakeRender();
   }catch(e){}};
 })();
@@ -753,7 +975,7 @@ function wakeRender(){if(!_animRunning){_animRunning=true;const keep=clock.elaps
 // the live scene, so wake it here. 1 Hz, no GPU work while idle.
 setInterval(()=>{if(doomActive())wakeRender();},1000);
 animate();
-addEventListener('resize',()=>{cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();rndr.setSize(innerWidth,innerHeight);composer.setSize(innerWidth,innerHeight);bloom.setSize(innerWidth,innerHeight);});
+addEventListener('resize',()=>{cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();rndr.setSize(innerWidth,innerHeight);NB_RS.set(NB_RS.S);composer.setSize(innerWidth,innerHeight);bloom.setSize();});
 }
 
 /* ---- boot: config first, then the scene, then the modules in load order ---- */
@@ -761,15 +983,21 @@ window.loadConfig().then(function(C){
   applyConfig(C);
   bootScene();
   window.loadScripts([
-    '/static/netscene.js?v=1',
-    '/static/netscene_flows.js?v=1',
-    '/static/netscene_exo.js?v=1',
-    '/static/galaxy.js?v=1',
-    '/static/lightsync.js?v=1',
-    '/static/cinema.js?v=1',
-    '/static/doom.js?v=1',
-    '/static/hero.js?v=1',
-    '/static/showtime.js?v=1'
+    '/static/motion.js?v=3',
+    '/static/universe_layout.js?v=3',
+    '/static/bodies3d.js?v=3',
+    '/static/netscene.js?v=3',
+    '/static/netscene_flows.js?v=3',
+    '/static/netscene_exo.js?v=3',
+    '/static/galaxy_bake.js?v=3',
+    '/static/netscene_universe.js?v=3',
+    '/static/netscene_traffic.js?v=3',
+    '/static/galaxy.js?v=3',
+    '/static/lightsync.js?v=3',
+    '/static/cinema.js?v=3',
+    '/static/doom.js?v=3',
+    '/static/hero.js?v=3',
+    '/static/showtime.js?v=3'
   ]);
 });
 </script>
@@ -783,9 +1011,15 @@ window.loadConfig().then(function(C){
   }
   tick(); setInterval(tick,1000);
 
-  async function chips(){
+  /* one /api/all per 6 s for the whole page: pollAll() fetches it and announces
+     it as nb:all (a ~146 KB parse, done twice every 6 s until 2026-10-05). The
+     HUD-fallback page has no pollAll, so chips() still fetches when nothing
+     arrived for 15 s. */
+  var lastAll=0;
+  window.addEventListener('nb:all',function(e){lastAll=Date.now();chips(e.detail);});
+  async function chips(given){
     try{
-      var d = await (await fetch('/api/all')).json();
+      var d = given || await (await fetch('/api/all')).json();
       var C = cfg();
       var u = d.unifi||{};
       var w = document.getElementById('chip-wan');
@@ -822,7 +1056,7 @@ window.loadConfig().then(function(C){
         sn.className='n '+(frac>0.9?'ok':frac>0.7?'warn':'bad'); }
     }catch(e){}
   }
-  chips(); setInterval(chips,6000);
+  setTimeout(function(){ if(!lastAll) chips(); },1500); setInterval(function(){ if(Date.now()-lastAll>15000) chips(); },6000);
 })();
 </script>
 

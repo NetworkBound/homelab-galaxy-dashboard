@@ -1,203 +1,193 @@
 <!doctype html>
 <html lang="en">
-<head>
+<head><link rel="icon" href="data:,">
 <meta charset="utf-8">
-<title>Nexus · the estate from orbit</title>
-<!-- NEXUS — the 4K "big screen". One spiral galaxy per configured Proxmox node
-     (window.CONFIG.nodes[], any number), a WAN sun, a fabric of gateway/switch/AP
-     planets with client moons, and THE EDGE galaxy for the outside world.
-     Everything site-specific (brand, node labels/accents, WAN label, category
-     palette, legend) arrives from GET /api/config via static/config.js — this
-     template contains no host name, address or brand of its own.
-     Scripts: config.js -> nexus.js -> lightsync.js (publishes colour only; the
-     wall owns the tour protocol) -> showtime.js (modes + the LIVE pill). -->
+<title>Nexus</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- NEXUS: the 4K "big screen". One photographic galaxy per configured Proxmox node
+     (window.CONFIG.nodes[], any number), the network core and home clients round the
+     gateway, any remote sites from /api/universe, a WAN sun and THE EDGE galaxy for the
+     outside world. Everything site-specific (brand, node labels/accents, sites, category
+     palette, legend) arrives from GET /api/config via static/config.js and from
+     /api/universe; this template contains no host name, address or brand of its own.
+     Scripts: config.js -> universe_layout.js, motion.js, bodies3d.js -> nexus.js ->
+     lightsync.js (publishes colour only; the wall owns the tour protocol) -> showtime.js. -->
 <style>
-  :root{--wall:#5ad7ff;--ink:#d6ecff;--dim:#7e93ab;--sub:#94a8c0;--line:rgba(120,170,220,.2);--ease:cubic-bezier(.22,.61,.36,1)}
+  /* production chrome (CONTRACTS §7 / §7a). The 3D scene is the product; everything around it is quiet,
+     factual monitoring UI: one family (Inter when installed), three sizes (12 / 14 / 18 px CSS at a
+     1920x1080 CSS viewport, DPR 2 on a 4K panel), tabular numerals, neutral greys, colour only for status (ok / warning /
+     critical) and for the category / traffic keys that also appear in the scene. No glow or gradient on text. */
+  :root{--wall:#8b949e;--font:Inter,"Liberation Sans","DejaVu Sans",system-ui,sans-serif;
+    --fs-s:12px;--fs-m:14px;--fs-l:18px;
+    --ink:#e6edf3;--ink2:#8b949e;--ink3:#6e7681;--panel:rgba(13,17,23,.78);--line:rgba(240,246,252,.10);--line2:rgba(240,246,252,.16);
+    --ok:#3fb950;--warn:#d29922;--crit:#f85149;--info:#58a6ff;--ease:cubic-bezier(.22,.61,.36,1)}
   *{box-sizing:border-box}
   html,body{margin:0;height:100%;background:#02040c;overflow:hidden;cursor:none}
-  body{font:16px/1.4 ui-monospace,Menlo,Consolas,monospace;color:var(--ink)}
-  #c{position:fixed;inset:0;display:block}
+  body.mouse{cursor:default}
+  body{font:400 var(--fs-s)/1.35 var(--font);color:var(--ink);font-feature-settings:"tnum" 1;-webkit-font-smoothing:antialiased}
+  #c{position:fixed;inset:0;display:block;transition:opacity 1.6s var(--ease)}
+  /* boot veil: the scene renders behind it until every first-view asset is resident (nexus.js bootTick) */
+  body.nx-boot #c{opacity:0}
+  body.nx-boot .hud,body.nx-boot .panel,body.nx-boot #labels,body.nx-boot .st{opacity:0!important;transition:none!important}
+  body.nx-ready .hud,body.nx-ready .panel,body.nx-ready .st{transition:opacity 1.1s var(--ease) .55s,transform .5s var(--ease)}
+  body.nx-ready #labels{transition:opacity 1.2s var(--ease) .9s}
   #labels{position:fixed;inset:0;pointer-events:none;overflow:hidden}
-  /* labels: nexus.js owns inline transform/opacity per frame (never transition transform here —
-     it would lag the 3D anchor). Opacity fade is the only settle we add; the halo is a tight
-     dark drop + soft bloom so text reads over dust without a box. Any per-label dimming must
-     go on the CHILDREN (b/span): the inline opacity on .lbl itself always wins over CSS. */
-  .lbl{position:absolute;left:0;top:0;opacity:0;transition:opacity .3s var(--ease);white-space:nowrap;line-height:1.3;
-    text-shadow:0 .05vw .16vw rgba(0,0,0,.95),0 0 .55vw rgba(0,0,0,.85);will-change:transform}
-  .lbl b{display:block;font-weight:600;letter-spacing:.06em}
-  .lbl span{display:block;color:var(--sub);letter-spacing:.06em}
-  /* no fixed width/margin-left here on purpose: position:absolute + left(no right) already
-     shrink-wraps to content, so JS can measure the TRUE rendered width (offsetWidth) and
-     center it with translateX(-50%) — a fixed vw width let long titles (letter-spacing
-     included) overflow the box and get clipped by #labels' overflow:hidden at the viewport
-     edge ("NTURYLINK · WAN") even though the visibility check thought it was safely inside */
-  .lbl.gal{text-align:center}
-  .lbl.gal b{font-size:1.25vw;letter-spacing:.26em}
-  .lbl.gal span{font-size:.66vw;letter-spacing:.16em;text-transform:uppercase;margin-top:.12vw}
-  /* per-node landmark colour is written INLINE by nexus.js from CONFIG.nodes[].accent
-     (this file knows no node names); this is only the neutral fallback */
-  .lbl.gal.node b{color:#cfe3f5}
-  /* THE EDGE: violet landmark; its PoP / country stars reuse .lbl.station (colour set inline) */
-  .lbl.gal.edge b{color:#b48cff;text-shadow:0 .05vw .16vw rgba(0,0,0,.95),0 0 .9vw rgba(180,140,255,.4)}
-  .lbl.sun{text-align:center}
-  .lbl.sun b{font-size:1vw;color:#ffb347;letter-spacing:.22em}.lbl.sun span{font-size:.68vw;white-space:pre;letter-spacing:.1em}
-  .lbl.bridge{text-align:center}
-  .lbl.bridge b{font-size:.8vw;color:#5ad7ff;letter-spacing:.22em}.lbl.bridge span{font-size:.62vw;letter-spacing:.1em}
-  .lbl.planet{text-align:center}
-  .lbl.planet b{font-size:.85vw;letter-spacing:.18em;color:#e8f0f9}.lbl.planet span{font-size:.58vw;letter-spacing:.1em}
-  /* dark backing pill, not just the base .lbl text-shadow glow: verified on screen that guest
-     labels parked over a bright core/sun disc were unreadable even with
-     the glow — a blurred black shadow can't out-contrast a near-white background under it, a
-     solid semi-opaque backing can. Padding/radius kept small so it still reads as a label, not
-     a card; box-sizing:border-box (set globally above) keeps it inside the measured offsetWidth
-     the clash-avoidance code relies on. */
-  .lbl.guest{text-align:left;padding:.14vw .4vw .16vw;background:rgba(2,5,12,.42);border-radius:.22vw;line-height:1.25}
-  .lbl.guest b{font-size:.6vw;letter-spacing:.03em;text-shadow:0 .05vw .16vw #000,0 0 .4vw rgba(0,0,0,.85)}
-  /* the secondary line (cat · cpu · mem) is what makes 26 labels read as noise: keep it, but
-     let the NAME carry the label — sub sits smaller, dimmer, and drops further when far */
-  .lbl.guest span{font-size:.46vw;color:var(--sub);letter-spacing:.05em;opacity:.78;text-shadow:0 .05vw .14vw #000}
-  .lbl.guest.far b{font-size:.48vw;opacity:.85}.lbl.guest.far span{font-size:.4vw;opacity:.5}
-  /* exosphere stations: external AS · country beyond the WAN sun, pool-placed like guests */
-  .lbl.station{text-align:left;padding:.14vw .4vw .16vw;background:rgba(2,5,12,.42);border-radius:.22vw;line-height:1.25}
-  .lbl.station b{font-size:.6vw;letter-spacing:.06em;text-shadow:0 .05vw .16vw #000,0 0 .4vw rgba(0,0,0,.85)}
-  .lbl.station span{font-size:.46vw;color:var(--sub);letter-spacing:.05em;opacity:.8;text-shadow:0 .05vw .14vw #000}
-  .lbl.station.cf b{color:#ffb073;letter-spacing:.14em;text-shadow:0 .05vw .16vw rgba(0,0,0,.95),0 0 .9vw rgba(246,130,31,.35)}
-  /* AUDIENCE: the top viewer countries get a room-readable tier ("US · 3" at ~1vw, gold = people);
-     nexus.js swaps the class per star (setLabelClass) and re-measures, so the clash walk sees the bigger box */
-  .lbl.station.viewer{padding:.2vw .6vw .24vw;border-radius:.3vw;background:rgba(2,5,12,.5)}
-  .lbl.station.viewer b{font-size:1.05vw;letter-spacing:.12em;text-shadow:0 .05vw .16vw rgba(0,0,0,.95),0 0 .9vw rgba(255,209,102,.3)}
-  .lbl.station.viewer span{font-size:.56vw;letter-spacing:.08em;color:#cbb88e;opacity:.9}
-  /* leader line from an EDGE star to its (clash-displaced) label: nexus.js writes translate/rotate/scaleX per frame */
-  .lead{position:absolute;left:0;top:0;width:1px;height:.07vw;background:linear-gradient(90deg,rgba(255,209,102,.85),rgba(255,209,102,.3));transform-origin:0 50%;opacity:0;transition:opacity .3s var(--ease);will-change:transform;pointer-events:none}
-  /* HUD chrome: opacity/transform only, so showcase in/out is a GPU composite, never a repaint */
+  /* scene labels: one line, short names. nexus.js owns inline transform/opacity per frame. The dark text-shadow is a
+     legibility halo over bright stars, not a glow. Any per-label dimming goes on the children (inline .lbl opacity wins). */
+  .lbl{position:absolute;left:0;top:0;opacity:0;transition:opacity .3s var(--ease);white-space:nowrap;line-height:1.25;
+    font-size:var(--fs-s);color:var(--ink);text-shadow:0 1px 2px rgba(0,0,0,.95),0 0 3px rgba(0,0,0,.8);will-change:transform}
+  .lbl b{display:block;font-weight:500}
+  .lbl span{display:none}
+  .lbl.gal,.lbl.sun,.lbl.bridge,.lbl.planet,.lbl.grp,.lbl.flow{text-align:center}
+  .lbl.gal b,.lbl.planet b{font-size:var(--fs-m);font-weight:600}
+  .lbl.planet.home b{font-weight:500;color:var(--ink)}
+  .lbl.sun b,.lbl.bridge b{font-weight:500}
+  .lbl.grp b{font-weight:600;color:var(--ink2);text-transform:uppercase;letter-spacing:.04em}
+  .lbl.down b,.lbl.guest.down b,.lbl.guest.far.down b{color:#e5848a}
+  /* lab gear: a small outlined tag after the name - a role, not a status, so no colour */
+  .lbl.lab b::after{content:'LAB';display:inline-block;margin-left:5px;padding:0 3px;font-size:9px;line-height:11px;font-weight:600;
+    letter-spacing:.05em;color:var(--ink2);border:1px solid rgba(154,164,177,.5);border-radius:2px;vertical-align:1px;text-shadow:none}
+  /* pool labels (devices, guests, stations): a quiet backing so a name parked over a bright body stays readable */
+  .lbl.guest,.lbl.station{padding:1px 5px 2px;background:rgba(10,13,18,.55);border-radius:3px}
+  .lbl.guest.far b{color:var(--ink2)}
+  /* traffic lanes: rate + kind, one line; the swatch is the lane's kind colour (set inline as --k) */
+  .lbl.flow{padding:1px 6px 2px;background:rgba(10,13,18,.62);border-radius:3px}
+  .lbl.flow b{font-weight:500;color:var(--ink)}
+  .lbl.flow b::before{content:"";display:inline-block;width:10px;height:2px;border-radius:1px;background:var(--k,#c9d1dc);margin-right:6px;vertical-align:3px}
+  /* leader line from an EDGE star / a parked hub name to its label: nexus.js writes translate/rotate/scaleX per frame */
+  .lead{position:absolute;left:0;top:0;width:1px;height:1px;background:rgba(201,209,217,.45);transform-origin:0 50%;opacity:0;transition:opacity .3s var(--ease);will-change:transform;pointer-events:none}
+  .lead.hub{background:rgba(201,209,217,.35)}
+  /* ---------------- HUD ---------------- */
   .hud{position:fixed;pointer-events:none;transition:opacity .5s var(--ease),transform .5s var(--ease)}
-  #clock{top:4.5vh;left:4vw;font-size:3vw;font-weight:600;letter-spacing:.02em;color:#eef4fb;font-variant-numeric:tabular-nums;line-height:1;text-shadow:0 .1vw .5vw rgba(0,0,0,.7)}
-  #date{top:calc(4.5vh + 3.4vw);left:4vw;font-size:.85vw;color:var(--sub);letter-spacing:.18em;text-transform:uppercase;text-shadow:0 .05vw .3vw rgba(0,0,0,.8)}
-  #status{top:4.5vh;right:4vw;text-align:right}
-  #status .big{font-size:2vw;font-weight:600;letter-spacing:.12em;transition:color .6s,text-shadow .6s;line-height:1}
-  #status .big.ok{color:#37f5a0;text-shadow:0 0 1.2vw rgba(55,245,160,.4),0 .1vw .4vw rgba(0,0,0,.6)}
-  #status .big.warn{color:#ffb347;text-shadow:0 0 1.2vw rgba(255,179,71,.4),0 .1vw .4vw rgba(0,0,0,.6)}
-  #status .big.sec{font-size:1.35vw;letter-spacing:.1em;line-height:1.5}   /* security-finding flash: a title, not a 2vw headline */
-  #status .big.down{color:#ff5a6a;text-shadow:0 0 1.2vw rgba(255,90,106,.55),0 .1vw .4vw rgba(0,0,0,.6);animation:blink 1.4s ease-in-out infinite}
-  #status .sub{font-size:.75vw;color:var(--sub);margin-top:.55vw;letter-spacing:.14em;text-shadow:0 .05vw .3vw rgba(0,0,0,.8)}
-  /* THREAT chip: level colour is written inline by nexus.js (GREEN/YELLOW/RED/BLACK) */
-  #status .chip{display:inline-block;margin-top:.6vw;font-size:.66vw;font-weight:600;letter-spacing:.18em;padding:.24vw .8vw .26vw;border:1px solid currentColor;border-radius:2vw;
-    color:#37f5a0;background:rgba(3,6,14,.55);text-shadow:0 0 .6vw currentColor;transition:color .6s,border-color .6s}
-  @keyframes blink{50%{opacity:.55}}
-  /* AUDIENCE headline: real people on the public sites, under the THREAT chip. Gold = people everywhere
-     on this screen (viewer stars, motes, this). .off = audience feed down: the text already says "requests". */
-  #status .aud{margin-top:.9vw}
-  #status .aud b{display:block;font-size:1.25vw;font-weight:600;letter-spacing:.14em;line-height:1.2;color:#ffd166;text-shadow:0 0 1vw rgba(255,209,102,.4),0 .1vw .4vw rgba(0,0,0,.6);transition:color .6s}
-  #status .aud b::before{content:"";display:inline-block;width:.55vw;height:.55vw;border-radius:50%;background:#ffd166;box-shadow:0 0 .7vw #ffd166;margin-right:.55vw;vertical-align:.12vw;animation:blink 1.6s ease-in-out infinite}
-  #status .aud span{display:block;font-size:.68vw;color:var(--sub);letter-spacing:.14em;margin-top:.35vw;text-shadow:0 .05vw .3vw rgba(0,0,0,.8)}
-  #status .aud.off b{color:#8fa3bd;text-shadow:0 .1vw .4vw rgba(0,0,0,.6)}#status .aud.off b::before{display:none}
-  /* features.audience false (no audience source configured): no headline at all */
-  body.no-audience #status .aud{display:none}
-  /* arrival flash: nexus.js adds .hit for 1.2 s per new viewer; transform/color/text-shadow only, anchored at the right edge */
-  #status .aud b{transform-origin:100% 50%}
-  #status .aud.hit b{animation:audhit 1.2s cubic-bezier(.2,.7,.3,1)}
-  @keyframes audhit{0%{transform:scale(1.1);color:#fff8e6;text-shadow:0 0 1.8vw rgba(255,209,102,1),0 0 .6vw #fff}100%{transform:scale(1);color:#ffd166;text-shadow:0 0 1vw rgba(255,209,102,.4),0 .1vw .4vw rgba(0,0,0,.6)}}
-  .card .r b.gold{color:#ffd166}
-  /* no backdrop-filter: two 19vw blur regions over a 4K WebGL canvas is exactly the kind of
-     per-frame cost the 60fps budget can't afford; a slightly deeper gradient reads the same */
-  .card{position:relative;width:19vw;padding:.95vw 1.15vw 1.05vw;border:1px solid var(--line);border-radius:.4vw;
-    background:linear-gradient(180deg,rgba(7,13,26,.8),rgba(3,6,14,.86));box-shadow:0 .5vw 1.6vw rgba(0,0,0,.4);
-    font-size:.62vw;letter-spacing:.03em;transition:opacity .5s var(--ease)}
-  .card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:.18vw;border-radius:.4vw 0 0 .4vw}
-  /* two fixed columns, not two hardwired cards: nexus.js appends one .card per
-     configured node — even indices left, odd right — so N nodes stack cleanly.
-     --acc is the node's own accent, set inline on each card. */
-  .cards{position:fixed;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:.8vw;
-    max-height:86vh;overflow:hidden;transition:opacity .5s var(--ease),transform .5s var(--ease)}
-  #cards-l{left:1.6vw}#cards-r{right:1.6vw}
-  .card::before{background:var(--acc,#5ad7ff)}
-  .card .k{font-size:.85vw;font-weight:600;letter-spacing:.22em;margin-bottom:.6vw;padding-bottom:.45vw;border-bottom:1px solid rgba(120,170,220,.12);display:flex;justify-content:space-between;align-items:baseline}
-  .card .k em{font-style:normal;font-size:.58vw;color:var(--sub);letter-spacing:.08em;font-weight:500}
-  .card .r{display:flex;align-items:center;gap:.5vw;margin:.24vw 0;min-height:.9vw}
-  .card .r span{width:4.2vw;color:var(--dim);letter-spacing:.08em;text-transform:uppercase;flex:none;overflow:hidden;text-overflow:ellipsis}
-  .card .r b{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums;color:#e3eefa}
-  .card .r.gpu span{color:#ff4fa3}
-  .card .bar{flex:1;height:.34vw;background:rgba(255,255,255,.07);border-radius:.2vw;overflow:hidden;position:relative}
-  .card .bar b{position:absolute;left:0;top:0;bottom:0;background:#5ad7ff;border-radius:.2vw;transition:width .8s ease;box-shadow:0 0 .5vw rgba(90,215,255,.6)}
-  .card .bar.pink b{background:#ff4fa3;box-shadow:0 0 .5vw rgba(255,79,163,.6)}
-  .card .bar.cyan b{background:#38e1ff}.card .bar.amber b{background:#ffb347;box-shadow:0 0 .5vw rgba(255,179,71,.6)}.card .bar.red b{background:#ff5a6a}
-  .dim{color:var(--dim)}.hot2{color:#ff4fa3}.mono{font-variant-numeric:tabular-nums}
-  /* full-width block, not left:50% + translate: a shrink-to-fit fixed box at left:50% only gets
-     50vw before it wraps, and a long stop title ("<SWITCH> · WIRED (28)") wrapped onto two lines and climbed
-     into the landmark labels above the 19vh band nexus.js reserves for this caption */
-  #caption{bottom:7vh;left:0;right:0;text-align:center}
-  #cap,#capsub{white-space:nowrap}
-  /* nexus.js crossfades #cap/#capsub by writing inline opacity 0 -> (380ms) -> 1; these
-     durations are tuned to that timer so the fade completes before the text swaps */
-  #cap{font-size:1.9vw;font-weight:600;letter-spacing:.36em;color:#fff;text-shadow:0 0 1.1vw var(--wall),0 .12vw .5vw rgba(0,0,0,.75);transition:text-shadow .9s,opacity .34s var(--ease)}
-  #capsub{font-size:.75vw;color:var(--sub);letter-spacing:.2em;margin-top:.4vw;text-transform:uppercase;text-shadow:0 .05vw .3vw rgba(0,0,0,.8);transition:opacity .34s var(--ease)}
-  #sync{margin:.85vw auto 0;display:inline-flex;align-items:center;gap:.5vw;font-size:.6vw;letter-spacing:.18em;text-transform:uppercase;
-    padding:.3vw .85vw;border:1px solid var(--line);border-radius:2vw;color:var(--dim);background:rgba(3,6,14,.55);
-    transition:color .4s var(--ease),border-color .4s var(--ease),background-color .4s var(--ease)}
-  #sync i{width:.45vw;height:.45vw;border-radius:50%;background:#34455c;transition:background-color .4s}
-  #sync.on{color:#e8f0f9;border-color:var(--wall)}#sync.on i{background:var(--wall);box-shadow:0 0 .6vw var(--wall);animation:blink 1.6s infinite}
-  #sync.on::before{content:"in sync with wall ·"}
-  #legend{bottom:4.5vh;left:4vw;display:flex;gap:1.5vw;font-size:.6vw;letter-spacing:.12em;text-transform:uppercase;color:var(--sub);text-shadow:0 .05vw .3vw rgba(0,0,0,.8)}
-  #legend i{display:inline-block;width:.48vw;height:.48vw;border-radius:50%;margin-right:.38vw;vertical-align:-.02vw;box-shadow:0 0 .5vw currentColor}
-  #brand{bottom:4.5vh;right:4vw;font-size:.66vw;color:#6a82a2;letter-spacing:.32em;text-transform:uppercase;text-shadow:0 .05vw .3vw rgba(0,0,0,.8)}
-  .bracket{position:fixed;width:2.4vw;height:2.4vw;border:1px solid rgba(120,170,220,.26);transition:opacity .5s var(--ease)}
-  .bracket.tl{top:2.6vh;left:2.4vw;border-right:0;border-bottom:0}.bracket.tr{top:2.6vh;right:2.4vw;border-left:0;border-bottom:0}
-  .bracket.bl{bottom:2.6vh;left:2.4vw;border-right:0;border-top:0}.bracket.br{bottom:2.6vh;right:2.4vw;border-left:0;border-top:0}
-  /* one static composited layer: the edge vignette plus a soft top/bottom scrim under the HUD
-     bands so chrome reads over the render without boxes. Never opaque over the canvas centre
-     (lightsync samples the canvas element itself, but keep the picture honest regardless). */
+  #clock{top:20px;left:24px;font-size:var(--fs-l);font-weight:600;color:var(--ink);line-height:1.1}
+  #date{top:44px;left:24px;font-size:var(--fs-s);color:var(--ink2)}
+  /* problems chip: one calm line in the shared vocabulary ("Mail · SMTP down"), at most 3 + "+N more".
+     A dot carries the status (red = a real outage, amber = warning, grey = lab); the chip is neutral and never wider than its
+     content. Healthy = "All systems normal". It fades in and out and crossfades its content (.swap) - nothing pops (§9.4). */
+  #alert{top:17px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:14px;padding:5px 12px 5px 11px;
+    background:rgba(13,17,23,.66);border:1px solid var(--line);border-radius:13px;white-space:nowrap;opacity:0;transition:opacity .32s var(--ease),border-color .6s var(--ease)}
+  #alert.on{opacity:1}
+  #alert.on.swap{opacity:0}
+  #alert.crit{border-color:rgba(248,81,73,.32)}
+  #alert .p{display:inline-flex;align-items:center;gap:6px;font-size:var(--fs-s);color:var(--ink)}
+  #alert .p i{width:6px;height:6px;border-radius:50%;background:var(--ink3);flex:none}
+  #alert .p.crit i{background:var(--crit)}#alert .p.warn i{background:var(--warn)}#alert .p.ok i{background:var(--ok)}
+  #alert .p.ok{color:var(--ink2)}#alert .p.lab{color:var(--ink2)}
+  #alert .more{font-size:var(--fs-s);color:var(--ink2)}
+  @keyframes pulse{50%{opacity:.35}}
+  .panel{position:fixed;pointer-events:none;width:280px;padding:9px 12px 8px;background:var(--panel);border:1px solid var(--line);border-radius:6px;
+    transition:opacity .5s var(--ease),transform .5s var(--ease)}
+  .panel .ph{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding-bottom:6px;margin-bottom:4px;border-bottom:1px solid var(--line)}
+  .panel .ph b{font-size:var(--fs-m);font-weight:600}
+  .panel .ph em{font-style:normal;color:var(--ink2);white-space:nowrap}
+  .panel .ph em i{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--ink3);margin-left:4px;vertical-align:1px}
+  .panel .ph em i.on{background:var(--ink)}
+  .rows{transition:opacity .35s var(--ease)}
+  #card-l .rows,#card-r .rows{min-height:115px}
+  .rows.fade{opacity:0}
+  .r{display:flex;align-items:center;gap:8px;height:23px}
+  .r .k{color:var(--ink2);flex:none;width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .r .v{margin-left:auto;font-size:var(--fs-m);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
+  .r .v small{font-size:var(--fs-s);color:var(--ink2)}
+  .r .bar{flex:1;max-width:64px;height:4px;border-radius:2px;background:rgba(240,246,252,.08);overflow:hidden}
+  .r .bar b{display:block;height:100%;background:#6e7681;border-radius:2px;transition:width .8s ease}
+  .r .bar b.warn{background:var(--warn)}.r .bar b.crit{background:var(--crit)}
+  .r.crit .k,.r.crit .v{color:#ff9b93}.r.crit .v{font-weight:600}
+  .r.warn .v{color:#e3b341}
+  .r .dot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--ink3)}
+  .r.crit .dot{background:var(--crit)}.r.warn .dot{background:var(--warn)}.r.ok .dot{background:var(--ok)}
+  #status{top:18px;right:24px}
+  /* two node cards: the left one is the first configured node, the right one pages through every other node, so
+     any number of nodes fits without a per-node rule */
+  #card-l{left:24px;top:50%;transform:translateY(-50%)}
+  #card-r{right:24px;top:50%;transform:translateY(-50%)}
+  /* caption: the current view, plain; the dot is the wall-sync state (filled = following the wall) */
+  #caption{bottom:30px;left:0;right:0;text-align:center}
+  #cap{display:inline-flex;align-items:center;gap:8px;font-size:var(--fs-l);font-weight:600;color:var(--ink);white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.9),0 0 6px rgba(0,0,0,.6);transition:opacity .34s var(--ease)}
+  #capsub{font-size:var(--fs-s);color:var(--ink2);margin-top:3px;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.95),0 0 4px rgba(0,0,0,.85);transition:opacity .34s var(--ease)}
+  /* aspect card: the caption's second line becomes one row of up to 4 facts - key small grey, value tabular, unit small */
+  #capsub .facts{display:inline-flex;align-items:baseline;gap:18px}
+  #capsub .f{display:inline-flex;align-items:baseline;gap:5px}
+  #capsub .f em{font-style:normal;color:var(--ink2);font-size:var(--fs-s)}
+  #capsub .f b{font-weight:500;color:var(--ink);font-size:var(--fs-m)}
+  #capsub .f small{color:var(--ink2);font-size:var(--fs-s)}
+  #capsub .f.warn b{color:#e3b341}#capsub .f.crit b{color:#ff9b93}
+  #sync{display:inline-block;width:8px;height:8px;border-radius:50%;border:1.5px solid var(--ink3);flex:none}
+  #sync.on{background:var(--ok);border-color:var(--ok)}
+  #sync span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  body.nx-threat #cap{color:#ff9b93}
+  body.nx-audience #cap{color:var(--ink)}
+  /* event cutaways (a body down / back / new): only an outage takes the status colour */
+  body.nx-evdown #cap{color:#ff9b93}
+  body.nx-event #cap{color:var(--ink)}
+  #legend{bottom:20px;left:24px;max-width:600px;color:var(--ink2);display:flex;flex-direction:column;gap:5px}
+  #legend .lg{display:flex;gap:12px;align-items:center;white-space:nowrap;flex-wrap:wrap}
+  #legend .lg>em{font-style:normal;color:var(--ink3);width:46px}
+  #legend i{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:0}
+  #legend i.ln{width:12px;height:2px;border-radius:1px;vertical-align:3px}
+  #legend .tr{display:none}
+  body.nx-over #legend .tr.has{display:flex}
+  #legend .note{color:var(--ink3);padding-left:58px}
+  #updated{bottom:20px;right:24px;color:var(--ink3)}
+  /* detail card: one clean card for a clicked / tapped body; closes on an empty click or after 12 s */
+  #detail{width:300px;display:none;pointer-events:auto;z-index:9;background:rgba(13,17,23,.95);border-color:var(--line2)}
+  #detail.on{display:block}
+  #detail .r .k{width:84px}
+  #detail .r .v{font-size:var(--fs-s);color:var(--ink)}
+  #detail .ph b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px}
+  #pick{position:fixed;left:0;top:0;width:26px;height:26px;margin:-13px 0 0 -13px;border:1.5px solid rgba(230,237,243,.8);border-radius:50%;pointer-events:none;display:none;z-index:8}
+  #pick.on{display:block}
+  /* showtime.js chrome on this screen: its LIVE timecode pill and showcase brackets are decoration (§7a), and its
+     alert banner is replaced by #alert above (nexus.js folds the backend's alert reason into it) */
+  html body #st-live,html body #st-frame,html body #st-alert{display:none!important}
+  /* one static composited layer: scrims under the top/bottom chrome (the text's backing) and a light corner vignette
+     (light: the scene's own grade carries a photographic vignette, and the wide shots fill the frame to the corners) */
   #vig{position:fixed;inset:0;pointer-events:none;transition:opacity .8s var(--ease);
-    background:linear-gradient(180deg,rgba(2,4,12,.5) 0,rgba(2,4,12,0) 15vh),
-               linear-gradient(0deg,rgba(2,4,12,.55) 0,rgba(2,4,12,0) 19vh),
-               radial-gradient(ellipse at center,rgba(0,0,0,0) 55%,rgba(0,0,0,.5) 100%)}
+    background:linear-gradient(180deg,rgba(2,4,12,.45) 0,rgba(2,4,12,0) 9vh),
+               linear-gradient(0deg,rgba(2,4,12,.5) 0,rgba(2,4,12,0) 12vh),
+               radial-gradient(ellipse at center,rgba(0,0,0,0) 62%,rgba(0,0,0,.2) 100%)}
+  /* while the camera travels, the side panels dim to ~35 % (eased) and return at the hold; the caption stays */
+  body.nx-leg .panel,body.nx-leg #legend{opacity:.35}
   /* showtime modes (body classes from showtime.js) */
-  body.st-night .cards,body.st-night #legend{opacity:.55}
-  body.st-night .lbl>*{opacity:.6}                       /* on the children: inline .lbl opacity from nexus.js would override the parent */
-  body.st-alert #cap{color:#ff5a6a;text-shadow:0 0 1.1vw rgba(255,90,106,.6),0 .12vw .5vw rgba(0,0,0,.75)}
-  /* intrusion caption: nexus.js holds body.nx-threat for 5 s per intrusion event */
-  body.nx-threat #cap{color:#ff5a6a;text-shadow:0 0 1.1vw rgba(255,90,106,.65),0 .12vw .5vw rgba(0,0,0,.75)}
-  body.nx-threat #capsub{color:#ffb3bb}
-  /* new-viewer caption: nexus.js holds body.nx-audience for ~8 s per arriving country */
-  body.nx-audience #cap{color:#ffd166;text-shadow:0 0 1.1vw rgba(255,209,102,.6),0 .12vw .5vw rgba(0,0,0,.75)}
-  body.nx-audience #capsub{color:#ffe7b3}
-  body.st-showcase .cards{opacity:0}
-  /* the playthrough: letterbox bars + chapter progress, clean of every other HUD element.
-     Bars are full height and scaleY'd in (transform, not height) so the reveal is compositor-only. */
+  body.st-night .panel,body.st-night #legend{opacity:.6}
+  body.st-night .lbl>*{opacity:.6}
+  body.st-showcase .panel{opacity:0}
+  /* the playthrough: letterbox bars + chapter progress, clean of every other HUD element (compositor-only) */
   .letterbox{position:fixed;left:0;right:0;height:8.5vh;background:#000;transform:scaleY(0);transition:transform .8s var(--ease);z-index:6;pointer-events:none;will-change:transform}
   .letterbox.top{top:0;transform-origin:50% 0}.letterbox.bottom{bottom:0;transform-origin:50% 100%}
   body.nx-showcase .letterbox{transform:scaleY(1)}
-  #scprog{position:fixed;left:4vw;right:4vw;bottom:1.6vh;height:.18vw;background:rgba(255,255,255,.12);border-radius:.2vw;overflow:hidden;opacity:0;transition:opacity .8s;z-index:7}
-  #scprog i{display:block;height:100%;width:100%;background:var(--wall);transform-origin:left center;transform:scaleX(0);box-shadow:0 0 .6vw var(--wall)}
+  #scprog{position:fixed;left:24px;right:24px;bottom:1.6vh;height:2px;background:rgba(240,246,252,.12);border-radius:1px;overflow:hidden;opacity:0;transition:opacity .8s;z-index:7}
+  #scprog i{display:block;height:100%;width:100%;background:var(--ink2);transform-origin:left center;transform:scaleX(0)}
   body.nx-showcase #scprog{opacity:1}
   body.nx-showcase #vig{opacity:.6}
-  body.nx-showcase .cards,body.nx-showcase #clock,body.nx-showcase #date,body.nx-showcase #status,
-  body.nx-showcase #legend,body.nx-showcase #brand,body.nx-showcase .bracket,body.nx-showcase #sync{opacity:0;transition:opacity .6s var(--ease),transform .6s var(--ease)}
-  /* HUD drifts a touch outward as it fades so the showcase in/out settles instead of blinking */
-  body.nx-showcase #clock,body.nx-showcase #date,body.nx-showcase #status{transform:translateY(-.6vw)}
-  body.nx-showcase #legend,body.nx-showcase #brand{transform:translateY(.6vw)}
-  body.nx-showcase #cards-l{transform:translateY(-50%) translateX(-1.4vw)}
-  body.nx-showcase #cards-r{transform:translateY(-50%) translateX(1.4vw)}
+  body.nx-showcase .panel,body.nx-showcase #clock,body.nx-showcase #date,body.nx-showcase #legend,body.nx-showcase #updated,body.nx-showcase #alert{opacity:0;transition:opacity .6s var(--ease)}
+  body.nx-showcase #caption{bottom:calc(8.5vh + 14px)}
 </style>
 </head>
-<body>
+<body class="nx-boot">
 <canvas id="c"></canvas>
 <div id="vig"></div>
 <div id="labels"></div>
-<div class="bracket tl"></div><div class="bracket tr"></div><div class="bracket bl"></div><div class="bracket br"></div>
+<div id="pick"></div>
 <div id="lbt" class="letterbox top"></div><div id="lbb" class="letterbox bottom"></div>
 <div id="scprog"><i id="scbar"></i></div>
 <div id="clock" class="hud">--:--:--</div>
 <div id="date" class="hud">—</div>
-<div id="status" class="hud"><div id="status-big" class="big ok">CONNECTING</div><div id="status-sub" class="sub">—</div><div id="status-threat" class="chip">THREAT —</div><div id="aud" class="aud off"><b id="aud-big">— VIEWERS</b><span id="aud-sub">—</span></div></div>
-<div id="cards-l" class="cards"></div>
-<div id="cards-r" class="cards"></div>
-<div id="caption" class="hud"><div id="cap">THE ESTATE</div><div id="capsub">—</div><div id="sync" class="off"><i></i><span>free roam</span></div></div>
-<!-- filled from CONFIG.categories + CONFIG.palette below -->
-<div id="legend" class="hud"></div>
-<div id="brand" class="hud">Nexus · homelab from orbit</div>
+<div id="alert" class="hud"></div>
+<div id="status" class="panel"><div class="ph"><b>Estate</b><em id="status-m">—</em></div><div class="rows" id="status-rows"></div></div>
+<div id="card-l" class="panel"></div>
+<div id="card-r" class="panel"></div>
+<div id="caption" class="hud"><div id="cap"><i id="sync" class="off"><span>free roam</span></i><span id="captxt">Overview</span></div><div id="capsub">—</div></div>
+<!-- filled from CONFIG.categories + CONFIG.palette below; the traffic rows by nexus.js -->
+<div id="legend" class="hud">
+  <div class="lg" id="legend-g"><em>Guests</em></div>
+  <div class="lg tr" id="legend-tr"><em>Traffic</em></div>
+  <div class="lg tr note" id="legend-tr2">Lane width = rate (log scale) · two lanes = each direction measured</div>
+</div>
+<div id="updated" class="hud"></div>
+<div id="detail" class="panel"></div>
 
-<script src="/static/config.js?v=1"></script>
+<script src="/static/config.js?v=2"></script>
 <script src="/static/vendor/three.min.js"></script>
 <script src="/static/vendor/CopyShader.js"></script>
 <script src="/static/vendor/LuminosityHighPassShader.js"></script>
@@ -207,15 +197,18 @@
 <script src="/static/vendor/UnrealBloomPass.js"></script>
 <script>
 (function(){
-  var DAYS=['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'];
-  var MON=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  var DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  var MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   function tick(){var d=new Date(),p=function(n){return (n<10?'0':'')+n};
     document.getElementById('clock').textContent=p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());
-    document.getElementById('date').textContent=DAYS[d.getDay()]+' · '+d.getDate()+' '+MON[d.getMonth()]+' '+d.getFullYear();}
+    document.getElementById('date').textContent=DAYS[d.getDay()]+' '+d.getDate()+' '+MON[d.getMonth()]+' '+d.getFullYear();}
   tick();setInterval(tick,1000);
 })();
 </script>
 <script>window.LIGHTSYNC_SRC='nexus';window.LIGHTSYNC_TOUR=false;</script>
+<script>/* one /api/pulse/stream per page: nexus.js opens it at the reveal and re-broadcasts each beat as 'nb:pulse', so
+   showtime.js listens to that instead of opening a second socket (browsers allow 6 per host) */
+window.NB_PULSE_SHARED=true;</script>
 <script>
 /* Identity first: nexus.js reads window.CONFIG synchronously at load, so the
    scene modules are only appended once GET /api/config has answered. */
@@ -224,23 +217,24 @@
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
   window.loadConfig().then(function (C) {
     document.title = C.brand + ' · nexus';
-    var b = document.getElementById('brand');
-    if (b) b.textContent = C.brand + ' · ' + (C.domain || 'homelab') + ' from orbit';
     /* the legend is the configured category palette, plus the stopped colour */
-    var lg = document.getElementById('legend');
+    var lg = document.getElementById('legend-g');
     if (lg) {
-      lg.innerHTML = C.categories.map(function (k) {
+      lg.innerHTML = '<em>Guests</em>' + C.categories.map(function (k) {
         var h = C.palette[k] || '#8fb0d0';
-        return '<span><i style="color:' + esc(h) + ';background:' + esc(h) + '"></i>' + esc(k) + '</span>';
+        return '<span><i style="background:' + esc(h) + '"></i>' + esc(C.catName ? C.catName(k) : k) + '</span>';
       }).join('') +
-      '<span><i style="color:' + esc(C.palette.stopped) + ';background:' + esc(C.palette.stopped) + '"></i>stopped</span>';
+      '<span><i style="background:' + esc(C.palette.stopped) + '"></i>Stopped</span>';
     }
     document.body.classList.toggle('no-cameras', !C.features.cameras);
     document.body.classList.toggle('no-audience', !C.features.audience);
     window.loadScripts([
-      '/static/nexus.js?v=1',
-      '/static/lightsync.js?v=1',
-      '/static/showtime.js?v=1'
+      '/static/universe_layout.js?v=2',
+      '/static/motion.js?v=2',
+      '/static/bodies3d.js?v=5',
+      '/static/nexus.js?v=59',
+      '/static/lightsync.js?v=16',
+      '/static/showtime.js?v=8'
     ]);
   });
 })();

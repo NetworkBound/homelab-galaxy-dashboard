@@ -1,0 +1,694 @@
+{
+ "v": 1,
+ "generator": "blender/galaxy2/galaxy2.py --all, baked under Blender 5.2's bundled Python (numpy only, every random draw seeded: two runs gave byte-identical plates). Rendered from a physical model (density-wave star formation, kinematic ageing, mixed-geometry per-channel dust, a 3D ray march for inclined views) and processed like an astrophotograph (PSF, asinh stretch).",
+ "conventions": {
+  "colour": "display-referred values for the dashboards' LINEAR pipeline: sample raw (three r128 default texture.encoding = LinearEncoding). Do NOT set sRGBEncoding: that decodes the plate (~gamma 2.2) and crushes the arms. Judged through the TV's final pass (exposure 1.45 -> ACES -> sat 1.12) and the wall's (x0.94, knee 0.62).",
+  "alpha": "STRAIGHT (unassociated). rgb * a = the light the asset emits (premultiplied colour); a = max(R,G,B) of that light, rgb = its hue at full value (6-7 bit, smoothed ~1 px on the big plates; invisible at 1:1, it is what keeps a 2048^2 photographic PNG near 2 MB). rgb = 0 wherever a = 0. No premultiplied copy is shipped: texture.premultiplyAlpha would re-quantise the faint outskirts to 8 bits, while SrcAlpha * rgb in the blend unit keeps both 8-bit factors.",
+  "blend": {
+   "additive": "MeshBasicMaterial/SpriteMaterial {transparent:true, blending:AdditiveBlending, depthWrite:false} = (SrcAlpha, One): adds exactly rgb*a*opacity*color. Every asset here is light, so additive is the default. On a transparent canvas use CustomBlending One/One for colour and Zero/One for alpha so the page is not darkened.",
+   "normal": "(SrcAlpha, OneMinusSrcAlpha) also works for the galaxy plates: a tracks brightness, so a plate covers the sky behind its bright parts only (nearly identical to additive on a dark sky)."
+  },
+  "tint": "draw with color 0xffffff: the plates carry their final colour. Remove mutedAccent()/desatMap() for these (they were for the old discs); the bloom should come from the core only.",
+  "orientation": "row 0 = top. Galaxy plates: centred, face-on, transparent beyond `radius` (fraction of the half-width). Arms TRAIL for COUNTER-CLOCKWISE rotation as the image is viewed: spin counter-clockwise in image space (rotation.z increasing for a plane facing the camera).",
+  "sizes": "galaxy plates 2048^2; the edge-on variant 2048x512; background galaxies 512-1024^2; clusters 512^2; nebulae 1024^2; PSFs 256^2; star disc 512^2; sky 4096x2048 equirect.",
+  "luma": "luma = Rec.709 luminance of the premultiplied colour (rgb*a) measured from the shipped bytes; tv_display = ACES(1.45 * value), what the TV shows for that value at opacity 1."
+ },
+ "galaxies": {
+  "gold": {
+   "file": "galaxies/galaxy_gold.png",
+   "role": "node:1",
+   "accent": "#ffb347",
+   "radius": 0.94,
+   "core": [
+    0.5,
+    0.5
+   ],
+   "blend": "additive",
+   "alpha": "straight",
+   "spin": "ccw",
+   "look": "grand-design two-arm spiral (M51 family): white-hot core in a large golden bulge, nuclear dust spiral, golden-cream inner disc, teal-green outer arms (the 10-04 A/C look) with pink HII knots and blue clusters, dark reddened dust lanes on the arms' inner edges and feathers on the outer",
+   "px": [
+    2048,
+    2048
+   ],
+   "bytes": 1810150,
+   "luma": {
+    "max": 0.988,
+    "p99": 0.669,
+    "p50_visible": 0.141,
+    "mean": 0.1012
+   },
+   "coverage": {
+    "alpha_max": 1.0,
+    "alpha_mean": 0.1142,
+    "covered": 0.584
+   },
+   "tv_display": {
+    "core": 0.87,
+    "bright_arm_p99": 0.797,
+    "disc_median": 0.307
+   },
+   "exposure": {
+    "tv": "opacity 1.0 for the subject; 0.55-0.75 for galaxies behind it (keep the core < 1.0 after bloom: the plate core is ~1.0 by design)",
+    "wall": "opacity 0.85-1.0 with raw sampling; the wall's knee rolls the core off"
+   }
+  },
+  "blue": {
+   "file": "galaxies/galaxy_blue.png",
+   "role": "node:0",
+   "accent": "#5ad7ff",
+   "radius": 0.94,
+   "core": [
+    0.5,
+    0.5
+   ],
+   "blend": "additive",
+   "alpha": "straight",
+   "spin": "ccw",
+   "look": "SAB(rs)bc (M83 / NGC 3184 family): weak oval bar with leading-edge dust lanes, compact warm bulge, two open branching arms in blue-white young light, many pink HII regions (the 10-05 B look)",
+   "px": [
+    2048,
+    2048
+   ],
+   "bytes": 1973459,
+   "luma": {
+    "max": 0.988,
+    "p99": 0.74,
+    "p50_visible": 0.124,
+    "mean": 0.1013
+   },
+   "coverage": {
+    "alpha_max": 1.0,
+    "alpha_mean": 0.1171,
+    "covered": 0.631
+   },
+   "tv_display": {
+    "core": 0.87,
+    "bright_arm_p99": 0.818,
+    "disc_median": 0.267
+   },
+   "exposure": {
+    "tv": "opacity 1.0 for the subject; 0.55-0.75 for galaxies behind it (keep the core < 1.0 after bloom: the plate core is ~1.0 by design)",
+    "wall": "opacity 0.85-1.0 with raw sampling; the wall's knee rolls the core off"
+   }
+  },
+  "edge": {
+   "file": "galaxies/galaxy_edge.png",
+   "role": "edge",
+   "system": "sys:core",
+   "accent": "#9b8cff",
+   "radius": 0.94,
+   "core": [
+    0.5,
+    0.5
+   ],
+   "blend": "additive",
+   "alpha": "straight",
+   "spin": "ccw",
+   "look": "SB(r)b (NGC 1300 / NGC 1097 family): strong bar with straight dust lanes, star-forming inner ring and nuclear ring, two long arms; violet young light, magenta HII; the internet / edge galaxy",
+   "px": [
+    2048,
+    2048
+   ],
+   "bytes": 1632167,
+   "luma": {
+    "max": 0.955,
+    "p99": 0.661,
+    "p50_visible": 0.105,
+    "mean": 0.0855
+   },
+   "coverage": {
+    "alpha_max": 1.0,
+    "alpha_mean": 0.1076,
+    "covered": 0.579
+   },
+   "tv_display": {
+    "core": 0.864,
+    "bright_arm_p99": 0.795,
+    "disc_median": 0.219
+   },
+   "exposure": {
+    "tv": "opacity 1.0 for the subject; 0.55-0.75 for galaxies behind it (keep the core < 1.0 after bloom: the plate core is ~1.0 by design)",
+    "wall": "opacity 0.85-1.0 with raw sampling; the wall's knee rolls the core off"
+   }
+  },
+  "pve_a": {
+   "file": "galaxies/galaxy_pve_a.png",
+   "role": "pve_a",
+   "system": null,
+   "accent": "#ffc46b",
+   "radius": 0.94,
+   "core": [
+    0.5,
+    0.5
+   ],
+   "blend": "additive",
+   "alpha": "straight",
+   "spin": "ccw",
+   "look": "flocculent spiral (NGC 2841 / M63 family): no grand design, many short tightly wound arm fragments, large smooth amber bulge, few HII; warm amber-gold throughout",
+   "px": [
+    2048,
+    2048
+   ],
+   "bytes": 1391041,
+   "luma": {
+    "max": 0.929,
+    "p99": 0.6,
+    "p50_visible": 0.134,
+    "mean": 0.087
+   },
+   "coverage": {
+    "alpha_max": 1.0,
+    "alpha_mean": 0.1085,
+    "covered": 0.569
+   },
+   "tv_display": {
+    "core": 0.86,
+    "bright_arm_p99": 0.773,
+    "disc_median": 0.29
+   },
+   "exposure": {
+    "tv": "opacity 1.0 for the subject; 0.55-0.75 for galaxies behind it (keep the core < 1.0 after bloom: the plate core is ~1.0 by design)",
+    "wall": "opacity 0.85-1.0 with raw sampling; the wall's knee rolls the core off"
+   }
+  },
+  "pve_b": {
+   "file": "galaxies/galaxy_pve_b.png",
+   "role": "pve_b",
+   "system": null,
+   "accent": "#ff8fb0",
+   "radius": 0.94,
+   "core": [
+    0.5,
+    0.5
+   ],
+   "blend": "additive",
+   "alpha": "straight",
+   "spin": "ccw",
+   "look": "lopsided three-arm spiral (M101 / NGC 6946 family): open unequal arms, giant HII complexes, small bulge; rose young light",
+   "px": [
+    2048,
+    2048
+   ],
+   "bytes": 1772838,
+   "luma": {
+    "max": 0.947,
+    "p99": 0.7,
+    "p50_visible": 0.164,
+    "mean": 0.1186
+   },
+   "coverage": {
+    "alpha_max": 1.0,
+    "alpha_mean": 0.1523,
+    "covered": 0.607
+   },
+   "tv_display": {
+    "core": 0.863,
+    "bright_arm_p99": 0.807,
+    "disc_median": 0.357
+   },
+   "exposure": {
+    "tv": "opacity 1.0 for the subject; 0.55-0.75 for galaxies behind it (keep the core < 1.0 after bloom: the plate core is ~1.0 by design)",
+    "wall": "opacity 0.85-1.0 with raw sampling; the wall's knee rolls the core off"
+   }
+  }
+ },
+ "discs": {
+  "node:1": {
+   "file": "galaxies/galaxy_gold.png",
+   "size": 2.0,
+   "accent": "#ffb347"
+  },
+  "node:0": {
+   "file": "galaxies/galaxy_blue.png",
+   "size": 2.0,
+   "accent": "#5ad7ff"
+  },
+  "sys:core": {
+   "file": "galaxies/galaxy_edge.png",
+   "size": 2.0,
+   "accent": "#9b8cff"
+  },
+  "edge": {
+   "file": "galaxies/galaxy_edge.png",
+   "size": 2.0,
+   "accent": "#9b8cff"
+  },
+  "default": {
+   "file": "galaxies/galaxy_pve_a.png",
+   "size": 2.0,
+   "accent": "#ffc46b"
+  },
+  "pve_pool": [
+   "galaxies/galaxy_pve_a.png",
+   "galaxies/galaxy_pve_b.png"
+  ],
+  "note": "same shape as universe/manifest.json discs (paths relative to THIS manifest). Lookup order: the system id itself (sys:<id>, so an operator can pin a plate), then node:<index in /api/config nodes[]>, then pve_pool[system seed % 2] for any further Proxmox node so neighbours differ."
+ },
+ "variants": {
+  "gold_edgeon": {
+   "file": "galaxies/galaxy_gold_edgeon.png",
+   "of": "nb",
+   "inclination_deg": 86,
+   "aspect": 4.0,
+   "blend": "additive",
+   "alpha": "straight",
+   "px": [
+    2048,
+    512
+   ],
+   "bytes": 225628,
+   "luma": {
+    "max": 0.894,
+    "p99": 0.424,
+    "p50_visible": 0.091,
+    "mean": 0.0461
+   },
+   "coverage": {
+    "alpha_max": 0.996,
+    "alpha_mean": 0.0539,
+    "covered": 0.381
+   },
+   "use": "the SAME galaxy (model, seed, colours) seen 86 deg from face-on: cross-fade it in as a camera-facing quad (width = plate width) when the face-on plane is within ~20 deg of edge-on, where a flat disc would collapse to a line. Major axis horizontal; the near side is at the bottom."
+  }
+ },
+ "sky": {
+  "file": "sky/deep_sky.jpg",
+  "projection": "equirect",
+  "wrap": "seamless in u, pole-clean",
+  "px": [
+   4096,
+   2048
+  ],
+  "bytes": 547974,
+  "luma": {
+   "max": 0.977,
+   "p99": 0.476,
+   "p50_visible": 0.079,
+   "mean": 0.1064,
+   "p5": 0.0317,
+   "p95": 0.273,
+   "p999": 0.696
+  },
+  "content": "Milky Way band (warm bulge, dark rift that reddens), ~620k stars with a magnitude-limited colour mix, faint H-alpha / OIII / reflection nebulae near the plane, patchy galactic cirrus at high latitude, ~9000 tiny deep-field galaxies, and landmark objects (an M31-like spiral, two Magellanic-like clouds, a Pleiades-like and a Rosette-like cluster, a globular, an edge-on and an elliptical) so no 16:9 window is an empty void.",
+  "exposure": {
+   "tv": "sphere colour (tint) 0.35 for close-ups, 0.40-0.45 for wide shots (CONTRACTS 8a), raw sampling (the old plate used 0x333333 = 0.2 because it was brighter where it was busy). Measured on the 3080 Ti through the TV chain at 0.35: sky-only 6x4 cells 0.023-0.09 display luma (vignetted corners lowest). At 0.35 the darkest 5% shows ~0.008, the median ~0.031, the band ~0.362 on the TV: visible everywhere, well under any galaxy arm.",
+   "wall": "as scene.background with raw sampling: multiply by ~0.30 (the wall grade does not lift it); skip restrainSky(), the plate is already restrained"
+  }
+ },
+ "psf": {
+  "soft": {
+   "file": "psf/psf_soft.png",
+   "kind": "soft",
+   "blend": "additive",
+   "alpha": "straight",
+   "tint": "multiply by the body's category colour",
+   "core_fwhm_fraction": 0.0417,
+   "size": "sprite px = 24 x the core FWHM you want on screen (2 px core -> 48 px sprite); the halo then reaches ~10x the core, which is what makes a point read as a star",
+   "note": "every distant body: Moffat core + halo + r^-2.6 aureole; spikes have wavelength-scaled ripples (faint colour fringes) and are camera-fixed: billboard them, never rotate with the scene",
+   "px": [
+    256,
+    256
+   ],
+   "bytes": 4116,
+   "luma": {
+    "max": 1.0,
+    "p99": 0.188,
+    "p50_visible": 0.024,
+    "mean": 0.0112
+   },
+   "coverage": {
+    "alpha_max": 1.0,
+    "alpha_mean": 0.0112,
+    "covered": 0.242
+   }
+  },
+  "hubble": {
+   "file": "psf/psf_hubble.png",
+   "kind": "4 spikes",
+   "blend": "additive",
+   "alpha": "straight",
+   "tint": "multiply by the body's category colour",
+   "core_fwhm_fraction": 0.0417,
+   "size": "sprite px = 24 x the core FWHM you want on screen (2 px core -> 48 px sprite); the halo then reaches ~10x the core, which is what makes a point read as a star",
+   "note": "brightest few % only: two-vane (Hubble) diffraction; spikes have wavelength-scaled ripples (faint colour fringes) and are camera-fixed: billboard them, never rotate with the scene",
+   "px": [
+    256,
+    256
+   ],
+   "bytes": 11800,
+   "luma": {
+    "max": 0.983,
+    "p99": 0.11,
+    "p50_visible": 0.024,
+    "mean": 0.0064
+   },
+   "coverage": {
+    "alpha_max": 1.0,
+    "alpha_mean": 0.0066,
+    "covered": 0.161
+   }
+  },
+  "jwst": {
+   "file": "psf/psf_jwst.png",
+   "kind": "6+2 spikes",
+   "blend": "additive",
+   "alpha": "straight",
+   "tint": "multiply by the body's category colour",
+   "core_fwhm_fraction": 0.0417,
+   "size": "sprite px = 24 x the core FWHM you want on screen (2 px core -> 48 px sprite); the halo then reaches ~10x the core, which is what makes a point read as a star",
+   "note": "brightest few % only: hexagonal (JWST) diffraction; spikes have wavelength-scaled ripples (faint colour fringes) and are camera-fixed: billboard them, never rotate with the scene",
+   "px": [
+    256,
+    256
+   ],
+   "bytes": 14444,
+   "luma": {
+    "max": 0.976,
+    "p99": 0.094,
+    "p50_visible": 0.027,
+    "mean": 0.0055
+   },
+   "coverage": {
+    "alpha_max": 1.0,
+    "alpha_mean": 0.0058,
+    "covered": 0.139
+   }
+  }
+ },
+ "stars": {
+  "disc": {
+   "file": "stars/star_disc.png",
+   "blend": "additive",
+   "alpha": "straight",
+   "limb": 0.22,
+   "size": "sprite width = 2 r / 0.22 = 9.1 r for a star of radius r",
+   "note": "limb-darkened stellar disc (quadratic, stronger in blue so the limb reddens) with the PSF family's glow outside the limb; near-white, tint with the hub's star colour; for hubs (UDM, switches) seen up close, cross-fade from psf_soft",
+   "px": [
+    512,
+    512
+   ],
+   "bytes": 28104,
+   "luma": {
+    "max": 1.0,
+    "p99": 0.942,
+    "p50_visible": 0.052,
+    "mean": 0.0522
+   },
+   "coverage": {
+    "alpha_max": 1.0,
+    "alpha_mean": 0.0574,
+    "covered": 0.382
+   }
+  }
+ },
+ "deep_sky": {
+  "galaxies": {
+   "bg_spiral_inclined": {
+    "file": "bg/bg_spiral_inclined.png",
+    "kind": "spiral, i=64",
+    "note": "M31/M81-like inclined spiral, dust lanes on the near side",
+    "blend": "additive",
+    "alpha": "straight",
+    "exposure": "opacity 0.3-0.6, behind every system galaxy; camera-facing quads at 1/4-1/2 of a system galaxy's size",
+    "px": [
+     1024,
+     1024
+    ],
+    "bytes": 230095,
+    "luma": {
+     "max": 0.927,
+     "p99": 0.277,
+     "p50_visible": 0.084,
+     "mean": 0.0233
+    },
+    "coverage": {
+     "alpha_max": 0.996,
+     "alpha_mean": 0.0271,
+     "covered": 0.224
+    }
+   },
+   "bg_spiral_edgeon": {
+    "file": "bg/bg_spiral_edgeon.png",
+    "kind": "spiral, i=87.5",
+    "note": "NGC 4565-like edge-on with its dust lane",
+    "blend": "additive",
+    "alpha": "straight",
+    "exposure": "opacity 0.3-0.6, behind every system galaxy; camera-facing quads at 1/4-1/2 of a system galaxy's size",
+    "px": [
+     1024,
+     1024
+    ],
+    "bytes": 86678,
+    "luma": {
+     "max": 0.867,
+     "p99": 0.298,
+     "p50_visible": 0.138,
+     "mean": 0.0095
+    },
+    "coverage": {
+     "alpha_max": 0.984,
+     "alpha_mean": 0.0112,
+     "covered": 0.062
+    }
+   },
+   "bg_lenticular": {
+    "file": "bg/bg_lenticular.png",
+    "kind": "S0, i=71",
+    "note": "lenticular with a dark dust ring",
+    "blend": "additive",
+    "alpha": "straight",
+    "exposure": "opacity 0.3-0.6, behind every system galaxy; camera-facing quads at 1/4-1/2 of a system galaxy's size",
+    "px": [
+     768,
+     768
+    ],
+    "bytes": 48078,
+    "luma": {
+     "max": 0.928,
+     "p99": 0.344,
+     "p50_visible": 0.033,
+     "mean": 0.0193
+    },
+    "coverage": {
+     "alpha_max": 0.996,
+     "alpha_mean": 0.0232,
+     "covered": 0.309
+    }
+   },
+   "bg_irregular": {
+    "file": "bg/bg_irregular.png",
+    "kind": "Sd/Irr, i=38",
+    "note": "patchy late-type with pink HII",
+    "blend": "additive",
+    "alpha": "straight",
+    "exposure": "opacity 0.3-0.6, behind every system galaxy; camera-facing quads at 1/4-1/2 of a system galaxy's size",
+    "px": [
+     768,
+     768
+    ],
+    "bytes": 185686,
+    "luma": {
+     "max": 0.951,
+     "p99": 0.213,
+     "p50_visible": 0.051,
+     "mean": 0.0219
+    },
+    "coverage": {
+     "alpha_max": 0.996,
+     "alpha_mean": 0.0246,
+     "covered": 0.327
+    }
+   },
+   "bg_elliptical": {
+    "file": "bg/bg_elliptical.png",
+    "kind": "E3",
+    "note": "elliptical with globular clusters",
+    "blend": "additive",
+    "alpha": "straight",
+    "exposure": "opacity 0.3-0.6, behind every system galaxy; camera-facing quads at 1/4-1/2 of a system galaxy's size",
+    "px": [
+     512,
+     512
+    ],
+    "bytes": 24496,
+    "luma": {
+     "max": 0.823,
+     "p99": 0.289,
+     "p50_visible": 0.021,
+     "mean": 0.019
+    },
+    "coverage": {
+     "alpha_max": 0.996,
+     "alpha_mean": 0.022,
+     "covered": 0.436
+    }
+   }
+  },
+  "clusters": {
+   "cluster_globular": {
+    "file": "clusters/cluster_globular.png",
+    "note": "globular (King profile, red giants + blue HB stars)",
+    "blend": "additive",
+    "alpha": "straight",
+    "exposure": "opacity 0.5-0.9 in negative space",
+    "px": [
+     512,
+     512
+    ],
+    "bytes": 109543,
+    "luma": {
+     "max": 0.864,
+     "p99": 0.479,
+     "p50_visible": 0.036,
+     "mean": 0.0235
+    },
+    "coverage": {
+     "alpha_max": 0.996,
+     "alpha_mean": 0.0259,
+     "covered": 0.283
+    }
+   },
+   "cluster_open": {
+    "file": "clusters/cluster_open.png",
+    "note": "young open cluster in a blue reflection nebula (Pleiades-like)",
+    "blend": "additive",
+    "alpha": "straight",
+    "exposure": "opacity 0.5-0.9 in negative space",
+    "px": [
+     512,
+     512
+    ],
+    "bytes": 73603,
+    "luma": {
+     "max": 0.793,
+     "p99": 0.147,
+     "p50_visible": 0.03,
+     "mean": 0.015
+    },
+    "coverage": {
+     "alpha_max": 0.996,
+     "alpha_mean": 0.0249,
+     "covered": 0.417
+    }
+   },
+   "cluster_embedded": {
+    "file": "clusters/cluster_embedded.png",
+    "note": "young cluster in its HII bubble: H-alpha shell, teal OIII heart, dark pillars (Rosette-like)",
+    "blend": "additive",
+    "alpha": "straight",
+    "exposure": "opacity 0.5-0.9 in negative space",
+    "px": [
+     512,
+     512
+    ],
+    "bytes": 211719,
+    "luma": {
+     "max": 0.847,
+     "p99": 0.516,
+     "p50_visible": 0.082,
+     "mean": 0.0504
+    },
+    "coverage": {
+     "alpha_max": 0.878,
+     "alpha_mean": 0.0703,
+     "covered": 0.451
+    }
+   }
+  },
+  "nebulae": {
+   "neb_ha": {
+    "file": "nebulae/neb_ha.png",
+    "note": "braided H-alpha shock filaments (Veil-like) + soft glow",
+    "tileable": false,
+    "blend": "additive",
+    "alpha": "straight",
+    "exposure": "already faint (luma max 0.192): opacity 0.4-1.0 on large camera-facing planes far behind the galaxies",
+    "px": [
+     1024,
+     1024
+    ],
+    "bytes": 197064,
+    "luma": {
+     "max": 0.192,
+     "p99": 0.065,
+     "p50_visible": 0.02,
+     "mean": 0.0066
+    },
+    "coverage": {
+     "alpha_max": 0.416,
+     "alpha_mean": 0.0153,
+     "covered": 0.406
+    }
+   },
+   "neb_o3": {
+    "file": "nebulae/neb_o3.png",
+    "note": "soft teal OIII veil",
+    "tileable": false,
+    "blend": "additive",
+    "alpha": "straight",
+    "exposure": "already faint (luma max 0.104): opacity 0.4-1.0 on large camera-facing planes far behind the galaxies",
+    "px": [
+     1024,
+     1024
+    ],
+    "bytes": 91721,
+    "luma": {
+     "max": 0.104,
+     "p99": 0.042,
+     "p50_visible": 0.02,
+     "mean": 0.0036
+    },
+    "coverage": {
+     "alpha_max": 0.125,
+     "alpha_mean": 0.0044,
+     "covered": 0.197
+    }
+   },
+   "neb_cirrus_tile": {
+    "file": "nebulae/neb_cirrus_tile.png",
+    "note": "grey-brown galactic cirrus, SEAMLESS: RepeatWrapping",
+    "tileable": true,
+    "blend": "additive",
+    "alpha": "straight",
+    "exposure": "already faint (luma max 0.093): opacity 0.4-1.0 on large camera-facing planes far behind the galaxies",
+    "px": [
+     1024,
+     1024
+    ],
+    "bytes": 276853,
+    "luma": {
+     "max": 0.093,
+     "p99": 0.075,
+     "p50_visible": 0.033,
+     "mean": 0.0191
+    },
+    "coverage": {
+     "alpha_max": 0.098,
+     "alpha_mean": 0.0203,
+     "covered": 0.567
+    }
+   }
+  },
+  "note": "fillers for negative space in wide shots (CONTRACTS 8a): subtle by construction, graded with the same colour tables as the plates and the sky"
+ },
+ "budget": {
+  "files": 22,
+  "bytes": 10947257,
+  "mb": 10.95,
+  "largest": [
+   [
+    1973459,
+    "galaxies/galaxy_blue.png"
+   ],
+   [
+    1810150,
+    "galaxies/galaxy_gold.png"
+   ],
+   [
+    1772838,
+    "galaxies/galaxy_pve_b.png"
+   ]
+  ]
+ }
+}

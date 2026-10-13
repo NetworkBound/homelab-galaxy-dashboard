@@ -148,51 +148,22 @@
   }
   /* a redrawable single-line label sprite: canvas 704x64, tight collision rect */
   function mkLabel(wWorld, depthTest) {
-    var W = 704, H = 64, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-    var x = cv.getContext('2d');
-    var t = sharp(new THREE.CanvasTexture(cv));
-    var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false, depthTest: depthTest !== false }));
-    sp.scale.set(wWorld, wWorld * H / W, 1);
-    sp.userData.lbl = true; sp.userData.txt = ''; sp.userData.plateFrac = 1;
+    /* painted by netscene's 2D text pass (2026-10-08, sections 7 / 7a): one
+       line, 11 px, neutral ink; colour only where it means something (an
+       attack is red, a real visitor gold). The sprite carries position,
+       opacity and the collision verdict; no canvas, no texture. */
+    var sp = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false, depthTest: false }));
+    sp.scale.set(1, 1, 1);
+    sp.userData.lbl = true; sp.userData.txt = ''; sp.userData.l2d = 'exo';
     sp.visible = false; sp.material.opacity = 0; sp.userData.base = 1;
-    /* round 2: labels grow at the WAN EDGE stop; the collision pass reads
-       sp.scale every frame, so a scaled sprite is judged at its drawn size */
     sp.userData.w0 = wWorld; sp.userData.k = 1;
-    sp.userData.setW = function (k) {
-      if (Math.abs(k - sp.userData.k) < 0.003) return;
-      sp.userData.k = k; sp.scale.set(wWorld * k, wWorld * k * H / W, 1);
-    };
-    /* pill: 0 = bare text (shadow only), 1 = dark plate, 2 = plate + tinted rim.
-       The plate is what makes 22 px text readable over bloomed star field at 1080p. */
+    sp.userData.setW = function (k) { sp.userData.k = k; };
+    var MEAN = { '#ff8a95': 1, '#ff9aa6': 1, '#ffd166': 1 };
     sp.userData.set = function (text, color, size, sub, subColor, pill) {
-      var key = text + '|' + color + '|' + size + '|' + (sub || '') + '|' + (pill || 0);
-      if (sp.userData.key === key) return;
-      sp.userData.key = key; sp.userData.txt = text + (sub ? ' / ' + sub : '');
-      x.clearRect(0, 0, W, H);
-      x.textAlign = 'center'; x.textBaseline = 'middle';
-      x.font = '600 ' + size + 'px ui-monospace,Consolas,monospace';
-      var tw = x.measureText(text).width, tw2 = 0;
-      if (sub) { x.font = '500 ' + Math.round(size * 0.72) + 'px ui-monospace,Consolas,monospace'; tw2 = x.measureText(sub).width; }
-      var full = Math.max(tw, tw2);
-      var sc = full > W - 32 ? (W - 32) / full : 1;
-      var pw = full * sc + 28, px0 = (W - pw) / 2, ph = sub ? 60 : Math.min(60, size * sc + 20), py0 = (H - ph) / 2, rr = 9;
-      if (pill) {
-        x.shadowBlur = 0;
-        x.beginPath();
-        x.moveTo(px0 + rr, py0); x.lineTo(px0 + pw - rr, py0); x.quadraticCurveTo(px0 + pw, py0, px0 + pw, py0 + rr);
-        x.lineTo(px0 + pw, py0 + ph - rr); x.quadraticCurveTo(px0 + pw, py0 + ph, px0 + pw - rr, py0 + ph);
-        x.lineTo(px0 + rr, py0 + ph); x.quadraticCurveTo(px0, py0 + ph, px0, py0 + ph - rr);
-        x.lineTo(px0, py0 + rr); x.quadraticCurveTo(px0, py0, px0 + rr, py0); x.closePath();
-        x.fillStyle = pill >= 2 ? 'rgba(6,10,20,.84)' : 'rgba(6,10,20,.62)'; x.fill();
-        if (pill >= 2) { x.strokeStyle = color; x.globalAlpha = 0.55; x.lineWidth = 2; x.stroke(); x.globalAlpha = 1; }
-      }
-      x.shadowColor = 'rgba(2,5,11,.95)'; x.shadowBlur = pill ? 3 : 7;
-      x.font = '600 ' + Math.floor(size * sc) + 'px ui-monospace,Consolas,monospace';
-      x.fillStyle = color; x.fillText(text, W / 2, sub ? 22 : H / 2);
-      if (sub) { x.font = '500 ' + Math.floor(size * 0.72 * sc) + 'px ui-monospace,Consolas,monospace'; x.fillStyle = subColor || '#7fa3c8'; x.fillText(sub, W / 2, 47); }
-      sp.userData.plateFrac = Math.min(1, (pw + 4) / W);
-      t.needsUpdate = true;
+      sp.userData.txt = String(text || '');
+      sp.userData.col = MEAN[String(color).toLowerCase()] ? color : null;
     };
+    var NSx = ns(); if (NSx && NSx.LBL_LAYER) sp.layers.set(NSx.LBL_LAYER);
     return sp;
   }
 
@@ -426,9 +397,9 @@
     }
     var cf = EX.cf, ha = cf && cf.up ? Math.max(0, Math.min(8, +cf.ha_connections || 0)) : 0;
     EX.ha = ha;
-    if (cf && cf.up) EX.cfLbl.userData.set('CLOUDFLARE EDGE', '#ffb073', 32,
+    if (cf && cf.up) EX.cfLbl.userData.set('Cloudflare', '#ffb073', 32,
       ha + ' conn · ' + (+cf.req_per_min || 0).toFixed(0) + ' req/min · ' + (cf.locations || []).join(' '), '#e8c9a0', 2);
-    else EX.cfLbl.userData.set('CLOUDFLARE EDGE', '#7a6a60', 32, 'tunnel metrics unavailable', '#6b6b7a', 1);
+    else EX.cfLbl.userData.set('Cloudflare', '#7a6a60', 32, '', '', 1);
 
     /* audience (v7): real unique visitors. A rise in viewers_5m is N people
        arriving; each is queued as one gold comet from the country ring (see
@@ -489,9 +460,8 @@
      round 1 alternated name/rate every 3 s, which meant the rate was unreadable
      half the time and the name the other half. */
   function styleBeaconLabel(L, b, rank) {
-    var top = rank < TOPN, name = b.name + (b.cc ? ' · ' + b.cc : '');
-    var sub = (b.out ? '↑' + fmtBps(b.out) : '') + (b.inb ? (b.out ? '  ' : '') + '↓' + fmtBps(b.inb) : '');
-    L.userData.set(name, top ? '#ffffff' : '#cfdff0', top ? 36 : 32, sub || ' ', top ? '#9fe3ff' : '#8fb0d0', top ? 2 : 1);
+    var top = rank < TOPN, name = b.name;
+    L.userData.set(name, null, 0, '', '', 0);
     L.userData.top = top;
   }
   function rebuildStatic() {
@@ -664,7 +634,7 @@
       var L = EX.audL[i]; if (L.userData.on) continue;
       /* above the ring's own cc tag (which sits at y+18, 13 units outward) */
       L.position.set(w.x - Math.cos(a) * RR, w.y + 18 + 26, w.z + Math.sin(a) * RR);
-      L.userData.set('VISITOR \u00b7 ' + (A.cc || '??'), '#ffd166', 34, hostTag(A.host), '#e8d3a0', 2);
+      L.userData.set('Visitor \u00b7 ' + (A.cc || '?'), '#ffd166', 34, '', '', 2);
       L.userData.on = true; L.userData.t0 = t; NS._extScan = undefined;
       break;
     }
@@ -706,7 +676,7 @@
     EX.th = f;
     var lvl = Math.max(0, Math.min(3, +f.level || 0)), c = f.counts || {};
     EX.thLvl = lvl;
-    EX.thLbl.userData.set('THREAT ' + (f.name || LEVEL_NAME[lvl]), LEVEL_COL[lvl], 30,
+    EX.thLbl.userData.set('Threat level ' + String(f.name || LEVEL_NAME[lvl]).toLowerCase(), LEVEL_COL[lvl], 30,
       '1h ' + (+c.crowdsec_1h || 0) + ' · 24h ' + (+c.crowdsec_24h || 0) + ' · ' + (+c.banned || 0) + ' banned'
       + ((+c.secmon_critical || 0) ? ' · ' + c.secmon_critical + ' crit' : ''), lvl >= 2 ? '#e0a0a8' : '#9fb8d0', 2);
     EX.thLbl.userData.on = !!f.up;
@@ -750,7 +720,7 @@
       for (var i = 0; i < EX.nodeRings.length; i++) if (!EX.nodeRings[i].n) { slot = EX.nodeRings[i]; break; }
       if (!slot) slot = EX.nodeRings[0];
       slot.n = n; slot.t0 = t; slot.ring.visible = true;
-      slot.lbl.userData.set(cleanTitle(e.title) || (e.kind || 'FINDING'), '#ff9aa6', 30,
+      slot.lbl.userData.set(cleanTitle(e.title) || (e.kind || 'Finding'), '#ff9aa6', 30,
         (e.kind || 'FINDING') + (e.category ? ' · ' + String(e.category).replace(/_/g, ' ') : '') + (n.label ? ' · ' + n.label : ''), '#d9a0a8', 2);
       slot.lbl.userData.on = true;
       NS._extScan = undefined;
@@ -821,7 +791,10 @@
     if (/^wan/.test(key)) c = TOUR_COL.wan; else if (/^fabric/.test(key)) c = TOUR_COL.fabric;
     else if (/^wired/.test(key)) c = TOUR_COL.wired; else if (/^ap:/.test(key)) c = TOUR_COL.ap;
     else if ((m = /^blk:[^:]+:[^:]+:([a-z-]+)$/.exec(key))) c = TOUR_COL[m[1]] || TOUR_COL.infra;
-    else if (/^host:/.test(key)) c = /gpu/.test(key) ? '#5ad7ff' : '#ffb347';
+    else if (/^host:/.test(key)) {
+      var Cn = window.CONFIG, hn = Cn && Cn.nodeFromKey ? Cn.nodeFromKey(key) : null;
+      c = hn && Cn.nodeAccent ? Cn.nodeAccent(hn) : TOUR_COL.host;
+    }
     if (c === EX.tourCol) return; EX.tourCol = c;
     var r = parseInt(c.slice(1, 3), 16), g = parseInt(c.slice(3, 5), 16), b = parseInt(c.slice(5, 7), 16);
     var st = document.documentElement.style;
@@ -838,12 +811,12 @@
     if (t === EX.lastT) return;
     EX.lastT = t;
     var NS = ns(); if (!NS || !NS.byId) return;
-    dt = Math.min(0.1, Math.max(0.001, dt));
+    dt = Math.min(0.05, Math.max(0.001, dt));
     EX.t = t;
     var key = stopKey(NS);
     publishTour(key);
     /* visible at the overview and the WAN EDGE stop; folded away for close-ups */
-    EX.want = (NS.focusAll !== false || /^wan/.test(key) || /^fabric/.test(key)) ? 1 : 0;
+    EX.want = (NS.focusAll !== false || /^wan/.test(key) || /^fabric/.test(key) || /^asp:(internet|security)$/.test(key)) ? 1 : 0;
     if (/^fabric/.test(key) && NS.focusAll === false) EX.want = 0.35;
     EX.vis += (EX.want - EX.vis) * (1 - Math.exp(-dt * 3.0));
     var vis = EX.vis;
@@ -928,7 +901,7 @@
     for (var i = 0; i < MAXB; i++) {
       var L = EX.labels[i], on = L.userData.on, top = L.userData.top;
       L.userData.setW(top ? 1 + 0.9 * big : 0.9 + 0.5 * big);
-      L.visible = !!on && vis > 0.05 && !lpHid(L, NS) && !(EX.impN && nearImpact(L.position));
+      L.visible = !!on && top && big > 0.5 && vis > 0.05 && !lpHid(L, NS) && !(EX.impN && nearImpact(L.position));
       L.material.opacity = L.visible ? L.userData.base * (top ? 1 : 0.8 + 0.2 * big) * vis : 0;
       /* v7: the halo breathes at a rate set by the AS's measured bps */
       var Hh = EX.halos[i];
@@ -936,7 +909,7 @@
     }
     for (var c = 0; c < EX.ccLabels.length; c++) {
       var CL = EX.ccLabels[c]; CL.userData.setW(1 + 0.3 * big);
-      CL.visible = !!CL.userData.on && vis > 0.05 && !lpHid(CL, NS) && !(EX.impN && nearImpact(CL.position));
+      CL.visible = !!CL.userData.on && big > 0.5 && vis > 0.05 && !lpHid(CL, NS) && !(EX.impN && nearImpact(CL.position));
       /* the ring's far side projects under the HUD strips: a cc tag that lands
          outside the HUD-safe band is dropped, not drawn through the DOM text */
       if (CL.visible && NS.cam) { _v.copy(CL.position).project(NS.cam); if (_v.z > 1 || _v.y < -0.74 || _v.y > 0.74 || _v.x < -0.9 || _v.x > 0.9) CL.visible = false; }
@@ -955,11 +928,13 @@
     EX.torus.material.opacity = (up ? 0.85 : 0.3) * vis; EX.torus2.material.opacity = (up ? 0.6 : 0.2) * vis; EX.core.material.opacity = vis;
     EX.strands.material.opacity = (up ? 0.40 + 0.22 * pulse : 0.08) * vis;
     EX.cfLbl.userData.setW(1 + 0.45 * big);
-    EX.cfLbl.visible = !!EX.cfLbl.userData.on && vis > 0.05 && !lpHid(EX.cfLbl, NS);
+    EX.cfLbl.visible = !!EX.cfLbl.userData.on && big > 0.5 && vis > 0.05 && !lpHid(EX.cfLbl, NS);
     EX.cfLbl.material.opacity = EX.cfLbl.visible ? (0.8 + 0.2 * big) * vis : 0;
     /* request comets at req_per_min: accumulate real time, one comet per request */
     if (up && rpm > 0 && EX.strandPts && EX.strandPts.length) {
-      EX.cfAcc += dt * rpm / 60;
+      // capped at 4 comets/s (240 req/min): a burst must not fill the shared
+      // particle pool and silently starve threat streaks / visitor comets
+      EX.cfAcc = Math.min(EX.cfAcc + dt * Math.min(rpm, 240) / 60, 2);
       while (EX.cfAcc >= 1) { EX.cfAcc -= 1; if (EX.P.length < P_CAP - 8) { var si = (EX.cfSeq = ((EX.cfSeq || 0) + 1)) % EX.strandPts.length; for (var tr = 0; tr < 6; tr++) EX.P.push({ kind: 'req', s: si, p: -tr * 0.035, rate: 0.42, tr: tr }); } }
     }
     /* flecks: non-2xx deltas shoot off the station */
@@ -990,7 +965,7 @@
       var ang2 = (hash32(a.ip) % 628) / 100, ang3 = -ARC_SPAN * 0.9 + (ang2 / 6.28) * ARC_SPAN * 1.8;
       var scen = String(a.scenario || '').replace(/^crowdsecurity\//, '').replace(/-probing$/, '').replace(/_/g, ' ');
       fireImpact(t, w.x - Math.cos(ang3) * SHIELD_R, w.y + 14 + (hash32(a.ip + 'y') % 20), w.z + Math.sin(ang3) * SHIELD_R,
-        (a.cn || '??') + ' · ' + shortAS(a.as_name, a.ip), scen + ' · ' + (a.events || 1) + ' ev');
+        'Blocked \u00b7 ' + (a.cn || '?'), scen);
     }
     for (var si = EX.streaks.length - 1; si >= 0; si--) {
       var SK = EX.streaks[si];
@@ -1011,7 +986,7 @@
     /* level plate: level colour, slow 0.4 Hz pulse at RED/BLACK */
     var thOn = !!EX.thLbl.userData.on;
     EX.thLbl.userData.setW(1 + 0.3 * big);
-    EX.thLbl.visible = thOn && vis > 0.05 && !lpHid(EX.thLbl, NS);
+    EX.thLbl.visible = false && thOn && vis > 0.05 && !lpHid(EX.thLbl, NS);
     EX.thLbl.material.opacity = EX.thLbl.visible ? ((EX.thLvl >= 2 ? 0.72 + 0.28 * (0.5 + 0.5 * Math.sin(t * 2.5)) : 0.85) * (0.8 + 0.2 * big) * vis) : 0;
     EX.impN = 0;
     for (var ri = 0; ri < EX.impR.length; ri++) {

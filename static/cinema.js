@@ -55,17 +55,33 @@
   var GRADE = {
     ca:     0.0016,   // ~2 px of fringing at the corners, 0 at centre
     vig:    0.42,     // vignette depth at the corners
-    grain:  0.018,    // film grain amplitude
-    sat:    1.16,     // saturation
-    con:    1.055,    // contrast about mid grey
+    grain:  0.014,    // film grain amplitude
+    sat:    1.02,     // saturation (was 1.12: the clean pass wants a restrained palette, 2026-10-07)
+    con:    1.05,     // contrast about mid grey
     lift:   0.55,     // cool-shadow / warm-highlight split tone
-    bar:    0.0       // letterbox fraction per edge
+    bar:    0.0,      // letterbox fraction per edge
+    /* HDR tone (2026-10-08, NB_HDR): exposure into the filmic curve, a trim
+       after it, a display lift for the faint haze and a black point */
+    pre:    1.9,
+    expo:   0.94,
+    gam:    1.0,
+    black:  0.0
   };
   var CINEMA = {       // deltas applied on top in cinema mode
     ca: 0.0030, vig: 0.55, grain: 0.030, sat: 1.24, con: 1.09, lift: 0.85,
-    bar: 0.055
+    bar: 0.055, pre: 1.9, expo: 0.94, gam: 1.0, black: 0.0
   };
-  var BLOOM = { strength: 0.68, radius: 0.58, threshold: 0.70 };
+  /* eye comfort (2026-10-05): a touch less bloom and a higher threshold, so
+     only true cores glow and halos stop washing over labels; the grade's
+     highlight shoulder (uKnee) rolls the rest off instead of clipping */
+  var BLOOM = { strength: 0.56, radius: 0.55, threshold: 0.74 };
+  /* HDR (2026-10-08): the threshold is in linear scene radiance now, above the
+     brightest diffuse light, so only star cores, hub stars and galaxy nuclei
+     bloom; the knee (index.html smoothWidth) keeps the onset soft */
+  var HDR = !!window.NB_HDR;
+  /* hue-preserving highlight blend (0 = plain per-channel ACES); ?hue=<k> for A/B */
+  var HUE_K = (function () { var m = location.search.match(/[?&]hue=([\d.]+)/); return m ? parseFloat(m[1]) : 0.5; })();
+  if (HDR) BLOOM = { strength: 0.62, radius: 0.5, threshold: 1.25 };
 
   var BANK_MAX   = 0.075;   // rad of roll at full lateral speed (~4.3 deg)
   var BANK_GAIN  = 0.00042; // rad per world-unit/s of lateral camera velocity
@@ -76,24 +92,36 @@
   /* ?grade=force pins the grade on and disables the perf guard (the headless
      QA browser has no GPU and would always trip it); ?grade=off starts bypassed */
   var Q = (location.search.match(/[?&]grade=(\w+)/) || [])[1] || '';
+  /* ?aa=on|off: A/B of the 4-tap quarter-texel resolve (QA) */
+  var AA_Q = (location.search.match(/[?&]aa=(\w+)/) || [])[1] || '';
+  /* default: FXAA (crisp interiors, smooth edges, ~free); 'on' = the old
+     4-tap box; 'off' = raw. A multisampled scene target (?msaa=4) needs none. */
+  var AA_MODE = AA_Q || (window.NB_MSAA ? 'off' : 'fxaa');
+  var AA_SOFT = AA_MODE === 'on';
 
-  /* SUPERSAMPLING.
-     The scene renders through an EffectComposer, which means the renderer's
-     antialias:true flag does nothing at all - the composer's render targets
-     have no MSAA, so every line, edge and text sprite was being resolved with
-     zero antialiasing. Measured on the weakest GPU in the house (Intel Iris Xe)
-     the whole scene holds a locked 59.9 fps at pixelRatio 2.0, i.e. 3840x2160
-     downsampled to the kiosk's 1080p panel, with p95 frame time unchanged at
-     16.7 ms. So we spend that headroom on resolution: supersampling cleans up
-     shading and textures, not just geometry edges the way MSAA would.
-     The ladder steps down on its own if a machine cannot hold the frame rate. */
-  var SS_LADDER = [1.0, 1.25, 1.5, 1.75, 2.0];
-  var SS_TARGET = 2.0;
-  var SS_PIXCAP = 9.0e6;      // internal framebuffer ceiling, ~4K worth
+  /* RENDER SCALE (2026-10-05, replaces the supersample ladder).
+     The old ladder set rndr.setPixelRatio(2), but the composer had captured
+     pixelRatio 1 at construction, so the scene was always drawn at 1x and the
+     grade pass only upscaled it into a 3840x2160 MSAA canvas that the compositor
+     then shrank again: 4x the pixels for nothing. Now the canvas is native
+     (index.html) and only the composer's targets scale, via NB_RS.S:
+       1.0 = what was approved (scene at CSS resolution); under GPU contention
+       it steps down to 0.6 and back, one rung at a time, with hysteresis.
+     Driven by measured GPU frame time (NB_PERF, timer queries around the whole
+     frame), because rAF intervals stay at 16.7 ms while frames are dropped.
+     Text never scales: it is drawn after the grade, straight to the canvas.
+     ?rs=<S> pins a scale (QA). */
+  var RS_LADDER = [0.6, 0.7, 0.8, 0.9, 1.0];
+  var RS_PIN = parseFloat((location.search.match(/[?&]rs=([\d.]+)/) || [])[1]) || 0;
+  var RS_DOWN_MS = 12.5;     // sustained p75 GPU time above this: step down
+  var RS_UP_MS = 7.0;        // predicted p75 at the next rung below this: step up
+  /* grain was hashed per 4K pixel and averaged 2x2 by the compositor, which
+     halves its amplitude; at native resolution the same look needs half */
+  var GRAIN_K = Math.min(1, ((window.NB_RS && NB_RS.cpr) || 1) / 2);
 
   var C = {
     on: Q !== 'off', cinema: false, hud: true, force: Q === 'force',
-    ss: 0, ssIdx: SS_LADDER.length - 1, slowSS: 0, fastSS: 0,
+    ss: 1, rsIdx: RS_LADDER.length - 1, slowRS: 0, fastRS: 0, rsHoldUntil: 0, gpuMs: -1,
     pass: null, u: null, t: 0,
     roll: 0, prevPos: null, prevTgt: new THREE.Vector3(), speed: 0,
     fpsAcc: 0, fpsN: 0, slowFor: 0, fastFor: 0, degraded: false,
@@ -119,7 +147,17 @@
       uLift:    { value: GRADE.lift },
       uSpeed:   { value: 0 },
       uBar:     { value: 0 },
-      uGlitch:  { value: 0 }
+      uGlitch:  { value: 0 },
+      uKnee:    { value: 0.62 },
+      uExpo:    { value: 0.94 },
+      uHdr:     { value: 0 },
+      uPre:     { value: 1.9 },
+      uGam:     { value: 1.0 },
+      uBlack:   { value: 0.0 },
+      uHue:     { value: HUE_K },
+      uTexel:   { value: new THREE.Vector2(0, 0) },
+      uFxaa:    { value: 0 },
+      uPx:      { value: new THREE.Vector2(0, 0) }
     },
     vertexShader: [
       'varying vec2 vUv;',
@@ -129,7 +167,17 @@
       'varying vec2 vUv;',
       'uniform sampler2D tDiffuse;',
       'uniform vec2  uRes;',
-      'uniform float uTime, uCA, uVig, uGrain, uSat, uCon, uLift, uSpeed, uBar, uGlitch;',
+      'uniform float uTime, uCA, uVig, uGrain, uSat, uCon, uLift, uSpeed, uBar, uGlitch, uKnee, uExpo;',
+      'uniform float uHdr, uPre, uGam, uBlack, uHue;',
+      'uniform vec2  uTexel; uniform float uFxaa; uniform vec2 uPx;',
+      /* ACES filmic (Hill's RRT+ODT fit, the same curve three applied per material
+         before 2026-10-08), now applied ONCE to the whole HDR frame */
+      'vec3 rrtOdt(vec3 v){ vec3 a = v * (v + 0.0245786) - 0.000090537; vec3 b = v * (0.983729 * v + 0.4329510) + 0.238081; return a / b; }',
+      'vec3 acesFilm(vec3 c){',
+      '  const mat3 IN = mat3(0.59719, 0.07600, 0.02840, 0.35458, 0.90834, 0.13383, 0.04823, 0.01566, 0.83777);',
+      '  const mat3 OUT = mat3(1.60475, -0.10208, -0.00327, -0.53108, 1.10813, -0.07276, -0.07367, -0.00605, 1.07602);',
+      '  return clamp(OUT * rrtOdt(IN * c), 0.0, 1.0);',
+      '}',
 
       /* radial split: red pushed out, blue pulled in. Strength rises with r^2 so
          the centre — where the graph lives — stays perfectly registered. */
@@ -141,6 +189,48 @@
       '}',
 
       'float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }',
+      /* FXAA (2026-10-05, round 4): edge-directed AA on the scene texel grid.
+         Replaces the 4-tap quarter-texel box (a uniform half-pixel blur that
+         softened every body, star and 1 px link). Flat areas - most of the
+         frame - early-out on the local contrast test and stay pixel-sharp. */
+      'vec3 fxaa(vec2 uv){',
+      '  vec3 rgbM = texture2D(tDiffuse, uv).rgb;',
+      '  vec3 L = vec3(0.299, 0.587, 0.114);',
+      '  float lNW = dot(texture2D(tDiffuse, uv + vec2(-1.0, -1.0) * uPx).rgb, L);',
+      '  float lNE = dot(texture2D(tDiffuse, uv + vec2( 1.0, -1.0) * uPx).rgb, L);',
+      '  float lSW = dot(texture2D(tDiffuse, uv + vec2(-1.0,  1.0) * uPx).rgb, L);',
+      '  float lSE = dot(texture2D(tDiffuse, uv + vec2( 1.0,  1.0) * uPx).rgb, L);',
+      '  float lM = dot(rgbM, L);',
+      /* HDR (2026-10-08): judge edges on a compressed luma, and leave a local PEAK
+         alone - a star is a point, not an edge; blending it along a "direction"
+         printed small x / H shapes on every star of the wall */
+      '  if (uHdr > 0.5) { lNW /= 1.0 + lNW; lNE /= 1.0 + lNE; lSW /= 1.0 + lSW; lSE /= 1.0 + lSE; lM /= 1.0 + lM; }',
+      '  float lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE)));',
+      '  float lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));',
+      '  if (lMax - lMin < max(0.03, lMax * 0.12)) return rgbM;',
+      /* (after the cheap early-out, so flat sky never pays the 4 extra taps) */
+      '  if (uHdr > 0.5) {',
+      '    float lN = dot(texture2D(tDiffuse, uv + vec2(0.0, -1.0) * uPx).rgb, L), lS = dot(texture2D(tDiffuse, uv + vec2(0.0, 1.0) * uPx).rgb, L);',
+      '    float lW = dot(texture2D(tDiffuse, uv + vec2(-1.0, 0.0) * uPx).rgb, L), lE = dot(texture2D(tDiffuse, uv + vec2(1.0, 0.0) * uPx).rgb, L);',
+      '    lN /= 1.0 + lN; lS /= 1.0 + lS; lW /= 1.0 + lW; lE /= 1.0 + lE;',
+      '    float lMx = max(max(max(lNW, lNE), max(lSW, lSE)), max(max(lN, lS), max(lW, lE)));',
+      '    if (lM >= lMx * 0.98) return rgbM;',
+      /* the flank of a point (a star): at most two bright neighbours and a much brighter
+         one among them. FXAA would read the point as a diagonal edge and smear it into an
+         x; a real edge (a planet limb, a line) has three or more bright neighbours */
+      '    float hb = 0.5 * lMx;',
+      '    float nb = step(hb, lNW) + step(hb, lNE) + step(hb, lSW) + step(hb, lSE) + step(hb, lN) + step(hb, lS) + step(hb, lW) + step(hb, lE);',
+      '    if (nb <= 2.0 && lMx > 2.0 * lM) return rgbM;',
+      '  }',
+      '  vec2 dir = vec2(-((lNW + lNE) - (lSW + lSE)), (lNW + lSW) - (lNE + lSE));',
+      '  float red = max((lNW + lNE + lSW + lSE) * 0.03125, 0.0078125);',
+      '  float rcp = 1.0 / (min(abs(dir.x), abs(dir.y)) + red);',
+      '  dir = clamp(dir * rcp, vec2(-8.0), vec2(8.0)) * uPx;',
+      '  vec3 a = 0.5 * (texture2D(tDiffuse, uv + dir * (1.0 / 3.0 - 0.5)).rgb + texture2D(tDiffuse, uv + dir * (2.0 / 3.0 - 0.5)).rgb);',
+      '  vec3 b = a * 0.5 + 0.25 * (texture2D(tDiffuse, uv - dir * 0.5).rgb + texture2D(tDiffuse, uv + dir * 0.5).rgb);',
+      '  float lB = dot(b, L); if (uHdr > 0.5) lB /= 1.0 + lB;',
+      '  return (lB < lMin || lB > lMax) ? a : b;',
+      '}',
 
       'void main(){',
       '  vec2 uv = vUv;',
@@ -167,6 +257,12 @@
       /* speed-keyed radial blur: only ever non-zero mid-flight between tour
          stops, so the still frames a viewer actually reads stay sharp. */
       '  vec3 col;',
+      /* AA resolve (2026-10-05): the approved image was the scene upscaled 2x
+         by this pass and box-filtered back down by the compositor, i.e. four
+         bilinear taps a quarter texel off centre. Doing exactly that here, at
+         native resolution, keeps the same softness on 1 px lines for a quarter
+         of the pixels. uTexel = 0 (scaled-down scene: the upscale already
+         softens) collapses it to one tap. */
       '  if (uSpeed > 0.0005) {',
       '    col = vec3(0.0); float w = 0.0;',
       '    for (int i = 0; i < 4; i++) {',
@@ -175,10 +271,51 @@
       '      col += tap(0.5 + d * f, ca) * wi; w += wi;',
       '    }',
       '    col /= w;',
+      '  } else if (uFxaa > 0.5) {',
+      /* AA on the centre, the corner colour split re-applied on r/b only
+         where it is visible (it is 0 at the centre, where the graph lives) */
+      '    col = fxaa(uv);',
+      '    if (ca > 0.0002) { col.r = texture2D(tDiffuse, uv + d * ca).r; col.b = texture2D(tDiffuse, uv - d * ca).b; }',
+      '  } else if (uTexel.x > 0.0) {',
+      '    col = 0.25 * (tap(uv + uTexel * vec2(0.25, 0.25), ca) + tap(uv + uTexel * vec2(-0.25, 0.25), ca)',
+      '              + tap(uv + uTexel * vec2(0.25, -0.25), ca) + tap(uv + uTexel * vec2(-0.25, -0.25), ca));',
       '  } else {',
       '    col = tap(uv, ca);',
       '  }',
 
+      /* TONE (2026-10-05): the scene arrives clipped at 1.0 (8-bit composer
+         targets), so emissive peaks hit pure white on the wall. A small
+         exposure trim, then a soft shoulder above uKnee on the brightest
+         channel, hue-preserving: peaks land at ~0.86 instead of 1.0 and keep
+         their colour, while everything below the knee (the starfield, the
+         discs, most of the image) is untouched apart from the trim. */
+      /* HDR (2026-10-08): the frame arrives as linear radiance (half float, no
+         clipping): exposure, the one filmic curve, an optional display lift
+         (uGam > 1 opens the faint haze without lifting black), a black point */
+      '  if (uHdr > 0.5) {',
+      /* a non-finite pixel stays ONE black pixel, never a smear (see index.html bloom) */
+      '    if (any(isnan(col)) || any(isinf(col))) col = vec3(0.0);',
+      /* hue-preserving shoulder (2026-10-09): per-channel ACES drives every bright
+         core to the same neutral white (a golden bulge read as a flat white disc).
+         Past the knee, blend toward a max-RGB tonemap that keeps the core's own
+         colour (same curve on the peak channel, ratios kept); neutral stars stay
+         white, everything below the knee is untouched. */
+      '    vec3 xs = clamp(col, 0.0, 64.0) * uPre, pcA = acesFilm(xs);',
+      '    float mxs = max(xs.r, max(xs.g, xs.b));',
+      '    vec3 hpA = clamp(xs * (acesFilm(vec3(mxs)).g / max(mxs, 1e-4)), 0.0, 1.0);',
+      '    float kh = uHue * smoothstep(0.45, 0.92, dot(pcA, vec3(0.2126, 0.7152, 0.0722)));',
+      '    col = mix(pcA, hpA, kh) * uExpo;',
+      '    col = pow(col, vec3(1.0 / uGam));',
+      '    col = max(col - uBlack, vec3(0.0)) / (1.0 - uBlack);',
+      '  } else {',
+      '  col *= uExpo;',
+      '  float pk = max(col.r, max(col.g, col.b));',
+      '  if (pk > uKnee) {',
+      '    float w = 1.0 - uKnee;',
+      '    float pc = uKnee + w * (1.0 - exp(-(pk - uKnee) / w));',
+      '    col *= pc / pk;',
+      '  }',
+      '  }',
       '  float l = dot(col, vec3(0.2126, 0.7152, 0.0722));',
       '  col = mix(vec3(l), col, uSat);',                      // saturation
       /* contrast pivoted at 0.10, not mid grey: this scene is ~90% near-black,
@@ -208,30 +345,29 @@
     C.u = C.pass.uniforms;
     window.composer.addPass(C.pass);
     window.CINEMA_PASS = C.pass;
-    ssApply(SS_LADDER[C.ssIdx]);
-    window.addEventListener('resize', function () {
-      setTimeout(function () { var r = C.ss; C.ss = 0; ssApply(r); }, 60);
-    });
+    if (RS_PIN) { var pi = 0; for (var i = 0; i < RS_LADDER.length; i++) if (Math.abs(RS_LADDER[i] - RS_PIN) < Math.abs(RS_LADDER[pi] - RS_PIN)) pi = i; C.rsIdx = pi; }
+    rsApply(RS_PIN || RS_LADDER[C.rsIdx], true);
+    window.addEventListener('resize', function () { setTimeout(function () { rsApply(C.ss, true); }, 60); });
   }
   function sizePass() {
-    if (!C.u) return;
-    C.u.uRes.value.set(window.innerWidth * (C.ss || 1), window.innerHeight * (C.ss || 1));
+    if (!C.u || !window.rndr) return;
+    var c = window.rndr.domElement, rt = window.composer && window.composer.renderTarget1;
+    C.u.uRes.value.set(c.width, c.height);      // the grade draws to the native canvas
+    /* the soft 4-tap resolve only where the scene is at least canvas size */
+    if (AA_SOFT && rt && rt.width >= c.width - 1) C.u.uTexel.value.set(1 / rt.width, 1 / rt.height); else C.u.uTexel.value.set(0, 0);
+    C.u.uFxaa.value = AA_MODE === 'fxaa' ? 1 : 0;
+    if (rt) C.u.uPx.value.set(1 / rt.width, 1 / rt.height);
   }
 
-  /* Apply a supersample factor, clamped so a HiDPI panel cannot multiply itself
-     into an 8K framebuffer. Everything downstream of the renderer has to be
-     resized together or the composer and bloom keep stale buffer sizes. */
-  function ssApply(r) {
+  /* Scene scale: resize only the composer targets (bloom keeps its own fixed
+     screen-relative size, see index.html). Point sizes follow NB_RS.K/ptH in
+     the same frame, so nothing on screen changes size, only sharpness. */
+  function rsApply(r, force) {
     if (!window.rndr || !window.composer) return;
-    var w = window.innerWidth, h = window.innerHeight;
-    var cap = Math.sqrt(SS_PIXCAP / Math.max(1, w * h));
-    r = Math.max(1, Math.min(r, SS_TARGET, cap));
-    if (Math.abs(r - C.ss) < 0.01) return;
+    if (!force && Math.abs(r - C.ss) < 0.01) return;
     C.ss = r;
-    window.rndr.setPixelRatio(r);
-    window.rndr.setSize(w, h);
-    window.composer.setSize(w, h);
-    if (window.bloom) window.bloom.setSize(w, h);
+    if (window.NB_RS) NB_RS.set(r);
+    window.composer.setPixelRatio(r);
     sizePass();
   }
 
@@ -261,7 +397,10 @@
     var scale = 320 / Math.max(dist, 120);      // same swing reads the same close or wide
     var lateral = _v.dot(_r) * scale;
     var manual = !!(NS.tour && NS.tour.manual);
-    var target = manual ? 0 : clamp(-lateral * BANK_GAIN, -BANK_MAX, BANK_MAX);
+    /* + the leg's own authored roll (netscene legPath: dolly / swoop / reveal,
+       a few degrees, zero at both ends of the leg) */
+    var legRoll = (!manual && NS.legRoll) ? NS.legRoll : 0;
+    var target = manual ? 0 : clamp(-lateral * BANK_GAIN + legRoll, -BANK_MAX, BANK_MAX);
 
     /* a cinematic move may own the roll outright (the barrel roll writes a
        full 2*pi); it hands back at exactly 0, so the lerp below resumes cleanly */
@@ -283,22 +422,42 @@
   /* ======================= 3. the caption ======================= */
 
   var CSS = [
+    /* 2026-10-08 (contracts 7 / 7a): a product caption, not a broadcast
+       headline. One title line (18 px / 500), one line of facts (13 px) with
+       units, status colour only where something is wrong, and a hairline
+       progress track. No "now showing", no flavour copy, no tracking. */
     '#cin{position:fixed;z-index:6;bottom:calc(212px + var(--sy));',
     '  left:calc(var(--cL) + var(--sx));right:calc(var(--cR) + var(--sx));',
     '  pointer-events:none;opacity:0;transition:opacity .45s ease;',
-    '  display:flex;flex-direction:column;align-items:center;gap:5px}',
+    '  display:flex;flex-direction:column;align-items:center;gap:4px;',
+    '  font-family:var(--ui-font,Inter,system-ui,sans-serif);letter-spacing:0;font-variant-numeric:tabular-nums}',
     '#cin.on{opacity:1}',
-    '#cin .cbar{display:flex;gap:3px;width:min(420px,60%)}',
-    '#cin .cbar i{flex:1;height:2px;border-radius:1px;background:rgba(125,160,200,.20);',
-    '  transition:background .35s ease,box-shadow .35s ease}',
-    '#cin .cbar i.done{background:rgba(125,160,200,.42)}',
-    '#cin .cbar i.now{background:var(--accent);box-shadow:0 0 6px rgba(90,215,255,.85)}',
+    '#cin .cname{font-size:18px;line-height:24px;font-weight:500;color:var(--t1,#e6e9ee);text-align:center;',
+    '  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}',
+    '#cin .cfacts{font-size:13px;line-height:18px;color:var(--t2,#9aa4b1);text-align:center;white-space:nowrap;',
+    '  overflow:hidden;text-overflow:ellipsis;max-width:100%}',
+    '#cin .cfacts b{font-weight:500;color:var(--t1,#e6e9ee)}',
+    '#cin .cfacts i.mute{font-style:normal;color:var(--t3,#7d8590)} #cin .cfacts b.bad{color:var(--crit,#f85149)} #cin .cfacts b.warn{color:var(--warn,#d29922)} #cin .cfacts b.ok{color:var(--ok,#3fb950)}',
+    '#cin .cfacts i{font-style:normal;color:var(--t3,#6b7584);padding:0 6px}',
+    /* aspect card (contracts 9.2): one row of up to four facts, k small grey, v tabular, unit small */
+    '#cin .cfacts .af{display:inline-flex;align-items:baseline;gap:5px;padding:0 10px}',
+    '#cin .cfacts .af em{font-style:normal;font-size:12px;color:var(--t3,#7d8590)}',
+    '#cin .cfacts .af b{font-size:14px} #cin .cfacts .af u{text-decoration:none;font-size:12px;color:var(--t2,#9aa4b1)}',
+    '#cin .cfacts .af+.af{border-left:1px solid rgba(255,255,255,.12)}',
+    /* legibility over bright galaxy cores (aspect stops park the camera near one): a dark halo, not a glow */
+    '#cin .cname,#cin .cfacts{text-shadow:0 1px 2px rgba(0,0,0,.95),0 0 6px rgba(0,0,0,.75)}',
+    '#cin .cfacts .af em,#cin .cfacts i.mute{color:#a3acb8}',
+    /* text changes cross-fade (contracts 9.4: nothing pops) */
+    '#cin .cname,#cin .cfacts{transition:opacity .26s ease}',
+    '#cin.swap .cname,#cin.swap .cfacts{opacity:0}',
+    '#cin .cbar{display:flex;gap:2px;width:min(360px,50%);margin-top:4px}',
+    '#cin .cbar i{flex:1;height:2px;border-radius:1px;background:rgba(255,255,255,.10);transition:background .35s ease}',
+    '#cin .cbar i.done{background:rgba(255,255,255,.22)}',
+    '#cin .cbar i.now{background:rgba(230,233,238,.85)}',
     '#cin .cwrap{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;',
     '  justify-content:center;max-width:100%}',
     '#cin .ceyebrow{font-size:8px;letter-spacing:2.2px;color:var(--ink3);',
     '  text-transform:uppercase;white-space:nowrap}',
-    '#cin .cname{font-size:15px;font-weight:700;letter-spacing:.6px;color:var(--ink1);',
-    '  text-shadow:0 0 14px rgba(90,215,255,.30);overflow-wrap:anywhere;text-align:center}',
     '#cin .csub{font-size:9.5px;letter-spacing:.5px;color:var(--ink3);text-align:center}',
     '#cin .cstats{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:1px}',
     '#cin .cstats div{font-size:8px;letter-spacing:1.3px;color:var(--ink3);text-align:center;',
@@ -319,8 +478,7 @@
     /* clean-plate mode */
     'body.cin-nohud #railL,body.cin-nohud #railR,body.cin-nohud #stat,',
     'body.cin-nohud #data,body.cin-nohud #chat{opacity:0;transition:opacity .4s ease;',
-    '  pointer-events:none}',
-    '@media (max-width:1599px){ #cin .cname{font-size:13px} }'
+    '  pointer-events:none}'
   ].join('\n');
 
   /* sit the caption directly above #data, measured — #data's height changes
@@ -341,12 +499,7 @@
 
     var el = document.createElement('div');
     el.id = 'cin';
-    el.innerHTML =
-      '<div class="cwrap"><span class="ceyebrow" id="cin-eye"></span>' +
-      '<span class="cname" id="cin-name"></span></div>' +
-      '<div class="csub" id="cin-sub"></div>' +
-      '<div class="cstats" id="cin-stats"></div>' +
-      '<div class="cbar" id="cin-bar"></div>';
+    el.innerHTML = '<div class="cname" id="cin-name"></div><div class="cfacts" id="cin-facts"></div><div class="cbar" id="cin-bar"></div>';
     document.body.appendChild(el);
 
     var bars = document.createElement('div');
@@ -358,64 +511,122 @@
     place();
     window.addEventListener('resize', function () { setTimeout(place, 60); });
     setInterval(place, 4000);        // #data reflows when alerts appear/clear
-    C.eye = document.getElementById('cin-eye');
     C.name = document.getElementById('cin-name');
-    C.sub = document.getElementById('cin-sub');
-    C.stats = document.getElementById('cin-stats');
+    C.facts = document.getElementById('cin-facts');
     C.bar = document.getElementById('cin-bar');
   }
 
-  /* what a stop IS, in plain words, keyed off the stop key netscene assigns */
-  function describe(st, nodes) {
-    var k = st.key || '';
-    if (k.indexOf('over') === 0)
-      return 'the whole estate · wan → gateway → fabric → hosts → guests';
-    if (k === 'wan')    return 'internet edge · isp handoff into the gateway';
-    if (k === 'fabric') return 'switching fabric · every trunk between gateway, switches and hosts';
-    if (k.indexOf('wired:') === 0)  return 'wired clients · one block per switch, sorted by port';
-    if (k.indexOf('ap:') === 0)     return 'wireless clients associated to this access point';
-    if (k.indexOf('host:') === 0)   return 'proxmox host and every vm / container on it';
-    if (k.indexOf('blk:') === 0) {
-      var segs = k.split(':'), cat = segs[segs.length - 1] || '';   // blk:<node id>:<cat>
-      return 'proxmox guests · ' + cat + ' workloads on this host';
-    }
-    return nodes.length + ' nodes';
-  }
-
-  function fmtRate(bytesPerSec) {
-    var b = Math.max(0, (+bytesPerSec || 0)) * 8;
+  function fmtRate(bytesPerSec) { return fmtBits((+bytesPerSec || 0) * 8); }
+  function fmtBits(b) {
+    b = Math.max(0, +b || 0);
     if (b < 1e3) return b.toFixed(0) + ' b/s';
-    if (b < 1e6) return (b / 1e3).toFixed(0) + ' kb/s';
-    if (b < 1e9) return (b / 1e6).toFixed(1) + ' Mb/s';
-    return (b / 1e9).toFixed(2) + ' Gb/s';
+    if (b < 1e6) return (b / 1e3).toPrecision(3).replace(/\.0+$|(\.\d*?)0+$/, '$1') + ' kb/s';
+    if (b < 1e9) return (b / 1e6).toPrecision(3).replace(/\.0+$|(\.\d*?)0+$/, '$1') + ' Mb/s';
+    return (b / 1e9).toPrecision(3) + ' Gb/s';
+  }
+  function plural(n, w) { return n + ' ' + w + (n === 1 ? '' : 's'); }
+
+  /* the bodies of the system(s) a stop shows, from the registry */
+  function stopBodies(st, NS) {
+    var U = NS.U, out = [];
+    if (!U || !U.active) return out;
+    var sid = st.sysId || null, k = st.key || '';
+    if (!sid && (k.indexOf('host:') === 0 || k.indexOf('blk:') === 0)) {
+      var hid = k.indexOf('host:') === 0 ? k.slice(5) : k.split(':').slice(1, 3).join(':');
+      var sy = U.sysOfAnchor ? U.sysOfAnchor(hid) : null; sid = sy ? sy.id : null;
+    }
+    if (!sid) return out;
+    var cat = k.indexOf('blk:') === 0 ? k.split(':').pop() : null;
+    for (var i = 0; i < U.bodies.length; i++) {
+      var b = U.bodies[i];
+      if (b.system !== sid) continue;
+      if (cat && !((b['class'] === 'guest_vm' || b['class'] === 'guest_lxc') && (b.cat || 'infra') === cat)) continue;
+      out.push(b);
+    }
+    return out;
   }
 
-  /* live numbers for whatever is on screen right now. For the overview that is
-     the whole graph; for a focused stop it is only that stop's nodes — so the
-     caption always describes exactly what the viewer can see. */
-  function statsFor(st, NS) {
-    var list = st.list || NS.nodes || [];
-    var rx = 0, tx = 0, down = 0, up = 0, n = 0, lossy = 0, fresh = 0;
-    var rtts = [];
-    for (var i = 0; i < list.length; i++) {
-      var nd = list[i]; if (!nd) continue;
-      n++;
-      if (nd.measured) { rx += (+nd.rx || 0); tx += (+nd.tx || 0); }
-      if (nd.status === 'down') down++; else if (nd.status === 'up') up++;
-      var m = nd.meta || {};
-      if (m.rtt != null) rtts.push(m.rtt);
-      if (m.loss) lossy++;
-      if (m.new || m.discovered) fresh++;
+  /* live numbers for whatever is on screen, as one line of plain facts */
+  function factsFor(st, NS) {
+    var k = st.key || '', U = NS.U, d = window.NB_ALL || {}, u = d.unifi || {}, f = [];
+    function issue(list) {
+      /* only a real outage is red (2026-10-09): the registry tells a powered-off guest
+         ("stopped") and a device not seen for days ("gone") apart from an offline one
+         (bodies[].down_why). Without the field every down body counts as offline. */
+      var down = 0, lossy = 0, fresh = 0, stopped = 0, gone = 0;
+      list.forEach(function (b) {
+        if (b.status === 'down') {
+          if (b.down_why === 'stopped') stopped++;
+          else if (b.lab) gone++;                         // lab gear is never an outage (contracts 9.3)
+          else if (b.down_why === 'gone') gone++;
+          else down++;
+        }
+        var m = b.m || (b.meta || {});
+        if (m.loss && m.loss < 100) lossy++;
+        if (b['new']) fresh++;
+      });
+      if (down) f.push('<b class="bad">' + down + ' down</b>');
+      if (lossy) f.push('<b class="warn">packet loss on ' + plural(lossy, 'host') + '</b>');
+      if (!down && !lossy) f.push(stopped || gone ? 'no outages' : 'all up');
+      if (fresh) f.push('<b class="ok">' + fresh + ' new</b>');
+      if (stopped) f.push('<i class="mute">' + stopped + ' stopped</i>');
+      if (gone) f.push('<i class="mute">' + gone + ' not seen</i>');
     }
-    // median, not mean: one sleepy wifi client at 100 ms should not make the
-    // whole stop look slow
-    var med = null;
-    if (rtts.length) {
-      rtts.sort(function (a, b) { return a - b; });
-      med = rtts[(rtts.length - 1) >> 1];
+    function rates(list) {
+      var rx = 0, tx = 0, any = false;
+      list.forEach(function (b) { var m = b.m || {}; if (m.rx_bps != null) { rx += +m.rx_bps; any = true; } if (m.tx_bps != null) { tx += +m.tx_bps; any = true; } });
+      if (any) f.push('<b>' + fmtBits(rx) + '</b> in · <b>' + fmtBits(tx) + '</b> out');
     }
-    return { n: n, rx: rx, tx: tx, down: down, up: up,
-             rtt: med, lossy: lossy, fresh: fresh };
+    if (st.stream) {
+      var s = st.stream, T = NS.T;
+      f.push('<b>' + (s.lb ? '≥ ' : s.sampled ? '≈ ' : '') + fmtBits(s.bps) + '</b>');
+      f.push(T && T.kindName ? T.kindName(s.kind) : s.kind);
+      if (s.lb) f.push('lower bound, from flows');
+      else f.push(s.dir ? 'both directions measured' : 'direction not measured');
+      return f;
+    }
+    if (k.indexOf('over') === 0) {
+      var n = U && U.active ? U.bodies.length : (NS.nodes || []).length, ns = U && U.active ? U.systems.length : 0;
+      f.push('<b>' + n + '</b> devices');
+      if (ns) f.push('<b>' + ns + '</b> groups');
+      if (u.rx != null) f.push('internet <b>' + u.rx + '</b> / <b>' + u.tx + '</b> Mb/s');
+      if (U && U.active) issue(U.bodies);
+      return f;
+    }
+    if (k === 'wan') {
+      if (u.rx != null) f.push('<b>' + u.rx + ' Mb/s</b> in · <b>' + u.tx + ' Mb/s</b> out');
+      if (u.latency != null) f.push('latency <b>' + u.latency + ' ms</b>');
+      if (u.isp) f.push(u.isp);
+      if (u.wan_up && u.wan_up !== 'ok') f.push('<b class="bad">WAN ' + u.wan_up + '</b>');
+      return f;
+    }
+    var list = stopBodies(st, NS);
+    if (!list.length) {
+      var nn = (st.list || []).length; if (nn) f.push(plural(nn, 'device'));
+      return f;
+    }
+    var guests = list.filter(function (b) { return b['class'] === 'guest_vm' || b['class'] === 'guest_lxc'; });
+    if (k.indexOf('host:') === 0) { f.push('Proxmox host'); f.push('<b>' + guests.length + '</b> guests'); rates(guests); issue(guests); }
+    else if (k.indexOf('blk:') === 0) { f.push('<b>' + guests.length + '</b> guests'); rates(guests); issue(guests); }
+    else if (k === 'fabric') {
+      var sw = list.filter(function (b) { return b.hub || b['class'] === 'switch'; }).length;
+      f.push('<b>' + list.length + '</b> devices'); if (sw) f.push('<b>' + sw + '</b> switches'); issue(list);
+    } else { f.push('<b>' + list.length + '</b> devices'); issue(list); }
+    return f;
+  }
+
+  /* the aspect card's one row (contracts 9.1 facts: k, v, optional u, s for
+     status colour only); no facts -> the aspect's plain sentence */
+  function escH(x) { return String(x == null ? '' : x).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function aspectFacts(st, NS) {
+    var a = NS.aspectOf ? NS.aspectOf(st.aspect) : null;
+    if (!a) return '';
+    var F = (Array.isArray(a.facts) ? a.facts : []).filter(function (f) { return f && f.k != null && f.v != null; }).slice(0, 4);
+    if (!F.length) return escH(a.line || '');
+    return F.map(function (f) {
+      var c = f.s === 'crit' ? ' class="bad"' : f.s === 'warn' ? ' class="warn"' : '';
+      return '<span class="af"><em>' + escH(f.k) + '</em><b' + c + '>' + escH(f.v) + '</b>' + (f.u ? '<u>' + escH(f.u) + '</u>' : '') + '</span>';
+    }).join('');
   }
 
   function renderCaption() {
@@ -427,64 +638,52 @@
 
     if (TR.manual) {
       if (C.lastKey !== '~manual') {
-        C.lastKey = '~manual';
-        C.eye.textContent = 'manual';
-        C.name.textContent = 'YOU HAVE THE CAMERA';
-        C.sub.textContent = 'drag to orbit · scroll to zoom · hover any node for its live card';
-        C.stats.innerHTML = '';
+        C.lastKey = '~manual'; C.lastName = 'Manual camera'; C.swapUntil = 0; C.el.classList.remove('swap');
+        C.name.textContent = 'Manual camera';
+        C.facts.innerHTML = 'drag to orbit <i>·</i> scroll to zoom <i>·</i> click a device for details';
         C.bar.innerHTML = '';
       }
-      C.el.classList.add('on');
+      if (!C.onSet) { C.el.classList.add('on'); C.onSet = true; }
       return;
     }
 
-    /* mid-flight the frame belongs to whichever stop is materialised — netscene
-       hands that over at the halfway mark, so the caption changes with it and
-       never names something that is no longer on screen */
+    /* mid-flight the frame belongs to whichever stop is materialised: netscene
+       hands that over at the halfway mark, so the caption changes with it */
     var showIdx = (TR.phase === 'travel' && TR.switched) ? TR.next : TR.idx;
     var st = TR.stops[showIdx];
     if (!st) return;
 
     var key = st.key + '|' + showIdx + '|' + TR.stops.length;
     if (key !== C.lastKey) {
+      var nameChanged = C.lastName !== st.name;
       C.lastKey = key;
-      var nodes = st.list || NS.nodes || [];
-      C.eye.textContent = (TR.phase === 'travel' ? 'approaching' : 'now showing');
-      C.name.textContent = st.name;
-      C.sub.textContent = describe(st, nodes);
-
       var bar = '';
       for (var i = 0; i < TR.stops.length; i++)
         bar += '<i class="' + (i === showIdx ? 'now' : (i < showIdx ? 'done' : '')) + '"></i>';
-      C.bar.innerHTML = bar;
+      if (bar !== C.lastBar) {
+        /* the segment count changes only on a re-plan: keep the nodes, move the classes, so the track never blinks */
+        var kids = C.bar.children;
+        if (kids.length === TR.stops.length) for (var q = 0; q < kids.length; q++) kids[q].className = q === showIdx ? 'now' : (q < showIdx ? 'done' : '');
+        else C.bar.innerHTML = bar;
+        C.lastBar = bar;
+      }
       C.lastStats = '';
-    } else if (C.eye.textContent === 'approaching' && TR.phase === 'hold') {
-      C.eye.textContent = 'now showing';
+      /* the title and its facts fade out, swap, fade back in (~0.5 s), never a cut */
+      if (nameChanged && C.onSet) {
+        C.swapUntil = C.t + 0.27; C.el.classList.add('swap'); C.pendName = st.name;
+      } else C.name.textContent = st.name;
+      C.lastName = st.name;
     }
-
-    /* stats refresh on their own cadence — the data behind them moves every 5 s */
-    var s = statsFor(st, NS);
-    var sig = s.n + '/' + s.down + '/' + Math.round(s.rx) + '/' + Math.round(s.tx)
-            + '/' + s.rtt + '/' + s.lossy + '/' + s.fresh;
-    if (sig !== C.lastStats) {
-      C.lastStats = sig;
-      var h = '<div>nodes<b>' + s.n + '</b></div>';
-      if (s.rx || s.tx) {
-        h += '<div>down<b class="rx">' + fmtRate(s.rx) + '</b></div>';
-        h += '<div>up<b class="tx">' + fmtRate(s.tx) + '</b></div>';
-      }
-      if (s.rtt != null) {
-        var rc = s.rtt > 60 ? ' bad' : s.rtt > 15 ? ' warn' : '';
-        h += '<div>latency<b class="' + rc.trim() + '">' + s.rtt.toFixed(1) + ' ms</b></div>';
-      }
-      if (s.lossy) h += '<div>packet loss<b class="bad">' + s.lossy + ' host' + (s.lossy > 1 ? 's' : '') + '</b></div>';
-      if (s.fresh) h += '<div>new<b class="fresh">' + s.fresh + '</b></div>';
-      h += s.down
-        ? '<div>state<b class="bad">' + s.down + ' down</b></div>'
-        : '<div>state<b>all up</b></div>';
-      C.stats.innerHTML = h;
+    if (C.swapUntil) {
+      if (C.t < C.swapUntil) return;
+      C.swapUntil = 0; C.name.textContent = C.pendName; C.lastStats = ''; C.statsAt = -1;
+      C.el.classList.remove('swap');
     }
-    C.el.classList.add('on');
+    /* facts refresh at 4 Hz at most (the data behind them moves every 5-12 s) */
+    if (!C.lastStats || C.t - (C.statsAt || 0) >= 0.25) C.statsAt = C.t; else { if (!C.onSet) { C.el.classList.add('on'); C.onSet = true; } return; }
+    var html = st.aspect ? aspectFacts(st, NS) : factsFor(st, NS).join('<i>·</i>');
+    if (html !== C.lastStats) { C.lastStats = html; C.facts.innerHTML = html; }
+    if (!C.onSet) { C.el.classList.add('on'); C.onSet = true; }
   }
 
   /* ======================= 4. cinematic moves (opt-in) =======================
@@ -798,10 +997,16 @@
     var G = C.cinema ? CINEMA : GRADE;
     C.u.uCA.value    = C.on ? G.ca    : 0;
     C.u.uVig.value   = C.on ? G.vig   : 0;
-    C.u.uGrain.value = C.on ? G.grain : 0;
+    C.u.uGrain.value = C.on ? G.grain * GRAIN_K : 0;
     C.u.uSat.value   = C.on ? G.sat   : 1;
     C.u.uCon.value   = C.on ? G.con   : 1;
     C.u.uLift.value  = C.on ? G.lift  : 0;
+    /* the tone stage is the pipeline, not an effect: it stays on with the grade bypassed */
+    C.u.uHdr.value   = HDR ? 1 : 0;
+    C.u.uPre.value   = G.pre;
+    C.u.uExpo.value  = HDR ? G.expo : 0.94;
+    C.u.uGam.value   = G.gam;
+    C.u.uBlack.value = G.black;
     C.u.uBar.value   = 0;                    // bars are DOM, so they cover the HUD too
     document.body.classList.toggle('cin-rec', !!C.cinema);
     document.body.classList.toggle('cin-nohud', !C.hud);
@@ -820,6 +1025,29 @@
     e.preventDefault();
   }
 
+  /* once a second. GPU p75 over the last ~1 s of frames; without timer queries
+     fall back to the frame rate (the old ladder's signal). One rung at a time,
+     never more often than every 2.5 s down / 6 s up, so it cannot flicker. */
+  function rsTick(fps, t) {
+    /* a ring that has not been fed for 3 s is stale (stalled queries, see
+       NB_PERF's watchdog): fall back to the frame rate rather than obey it */
+    var P = window.NB_PERF, fresh = P && (P.lastAt === undefined || performance.now() - P.lastAt < 3000);
+    var g = (P && P.ext && P.n > 30 && fresh) ? P.pct(0.75, 60) : -1;
+    C.gpuMs = g;
+    var slow, fast, cur = RS_LADDER[C.rsIdx], nxt = RS_LADDER[Math.min(C.rsIdx + 1, RS_LADDER.length - 1)];
+    if (g >= 0) { slow = g > RS_DOWN_MS || fps < 50; fast = g * (nxt * nxt) / (cur * cur) < RS_UP_MS && fps > 57; }
+    else { slow = fps < 55; fast = fps > 58.5; }
+    if (slow) { C.slowRS++; C.fastRS = 0; } else if (fast) { C.fastRS++; C.slowRS = 0; } else { C.slowRS = 0; C.fastRS = 0; }
+    if (t < C.rsHoldUntil) return;
+    if (C.slowRS >= 2 && C.rsIdx > 0) {
+      C.rsIdx--; C.slowRS = 0; C.rsHoldUntil = t + 2.5; rsApply(RS_LADDER[C.rsIdx]);
+      console.info('cinema: render scale -> ' + RS_LADDER[C.rsIdx] + ' (gpu p75 ' + g.toFixed(1) + ' ms, ' + fps.toFixed(0) + ' fps)');
+    } else if (C.fastRS >= 6 && C.rsIdx < RS_LADDER.length - 1) {
+      C.rsIdx++; C.fastRS = 0; C.rsHoldUntil = t + 6; rsApply(RS_LADDER[C.rsIdx]);
+      console.info('cinema: render scale -> ' + RS_LADDER[C.rsIdx]);
+    }
+  }
+
   /* ======================= the tick ======================= */
 
   function tick(t, dt) {
@@ -834,9 +1062,17 @@
        to write bloom.strength itself, which this overwrite silently undid */
     C.beatV = Math.max(0, C.beatV - dt * 0.9);
     if (window.bloom) {
-      window.bloom.strength = BLOOM.strength + C.beatV * (C.beatSev >= 3 ? 0.75 : 0.45);
+      /* scene density (2026-10-04): netscene_universe.js publishes
+         NETSCENE.bloomK (0.55..1, eased) - a stop framing ~90 additive bodies
+         piles light into one white blob at the base strength, so dense stops
+         get less bloom and a higher threshold. 1 when absent. */
+      var bk = (window.NETSCENE && NETSCENE.bloomK > 0) ? NETSCENE.bloomK : 1;
+      /* the beat breathes the bloom, it does not flash it: a smooth bump (no
+         step on the attack) at a third of the old depth (was 0.45 / 0.75) */
+      var bv = C.beatV * C.beatV * (3 - 2 * C.beatV);
+      window.bloom.strength = (BLOOM.strength * bk + bv * (C.beatSev >= 3 ? 0.24 : 0.14) * bk) / (window.NB_BLOOM_PRE || 1);
       window.bloom.radius = BLOOM.radius;
-      window.bloom.threshold = BLOOM.threshold;
+      window.bloom.threshold = BLOOM.threshold + (1 - bk) * 0.35;
     }
 
     /* the cinematic moves run AFTER the tour has posed the camera for this
@@ -867,16 +1103,7 @@
       /* Resolution is the first thing to give, well before any effect is
          switched off: a slightly softer frame beats a stuttering one, and a
          stuttering one beats losing the grade entirely. */
-      if (!C.force && t > WARMUP) {
-        if (fps < 55) { C.slowSS++; C.fastSS = 0; } else { C.fastSS++; C.slowSS = 0; }
-        if (C.slowSS >= 3 && C.ssIdx > 0) {
-          C.ssIdx--; C.slowSS = 0; ssApply(SS_LADDER[C.ssIdx]);
-          console.info('cinema: supersample -> ' + SS_LADDER[C.ssIdx]);
-        } else if (C.fastSS >= 12 && C.ssIdx < SS_LADDER.length - 1) {
-          C.ssIdx++; C.fastSS = 0; ssApply(SS_LADDER[C.ssIdx]);
-          console.info('cinema: supersample -> ' + SS_LADDER[C.ssIdx]);
-        }
-      }
+      if (!C.force && !RS_PIN && t > WARMUP) rsTick(fps, t);
 
       if (!C.force && t > WARMUP) {
         if (fps < 24) { C.slowFor++; C.fastFor = 0; }
@@ -897,7 +1124,7 @@
         'grade=' + (C.on ? 'on' : 'off') +
         ' pass=' + (C.pass ? 'installed' : 'missing') +
         ' fps=' + fps.toFixed(0) +
-        ' ss=' + C.ss.toFixed(2) +
+        ' ss=' + C.ss.toFixed(2) + ' gpu=' + (C.gpuMs < 0 ? 'na' : C.gpuMs.toFixed(2)) +
         ' roll=' + C.roll.toFixed(4) +
         ' blur=' + C.u.uSpeed.value.toFixed(4) +
         ' mode=' + (C.cinema ? 'cinema' : 'wall') +

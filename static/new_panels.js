@@ -61,10 +61,23 @@
     }).join("");
   }
 
-  function rBackups(b) {
+  /* 2026-10-08: a feed in error is "unknown", not a red disaster. The backups
+     block can report 0 archives / every guest missing while the PBS exporter
+     counts ~100 backed-up guests: that is a broken poll (backend bug), and the
+     panel must not cry wolf. */
+  function backupsUnknown(b, t) {
+    if (!b) return true;
+    if (b.unknown || b.error || b.err) return true;
+    var pbs = +((t || {}).pbs_vms) || 0;
+    return b.guests != null && (+b.archives || 0) === 0 && (+b.missing || 0) >= (+b.guests || 0) && pbs > 0;
+  }
+  function rBackups(b, t) {
+    if (b && backupsUnknown(b, t)) return kv("status", "unknown", DIM) +
+      ((t && t.pbs_vms != null) ? kv("PBS reports", Math.round(t.pbs_vms) + " guests · " + Math.round(t.pbs_stale || 0) + " stale", DIM) : "");
     if (!b || b.guests == null) return b && b.storages ? kv("stores", esc(b.storages.join(", ")), DIM) : "";
     var probs = (b.stale7 || 0) + (b.missing || 0);
-    var h = kv("backed / guests", b.backed + " / " + b.guests, probs ? WARN : OK) +
+    var h = (b.stale ? kv("data", "as of " + age(b.age_s) + " ago", DIM) : "") +
+      kv("backed / guests", b.backed + " / " + b.guests, probs ? WARN : OK) +
       kv("stale >7d / never", (b.stale7 || 0) + " / " + (b.missing || 0), probs ? BAD : OK) +
       kv("newest backup", b.newest_age_h != null ? b.newest_age_h + "h ago" : "?", b.newest_age_h > 30 ? WARN : OK);
     h += (b.worst || []).map(function (w) {
@@ -171,12 +184,12 @@
     d = d || {};
     var zfsBad = (d.zfs || []).some(function (p) { return p.bad; });
     var bk = d.backups || {};
-    var bkBad = (bk.stale7 || 0) + (bk.missing || 0) > 0;
+    var bkBad = !backupsUnknown(bk, d.telemetry) && (bk.stale7 || 0) + (bk.missing || 0) > 0;
     var certBad = (d.certs && d.certs.warn) > 0;
     host().innerHTML =
       sec("PVE Nodes", rNodes2(d.nodes2)) +
       sec("ZFS Pools", rZfs(d.zfs), zfsBad) +
-      sec("Backups", rBackups(d.backups), bkBad) +
+      sec("Backups", rBackups(d.backups, d.telemetry), bkBad) +
       sec("Frigate", rFrigate(d.frigate), d.frigate && d.frigate.up === false) +
       sec("Top Talkers", rTop(d.top)) +
       sec("TLS Certs", rCerts(d.certs && d.certs.hosts ? d.certs : null), certBad) +

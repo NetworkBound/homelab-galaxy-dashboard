@@ -30,7 +30,7 @@
      move (see cinema.js) and then hands the camera back to the tour. */
   var DEFAULT_FEATURES = { nexus: true, cameras: false, threats: true, audience: true,
                            lights: false, doom: false, setup: true, chat: false,
-                           cinematics: false };
+                           cinematics: false, universe: true, tour: true };
   var DEFAULT_CINEMATICS = { laps: 3, moves: ['roll', 'explode', 'closeup', 'arc'] };
 
   function hexInt(s, fallback) {
@@ -94,6 +94,15 @@
       });
     });
 
+    /* the node whose galaxy gets one stop per guest category (the server picks
+       UI_FEATURED_NODE or the node with the most guests); falls back to the
+       last configured node so a one-node estate still has one */
+    cfg.featured_node = raw.featured_node ? String(raw.featured_node)
+      : (cfg.nodes.length ? cfg.nodes[cfg.nodes.length - 1].id : null);
+    /* remote sites declared in UNIVERSE_SITES: [{id: 'sys:<id>', label, accent}] */
+    cfg.sites = (Array.isArray(raw.sites) ? raw.sites : []).filter(function (s) { return s && s.id; })
+      .map(function (s) { return { id: String(s.id), label: String(s.label || s.id), accent: s.accent ? hexStr(s.accent) : '' }; });
+
     /* ---- helpers the modules share ---- */
     cfg.hex = hexInt;                       // '#5ad7ff' -> 0x5ad7ff
     cfg.hexStr = hexStr;                    // 0x5ad7ff -> '#5ad7ff'
@@ -116,6 +125,16 @@
     cfg.nodeFromKey = function (key) {
       var m = /^(?:host|blk):pve:([^:]+)/.exec(String(key || ''));
       return m ? m[1] : null;
+    };
+    /* universe system id <-> node: 'sys:<node id>' is a Proxmox galaxy */
+    cfg.nodeFromSys = function (sid) {
+      var id = String(sid || '').replace(/^sys:/, '');
+      return cfg.nodeById(id) ? id : null;
+    };
+    cfg.sysOfNode = function (id) { return 'sys:' + String(id || '').replace(/^(host:)?pve:/, ''); };
+    cfg.siteIndex = function (sid) {
+      for (var i = 0; i < cfg.sites.length; i++) if (cfg.sites[i].id === sid) return i;
+      return -1;
     };
     cfg.brandHtml = function () {
       var b = cfg.brand, m = /^(\S+)[\s_-]+(.+)$/.exec(b);

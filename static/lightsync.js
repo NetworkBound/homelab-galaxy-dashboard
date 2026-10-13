@@ -50,8 +50,8 @@
   var POST_MIN_MS = 125;    // ~8/s ceiling, applies even to trigger changes
   var POST_TRAVEL_MS = 180; // steady-state cadence while travelling (~5.5 Hz)
   var POST_HOLD_MS = 1000;  // steady-state cadence while holding (1 Hz)
-  var T_HOLD = 3.8;         // netscene.js T_HOLD / T_HOLD_OVER: not exported,
-  var T_HOLD_OVER = 5.3;    // mirrored here per the sync protocol v2 contract
+  var T_HOLD = 2.4;         // netscene.js T_HOLD / T_HOLD_OVER: not exported,
+  var T_HOLD_OVER = 3.4;    // mirrored here per the sync protocol v2 contract
   var W = 128, H = 72;      // finer grid -> small bright features survive
   var BUCKET = 15;          // degrees per hue bucket
   var ALPHA = 0.008;        // slower baseline -> passing colours spike harder
@@ -146,14 +146,21 @@
   }
 
   function sample() {
-    var src = document.querySelector("canvas");
-    if (!src || !src.width) return null;
-    try {
-      sctx.drawImage(src, 0, 0, W, H);
-    } catch (e) { return null; }
-
     var d;
-    try { d = sctx.getImageData(0, 0, W, H).data; } catch (e) { return null; }
+    /* The wall (index.html) offers an asynchronous GPU readback: it hands back
+       the previous request's W x H frame without ever stalling the pipeline.
+       Pages without it (the nexus) keep the drawImage path below. */
+    if (window.NB_PIXELS && typeof window.NB_PIXELS.request === "function") {
+      d = window.NB_PIXELS.request(W, H);
+      if (!d) return null;
+    } else {
+      var src = document.querySelector("canvas");
+      if (!src || !src.width) return null;
+      try {
+        sctx.drawImage(src, 0, 0, W, H);
+      } catch (e) { return null; }
+      try { d = sctx.getImageData(0, 0, W, H).data; } catch (e) { return null; }
+    }
 
     var hist = {}, lit = 0;
     for (var i = 0; i < d.length; i += 4) {
@@ -264,13 +271,16 @@
       o.to = nxt ? nxt.key : o.from;          // idx===next during hold, so to==from there
       o.to_name = nxt ? nxt.name : (cur ? cur.name : '');
       o.travel_s = TR.travelT || 0;
+      /* v11 (2026-10-07): the leg's cinematic move, so the TV can fly its own
+         version of it. OPTIONAL fields; an old TV ignores them. */
+      if (TR.move) { o.move = TR.move; o.move_dir = TR.moveDir === -1 ? -1 : 1; }
       if (o.phase === 'travel') {
         var e = (NS.t != null && TR.t0 != null) ? (NS.t - TR.t0) : 0;
         o.prog = TR.travelT ? Math.max(0, Math.min(1, e / TR.travelT)) : 1;
-        o.hold_s = (nxt && nxt.list) ? T_HOLD : T_HOLD_OVER;   // dwell awaiting at the destination
+        o.hold_s = (nxt && nxt.hold) || ((nxt && nxt.list) ? T_HOLD : T_HOLD_OVER);   // dwell awaiting at the destination (a stop may set its own: the stream ride)
       } else {
         o.prog = 1;
-        o.hold_s = (cur && cur.list) ? T_HOLD : T_HOLD_OVER;
+        o.hold_s = (cur && cur.hold) || ((cur && cur.list) ? T_HOLD : T_HOLD_OVER);
       }
 
       // "stop" (and colour) hand over at the travel midpoint, matching the
@@ -332,6 +342,13 @@
     chipEl.style.display = '';
     chipEl.innerHTML = html;
   }
+  /* Read every reply to the end. A keepalive fetch whose response body
+     is never read stays charged against Chrome's 64 KiB in-flight keepalive quota
+     until garbage collection frees it, so ~52 lightstate POSTs (~1.25 KB each) in
+     one GC-quiet stretch made every later POST fail with "Failed to fetch"; the
+     TV saw the wall go silent and dropped to free roam. Measured in a headless
+     Chromium 149: 52 accepted then 100% rejected; with the body drained, 86/86. */
+  function drain(r) { return r && r.arrayBuffer ? r.arrayBuffer() : null; }
 
   function postColor(s) {
     if (!s || !s.rgb) return;
@@ -347,7 +364,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ src: SRC, rgb: s.rgb, bri: (s.bri == null ? 100 : s.bri) }),
         keepalive: true,
-      }).catch(function () {});
+      }).then(drain).catch(function () {});
     } catch (e) { /* never let this break the dashboard */ }
   }
 
@@ -362,6 +379,7 @@
     s.travel_s = Math.round(it.travel_s * 100) / 100;
     s.hold_s = Math.round(it.hold_s * 100) / 100;
     s.manual = !!it.manual;
+    if (it.move) { s.move = it.move; s.move_dir = it.move_dir; } else { delete s.move; delete s.move_dir; }
     s.stops = it.stops;
     if (it.rgb) { s.rgb = it.rgb; s.hue = Math.round(rgbToHue(it.rgb[0], it.rgb[1], it.rgb[2])[0]); }
     /* /api/lightstate requires an rgb triple. At the OVERVIEW stop there is no
@@ -388,11 +406,12 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(s),
         keepalive: true,
-      }).catch(function () {});
+      }).then(drain).catch(function () {});
     } catch (e) { /* never let this break the dashboard */ }
   }
 
-  var lastSample = null;
+  var lastSample = null, lastFrameAt = 0, lastSampleAt = 0;
+  var SAMPLE_MS = 500;      // = SAMPLE_EVERY frames at 60 fps, now fps-independent
 
   /* The tour protocol is NOT a function of the pixels: stop/idx/phase/prog/beat
      all come from NETSCENE.tour, and the colour for a stop comes from
@@ -409,9 +428,12 @@
 
   function loop() {
     requestAnimationFrame(loop);
+    lastFrameAt = Date.now();
     frame++;
     try {
-      if (frame % SAMPLE_EVERY === 0) { var s = sample(); if (s) lastSample = s; }
+      /* sample on TIME, not frame count (2026-10-04): every 30th frame made the
+         ALPHA baseline's time constant 62 s at 60 fps, 125 s at 30, 26 s at 144 */
+      if (lastFrameAt - lastSampleAt >= SAMPLE_MS) { lastSampleAt = lastFrameAt; var s = sample(); if (s) lastSample = s; }
       /* the HUD chip is tour-driven and cheap, so it never waits for a sample */
       if (TOUR && frame % 10 === 0) paintChip();
       pump();
@@ -432,6 +454,23 @@
     loop();
     setInterval(function () { try { pump(); } catch (e) { } }, 400);
   }
+
+  /* QA (read-only, additive): beat counter, so 'one beat per stop' is measurable */
+  /* QA (read-only): plain enumerable getters so JSON.stringify(LIGHTSYNC_QA)
+     shows numbers (an object of functions serialises as {}). Populated from
+     page load; beats counts tour arrivals seen by intent(), arrivals is the
+     scene's own count (NETSCENE.qaArrivals); beats/arrivals must be 1.00. */
+  /* the per-stop room colour, for the wall's arrival accent (same hue the
+     lights take at that stop) */
+  window.LIGHTSYNC_STOP_RGB = stopColor;
+  window.LIGHTSYNC_QA = {
+    beat: function () { return beat; },        // not intent(): that advances the beat
+    loadedAt: Date.now()
+  };
+  Object.defineProperty(window.LIGHTSYNC_QA, 'beats', { enumerable: true, get: function () { return beat; } });
+  Object.defineProperty(window.LIGHTSYNC_QA, 'arrivals', { enumerable: true, get: function () { var NS = window.NETSCENE; return NS && NS.qaArrivals || 0; } });
+  Object.defineProperty(window.LIGHTSYNC_QA, 'src', { enumerable: true, get: function () { return SRC; } });
+
   if (document.readyState === "complete") setTimeout(start, 4000);
   else addEventListener("load", function () { setTimeout(start, 4000); });
 })();

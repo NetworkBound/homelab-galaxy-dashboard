@@ -1,0 +1,429 @@
+{
+ "v": 1,
+ "generator": "blender/celestial/celestial_cycles.py (Cycles world-shader equirect) + celestial_post.py",
+ "conventions": {
+  "surfaces": "equirect 2:1, sRGB, row 0 = north pole, seamless in U; star/lava kinds can double as emissive maps",
+  "normals": "tangent space, OpenGL/three.js convention (+Y towards north), fades to flat within ~8deg of the poles",
+  "rings": "RGBA straight alpha strip; u=0 at inner radius, u=1 at outer; inner/outer in planet radii",
+  "glows": "white RGB + straight alpha, additive; tint at runtime (glow_tint). Over a transparent canvas, additive blending also accumulates alpha and darkens the page behind: draw opaque, or use CustomBlending One/One for colour and Zero/One for alpha",
+  "atmos": "rim colour (linear-ish 0..1) and strength; planets only (stars take glow_tint). Glow should peak AT the limb and fade out over ~6% of the radius (preview.html atmosMat); a plain fresnel on a thin shell peaks at the shell edge and draws a dark gap plus an outline",
+  "glow_tint": "optional per-class colour for the glow sprite (linear-ish 0..1)",
+  "size": "relative radius, gateway 1.5 .. iot 0.32; pve_host size is the galactic core scale",
+  "spin": "suggested self-rotation, rad/s",
+  "brightness": "optional multiplier on the body (and its glow); absent = 1",
+  "tintable": "optional; texture is neutral grey so the consumer may multiply a category colour",
+  "luma": "mean sRGB luma of the surface plate, for exposure matching across kinds"
+ },
+ "surfaces": {
+  "rock_grey": {
+   "file": "surfaces/rock_grey.jpg",
+   "kind": "rocky",
+   "normal": "surfaces/rock_grey_n.png",
+   "luma": 0.421
+  },
+  "rock_dark": {
+   "file": "surfaces/rock_dark.jpg",
+   "kind": "rocky",
+   "normal": "surfaces/rock_dark_n.png",
+   "luma": 0.211
+  },
+  "rock_rust": {
+   "file": "surfaces/rock_rust.jpg",
+   "kind": "rocky",
+   "normal": "surfaces/rock_rust_n.png",
+   "luma": 0.393
+  },
+  "rock_tan": {
+   "file": "surfaces/rock_tan.jpg",
+   "kind": "rocky",
+   "normal": "surfaces/rock_tan_n.png",
+   "luma": 0.447
+  },
+  "moon_cratered": {
+   "file": "surfaces/moon_cratered.jpg",
+   "kind": "rocky",
+   "normal": "surfaces/moon_cratered_n.png",
+   "luma": 0.443
+  },
+  "moon_pale": {
+   "file": "surfaces/moon_pale.jpg",
+   "kind": "rocky",
+   "normal": "surfaces/moon_pale_n.png",
+   "luma": 0.625
+  },
+  "ice_world": {
+   "file": "surfaces/ice_world.jpg",
+   "kind": "ice",
+   "normal": "surfaces/ice_world_n.png",
+   "luma": 0.803
+  },
+  "ice_frost": {
+   "file": "surfaces/ice_frost.jpg",
+   "kind": "ice",
+   "normal": "surfaces/ice_frost_n.png",
+   "luma": 0.835
+  },
+  "ocean_world": {
+   "file": "surfaces/ocean_world.jpg",
+   "kind": "ocean",
+   "luma": 0.351
+  },
+  "gas_warm": {
+   "file": "surfaces/gas_warm.jpg",
+   "kind": "gas",
+   "luma": 0.667
+  },
+  "gas_cool": {
+   "file": "surfaces/gas_cool.jpg",
+   "kind": "gas",
+   "luma": 0.564
+  },
+  "gas_pale": {
+   "file": "surfaces/gas_pale.jpg",
+   "kind": "gas",
+   "luma": 0.712
+  },
+  "lava": {
+   "file": "surfaces/lava.jpg",
+   "kind": "lava",
+   "emissive": "surfaces/lava_e.jpg",
+   "normal": "surfaces/lava_n.png",
+   "luma": 0.133
+  },
+  "metal": {
+   "file": "surfaces/metal.jpg",
+   "kind": "metal",
+   "normal": "surfaces/metal_n.png",
+   "luma": 0.629
+  },
+  "star_white": {
+   "file": "surfaces/star_white.jpg",
+   "kind": "star",
+   "luma": 0.885
+  },
+  "star_yellow": {
+   "file": "surfaces/star_yellow.jpg",
+   "kind": "star",
+   "luma": 0.829
+  },
+  "star_red": {
+   "file": "surfaces/star_red.jpg",
+   "kind": "star",
+   "luma": 0.502
+  }
+ },
+ "rings": {
+  "ring_ice": {
+   "file": "rings/ring_ice.png",
+   "inner": 1.25,
+   "outer": 2.3
+  },
+  "ring_dust": {
+   "file": "rings/ring_dust.png",
+   "inner": 1.4,
+   "outer": 2.6
+  },
+  "ring_thin": {
+   "file": "rings/ring_thin.png",
+   "inner": 1.5,
+   "outer": 2.1
+  }
+ },
+ "glows": {
+  "corona": {
+   "file": "glows/corona.png",
+   "size": 512,
+   "blend": "additive",
+   "note": "stars, gateway, hubs: centred, sprite width = 2r/limb (8r); tint with the star colour",
+   "limb": 0.25
+  },
+  "halo": {
+   "file": "glows/halo.png",
+   "size": 256,
+   "blend": "additive",
+   "note": "soft emphasis hugging a body: centred, sprite width = 2r/limb (5r)",
+   "limb": 0.4
+  },
+  "pulsar": {
+   "file": "glows/pulsar.png",
+   "size": 512,
+   "blend": "additive",
+   "note": "twin soft beams along sprite +Y, centred on the body (depth-tested so the body hides the core), ~9r wide; rotate slowly"
+  },
+  "beacon": {
+   "file": "glows/beacon.png",
+   "size": 256,
+   "blend": "additive",
+   "note": "point light for cameras, placed just off the limb (0,+1.35r) in screen space, depthTest off, 4r wide but never under ~24 px, opacity 0.6-1.0 slow blink"
+  }
+ },
+ "atmos": {
+  "ocean": {
+   "rgb": [
+    0.42,
+    0.62,
+    0.95
+   ],
+   "strength": 0.55
+  },
+  "cool": {
+   "rgb": [
+    0.5,
+    0.72,
+    0.85
+   ],
+   "strength": 0.45
+  },
+  "warm": {
+   "rgb": [
+    0.92,
+    0.78,
+    0.58
+   ],
+   "strength": 0.35
+  },
+  "pale": {
+   "rgb": [
+    0.9,
+    0.84,
+    0.7
+   ],
+   "strength": 0.3
+  },
+  "ice": {
+   "rgb": [
+    0.75,
+    0.86,
+    0.95
+   ],
+   "strength": 0.18
+  },
+  "rust": {
+   "rgb": [
+    0.85,
+    0.58,
+    0.42
+   ],
+   "strength": 0.2
+  },
+  "lava": {
+   "rgb": [
+    0.95,
+    0.45,
+    0.2
+   ],
+   "strength": 0.22
+  }
+ },
+ "classes": {
+  "pve_host": {
+   "surface": null,
+   "ring": null,
+   "glow": "corona",
+   "atmos": null,
+   "size": 3.0,
+   "spin": 0.0,
+   "note": "Galactic core: the screens draw the spiral disc; every guest orbits it. Optional corona at the nucleus."
+  },
+  "gateway": {
+   "surface": "star_white",
+   "ring": null,
+   "glow": "corona",
+   "atmos": null,
+   "size": 1.5,
+   "spin": 0.03,
+   "note": "The hottest, brightest star in the system: all traffic in and out passes through it.",
+   "glow_tint": [
+    0.8,
+    0.87,
+    1.0
+   ]
+  },
+  "switch": {
+   "surface": "star_yellow",
+   "ring": null,
+   "glow": "pulsar",
+   "atmos": null,
+   "size": 0.9,
+   "spin": 0.05,
+   "note": "Smaller sun-like star with slow twin beams: a fixed relay sweeping traffic across its ports (Cisco, Juniper EX2200, Nokia, ADVA).",
+   "glow_tint": [
+    1.0,
+    0.85,
+    0.62
+   ]
+  },
+  "ap": {
+   "surface": "star_red",
+   "ring": null,
+   "glow": "halo",
+   "atmos": null,
+   "size": 0.7,
+   "spin": 0.04,
+   "note": "Red dwarf with a soft halo: a modest steady radiator whose light reaches the small moons around it (wireless clients).",
+   "glow_tint": [
+    1.0,
+    0.58,
+    0.38
+   ]
+  },
+  "network_device": {
+   "surface": "star_red",
+   "ring": null,
+   "glow": null,
+   "atmos": null,
+   "size": 0.55,
+   "spin": 0.04,
+   "note": "Unhaloed red dwarf: forwards light but is not a hub; dimmer and smaller than switches and APs."
+  },
+  "edge": {
+   "surface": "star_white",
+   "ring": null,
+   "glow": "corona",
+   "atmos": null,
+   "size": 0.6,
+   "spin": 0.0,
+   "note": "A distant star seen through nebular haze, outside every system: the Internet/Cloudflare edge, far and faint.",
+   "glow_tint": [
+    0.62,
+    0.55,
+    0.95
+   ],
+   "brightness": 0.6
+  },
+  "server": {
+   "surface": "gas_cool",
+   "ring": null,
+   "glow": null,
+   "atmos": "cool",
+   "size": 1.25,
+   "spin": 0.12,
+   "note": "Cool banded gas giant: big, steady workloads; the bands read as layered services."
+  },
+  "storage": {
+   "surface": "gas_pale",
+   "ring": "ring_ice",
+   "glow": null,
+   "atmos": "pale",
+   "size": 1.25,
+   "spin": 0.1,
+   "note": "Ringed pale giant: the ring is the data it holds; the only class with a bright ring, so storage is spotted at a glance."
+  },
+  "tv_av": {
+   "surface": "gas_warm",
+   "ring": "ring_dust",
+   "glow": null,
+   "atmos": "warm",
+   "size": 1.0,
+   "spin": 0.1,
+   "note": "Warm banded giant with a faint dust ring: big, colourful, calm media and display devices."
+  },
+  "guest_vm": {
+   "surface": "rock_grey",
+   "ring": null,
+   "glow": null,
+   "atmos": null,
+   "size": 0.7,
+   "spin": 0.15,
+   "note": "Rocky planet: a complete world of its own orbiting its core; neutral grey so a category tint multiplies cleanly.",
+   "tintable": true
+  },
+  "guest_lxc": {
+   "surface": "moon_pale",
+   "ring": null,
+   "glow": null,
+   "atmos": null,
+   "size": 0.45,
+   "spin": 0.18,
+   "note": "Small pale moon: lighter than a VM and bound to the host's kernel the way a moon is bound to its planet.",
+   "tintable": true
+  },
+  "computer": {
+   "surface": "ocean_world",
+   "ring": null,
+   "glow": null,
+   "atmos": "ocean",
+   "size": 0.9,
+   "spin": 0.12,
+   "note": "Ocean world with cloud and a blue rim: the inhabited places where people actually work."
+  },
+  "game_console": {
+   "surface": "lava",
+   "ring": null,
+   "glow": null,
+   "atmos": "lava",
+   "size": 0.75,
+   "spin": 0.14,
+   "note": "Lava world with dim glowing rifts: hot, high-power, bursty."
+  },
+  "printer": {
+   "surface": "rock_rust",
+   "ring": null,
+   "glow": null,
+   "atmos": "rust",
+   "size": 0.5,
+   "spin": 0.12,
+   "note": "Rust-red world with a thin dusty rim: makes physical things; the Mars tone keeps it apart from VMs."
+  },
+  "phone": {
+   "surface": "ice_world",
+   "ring": null,
+   "glow": null,
+   "atmos": "ice",
+   "size": 0.42,
+   "spin": 0.2,
+   "note": "Small icy moon with ruddy lineae: personal and mobile, comes and goes like a moon's phases."
+  },
+  "tablet": {
+   "surface": "ice_frost",
+   "ring": null,
+   "glow": null,
+   "atmos": "ice",
+   "size": 0.5,
+   "spin": 0.18,
+   "note": "Bright frosted moon a little larger than a phone: same family, told apart by albedo and size."
+  },
+  "camera": {
+   "surface": "metal",
+   "ring": null,
+   "glow": "beacon",
+   "atmos": null,
+   "size": 0.45,
+   "spin": 0.08,
+   "note": "Bright metallic body with a faint beacon on its limb: an observer that watches and reports.",
+   "glow_tint": [
+    0.75,
+    0.88,
+    1.0
+   ]
+  },
+  "iot": {
+   "surface": "rock_dark",
+   "ring": null,
+   "glow": null,
+   "atmos": null,
+   "size": 0.32,
+   "spin": 0.25,
+   "note": "Small dark carbonaceous asteroid: numerous, tiny, quiet, low power."
+  },
+  "appliance": {
+   "surface": "rock_tan",
+   "ring": null,
+   "glow": null,
+   "atmos": null,
+   "size": 0.36,
+   "spin": 0.22,
+   "note": "Small tan rock: single-purpose household devices; IoT's size class in a warmer tone."
+  },
+  "unknown": {
+   "surface": "moon_cratered",
+   "ring": null,
+   "glow": null,
+   "atmos": null,
+   "size": 0.4,
+   "spin": 0.06,
+   "note": "Dim, heavily cratered body: old and uncatalogued; drawn at 0.6 brightness until it is classified.",
+   "brightness": 0.6
+  }
+ }
+}

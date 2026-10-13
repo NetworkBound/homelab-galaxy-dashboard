@@ -17,6 +17,11 @@ demo/fixtures/*.json        linguist-generated=true -diff
 static/assets/*.png         binary
 static/assets/*.jpg         binary
 static/assets/rocket.json   linguist-generated=true -diff
+# Galaxy plates, celestial surfaces and universe sprites (static/assets/*/), and
+# their machine-written manifests.
+static/assets/**/*.png      binary
+static/assets/**/*.jpg      binary
+static/assets/**/manifest.json linguist-generated=true
 docs/screenshots/*.png      binary
 
 # Tests: part of the build, not the story.

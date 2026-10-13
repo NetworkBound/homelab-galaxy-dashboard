@@ -1,0 +1,331 @@
+{
+ "v": 1,
+ "atlas": {
+  "file": "bodies_atlas.png",
+  "cell": 256,
+  "cols": 8,
+  "rows": 3,
+  "premultiplied": false,
+  "pad": 20,
+  "precoloured": true,
+  "util": {
+   "halo": 20,
+   "ring": 21,
+   "spark": 22,
+   "disc": 23
+  }
+ },
+ "notes": {
+  "paths": "every file is relative to this manifest's directory",
+  "atlas_uv": "cell i -> col = i % cols, row = floor(i / cols) counted from the TOP of the image; with three.js flipY=true use v0 = 1 - (row+1)/rows. Inset UVs by pad/cell on each side if you scale sprites past the drawn body; the pad is fully transparent.",
+  "atlas_colour": "cells are pre-coloured; multiply by white (optionally a +-8% per-seed jitter). tint is the class accent for halos, labels, links, flow particles and the anim overlays; multiplying a cell by its own tint will over-saturate it.",
+  "alpha": "straight alpha; RGB is 0 wherever alpha is 0. Normal blending (SrcAlpha, OneMinusSrcAlpha) draws the body solid; AdditiveBlending draws it as light (fine on the black sky).",
+  "size": "relative radius; pve_host = 1.0 reference. Scale by your shell spacing.",
+  "emissive": "0..1 share of the body that should feed bloom; multiply colour by (1 + emissive*k) with k tuned so only cores cross the bloom threshold.",
+  "spin": "sprite rotation in rad/s; 0 for bodies with a baked light direction (rotating them would swing the sun). Add seed-derived phase. Down bodies: spin 0.",
+  "util_cells": "halo/ring/spark/disc are white utility cells in the same atlas: halo under a busy body, ring for selection/new, spark for flow heads, disc = tintable generic moon.",
+  "anims": "flipbook frame f (0-based) -> col = f % cols, row = floor(f / cols) from the TOP; loop:true sheets are seamless (last->first step measured <= a normal step); loop:false sheets start and end near empty, play once. tint:true sheets are white: multiply by the class tint. 'scale' is the overlay size relative to the body.",
+  "render": "cells 0,2,3,11,12,13,16,18,19 and every turntable are Cycles path-traced from universe_cycles.py; the rest of the atlas is the NumPy bake (kept where it read better).",
+  "trimmed": "The public build ships the assets both screens load by default: the celestial look (static/assets/celestial) replaced the per-class 3D models, matcaps, turntables and cloud layers, so those are not included; every consumer falls back to its procedural placeholder when a manifest key is absent."
+ },
+ "classes": {
+  "pve_host": {
+   "atlas": 0,
+   "tint": "#ffb347",
+   "size": 1.0,
+   "emissive": 0.85,
+   "spin": 0.06,
+   "anim": "pulse",
+   "mesh": null
+  },
+  "guest_vm": {
+   "atlas": 1,
+   "tint": "#38e1ff",
+   "size": 0.46,
+   "emissive": 0.55,
+   "spin": 0.0,
+   "anim": null,
+   "mesh": null
+  },
+  "guest_lxc": {
+   "atlas": 2,
+   "tint": "#37f5a0",
+   "size": 0.38,
+   "emissive": 0.45,
+   "spin": 0.1,
+   "anim": null,
+   "mesh": null
+  },
+  "gateway": {
+   "atlas": 3,
+   "tint": "#ffe08a",
+   "size": 0.95,
+   "emissive": 1.0,
+   "spin": 0.0,
+   "anim": "pulse",
+   "mesh": null
+  },
+  "switch": {
+   "atlas": 4,
+   "tint": "#4fc3ff",
+   "size": 0.8,
+   "emissive": 0.65,
+   "spin": 0.0,
+   "anim": null,
+   "mesh": null
+  },
+  "ap": {
+   "atlas": 5,
+   "tint": "#2ff0c8",
+   "size": 0.66,
+   "emissive": 0.6,
+   "spin": 0.0,
+   "anim": null,
+   "mesh": null
+  },
+  "server": {
+   "atlas": 6,
+   "tint": "#a9c6ff",
+   "size": 0.72,
+   "emissive": 0.5,
+   "spin": 0.0,
+   "anim": null,
+   "mesh": null
+  },
+  "storage": {
+   "atlas": 7,
+   "tint": "#d9a066",
+   "size": 0.8,
+   "emissive": 0.35,
+   "spin": 0.0,
+   "anim": null,
+   "mesh": null
+  },
+  "computer": {
+   "atlas": 8,
+   "tint": "#9bd8ff",
+   "size": 0.62,
+   "emissive": 0.3,
+   "spin": 0.0,
+   "anim": null,
+   "mesh": null
+  },
+  "phone": {
+   "atlas": 9,
+   "tint": "#b08cff",
+   "size": 0.42,
+   "emissive": 0.35,
+   "spin": 0.0,
+   "anim": null,
+   "mesh": null
+  },
+  "tablet": {
+   "atlas": 10,
+   "tint": "#ff9bd2",
+   "size": 0.48,
+   "emissive": 0.3,
+   "spin": 0.0,
+   "anim": null,
+   "mesh": null
+  },
+  "tv_av": {
+   "atlas": 11,
+   "tint": "#ff4fa3",
+   "size": 0.6,
+   "emissive": 0.8,
+   "spin": 0.25,
+   "anim": "pulse",
+   "mesh": null
+  },
+  "iot": {
+   "atlas": 12,
+   "tint": "#b6ff5c",
+   "size": 0.36,
+   "emissive": 0.55,
+   "spin": 0.2,
+   "anim": null,
+   "mesh": null
+  },
+  "appliance": {
+   "atlas": 13,
+   "tint": "#ff9f43",
+   "size": 0.44,
+   "emissive": 0.45,
+   "spin": 0.12,
+   "anim": null,
+   "mesh": null
+  },
+  "camera": {
+   "atlas": 14,
+   "tint": "#ff5a5a",
+   "size": 0.5,
+   "emissive": 0.7,
+   "spin": 0.05,
+   "anim": null,
+   "mesh": null
+  },
+  "printer": {
+   "atlas": 15,
+   "tint": "#ffd166",
+   "size": 0.46,
+   "emissive": 0.5,
+   "spin": 0.0,
+   "anim": null,
+   "mesh": null
+  },
+  "game_console": {
+   "atlas": 16,
+   "tint": "#c86bff",
+   "size": 0.58,
+   "emissive": 0.85,
+   "spin": 0.45,
+   "anim": "pulse",
+   "mesh": null
+  },
+  "network_device": {
+   "atlas": 17,
+   "tint": "#8fb0d0",
+   "size": 0.46,
+   "emissive": 0.45,
+   "spin": 0.0,
+   "anim": null,
+   "mesh": null
+  },
+  "edge": {
+   "atlas": 18,
+   "tint": "#7a6cff",
+   "size": 1.2,
+   "emissive": 0.9,
+   "spin": 0.03,
+   "anim": null,
+   "mesh": null
+  },
+  "unknown": {
+   "atlas": 19,
+   "tint": "#7f95b0",
+   "size": 0.36,
+   "emissive": 0.1,
+   "spin": 0.08,
+   "anim": null,
+   "mesh": null
+  }
+ },
+ "discs": {
+  "node:1": {
+   "file": "../galaxy_nb.png",
+   "size": 2.0,
+   "accent": "#ffb347"
+  },
+  "node:0": {
+   "file": "../galaxy_gpu.png",
+   "size": 2.0,
+   "accent": "#5ad7ff"
+  },
+  "sys:core": {
+   "file": "../galaxy_edge.png",
+   "size": 2.0,
+   "accent": "#9b8cff"
+  },
+  "sys:home": {
+   "file": "disc_home.png",
+   "size": 1.7,
+   "accent": "#68d391"
+  },
+  "site:0": {
+   "file": "disc_site_a.png",
+   "size": 1.4,
+   "accent": "#fc8181"
+  },
+  "site:1": {
+   "file": "disc_site_b.png",
+   "size": 1.4,
+   "accent": "#63b3ed"
+  },
+  "edge": {
+   "file": "../galaxy_edge.png",
+   "size": 2.0,
+   "accent": "#7a6cff"
+  },
+  "default": {
+   "file": "disc_home.png",
+   "size": 1.4,
+   "accent": "#9b8cff"
+  }
+ },
+ "anims": {
+  "pulse": {
+   "file": "anim_pulse.png",
+   "frames": 16,
+   "cols": 4,
+   "fps": 12,
+   "cell": [
+    128,
+    128
+   ],
+   "loop": true,
+   "tint": true,
+   "blend": "additive",
+   "use": "emissive core breath + one ripple per cycle; drive fps from latency (pulse period)"
+  },
+  "birth": {
+   "file": "anim_birth.png",
+   "frames": 32,
+   "cols": 8,
+   "fps": 16,
+   "cell": [
+    256,
+    256
+   ],
+   "loop": false,
+   "tint": true,
+   "blend": "additive",
+   "scale": 3.0,
+   "use": "nova for a body with new=true; play once, frames 0 and 31 are ~empty"
+  },
+  "death": {
+   "file": "anim_death.png",
+   "frames": 16,
+   "cols": 4,
+   "fps": 10,
+   "cell": [
+    256,
+    256
+   ],
+   "loop": false,
+   "tint": true,
+   "blend": "additive",
+   "scale": 2.0,
+   "use": "collapse when a body goes down; last frame is exactly empty"
+  },
+  "exhaust": {
+   "file": "anim_exhaust.png",
+   "frames": 16,
+   "cols": 8,
+   "fps": 20,
+   "cell": [
+    128,
+    256
+   ],
+   "loop": true,
+   "tint": true,
+   "blend": "additive",
+   "use": "rocket/comet plume, nozzle at the TOP edge of each cell, flows down (-v)"
+  },
+  "flow": {
+   "file": "anim_flow.png",
+   "frames": 1,
+   "cols": 1,
+   "fps": 0,
+   "cell": [
+    512,
+    64
+   ],
+   "loop": true,
+   "mode": "scroll",
+   "wrap": "repeat_u",
+   "tint": true,
+   "blend": "additive",
+   "use": "link particle stream: map u along the link, set RepeatWrapping, offset.x -= speed*dt; heads point +u"
+  }
+ }
+}

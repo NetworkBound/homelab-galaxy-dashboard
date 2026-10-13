@@ -102,13 +102,13 @@
      graph spread across all of it. */
   var SAFE = { x0: 388 / 1920, x1: 1513 / 1920, y0: 129 / 1080, y1: 807 / 1080, pad: 14 };
   var FAN_R    = 22;       // radius of the per-IP fan around the WAN cloud anchor
-  var LBL_MAX      = 5;    // label sprite pool. NB: the selector backfills up
+  var LBL_MAX      = 2;    // (was 5: fewer plates at once, 2026-10-05) label sprite pool. NB: the selector backfills up
                            // to this from the leftovers, so the per-category
                            // caps below cannot reduce the total on their own.
-  var LBL_MAX_INT  = 3;    // label slots reserved for LAN conversations
-  var LBL_MAX_EXT  = 2;    // label slots reserved for WAN conversations
+  var LBL_MAX_INT  = 1;    // label slots reserved for LAN conversations
+  var LBL_MAX_EXT  = 1;    // label slots reserved for WAN conversations
   var LBL_MIN_BPS  = 900;  // don't label flows slower than this
-  var LBL_W = 148;         // label sprite world width
+  var LBL_W = 124;         // label sprite world width (was 148)
   var EXT_HEX = 0xffb347;  // WAN-crossing flows (amber)
   var UNK_HEX = 0x8fb0d0;  // internal flow, protocol unknown
   var PROTO_HEX = {        // internal flows, by L7 family (base name before '.')
@@ -550,55 +550,21 @@
   }
 
   function makeFlowLabel() {
+    /* painted by netscene's 2D text pass (section 7: one line, short names,
+       11 px); the sprite only carries position, opacity and the verdict */
     var THREE = window.THREE;
-    var W = 704, H = 120;
-    var cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-    var x = cv.getContext('2d');
-    var t = sharpTex(new THREE.CanvasTexture(cv));
-    var sp = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: t, transparent: true, depthWrite: false, depthTest: false
-    }));
-    /* opt in to netscene's unified label collision pass: this pool used to
-       dodge netscene's text but nothing dodged it back, and it ran off the
-       previous frame's visibility. Tagging lets the authoritative pass hide
-       it when it loses. */
-    sp.userData.lbl = true;
-    sp.scale.set(LBL_W, LBL_W * H / W, 1);
+    var sp = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false, depthTest: false }));
+    sp.userData.lbl = true;          // netscene's unified collision pass judges it (rank 5)
+    sp.userData.l2d = 'flow';
+    sp.scale.set(1, 1, 1);
     sp.visible = false;
     sp.userData.entry = null;
     sp.userData.lift = 0; sp.userData.liftT = 0;
     sp.userData.liftX = 0; sp.userData.liftXT = 0;
-    var last = '';
-    sp.userData.setText = function (l1, l2, colHex) {
-      var key = l1 + '|' + l2 + '|' + colHex;
-      if (key === last) return; last = key;
-      sp.userData.txt = l1 + ' / ' + l2;           // named in NETSCENE.auditLabels() (was "(flowlbl)")
-      x.clearRect(0, 0, W, H);
-      x.textAlign = 'center'; x.textBaseline = 'middle';
-      x.font = '700 34px ui-monospace,Consolas,monospace';
-      var w1 = x.measureText(l1).width;
-      x.font = '600 27px ui-monospace,Consolas,monospace';
-      var w2 = x.measureText(l2).width;
-      var pw = Math.min(W - 4, Math.max(w1, w2) + 40), px0 = (W - pw) / 2;
-      sp.userData.plateFrac = pw / W;              // true plate width for declutter rects
-      var col = '#' + ('00000' + (colHex >>> 0).toString(16)).slice(-6);
-      x.beginPath();
-      var r = 14, py0 = 6, ph = H - 12;
-      x.moveTo(px0 + r, py0);
-      x.arcTo(px0 + pw, py0, px0 + pw, py0 + ph, r);
-      x.arcTo(px0 + pw, py0 + ph, px0, py0 + ph, r);
-      x.arcTo(px0, py0 + ph, px0, py0, r);
-      x.arcTo(px0, py0, px0 + pw, py0, r);
-      x.closePath();
-      x.fillStyle = 'rgba(4,10,18,0.74)'; x.fill();
-      x.globalAlpha = 0.55; x.strokeStyle = col; x.lineWidth = 2.5; x.stroke();
-      x.globalAlpha = 1;
-      x.font = '700 34px ui-monospace,Consolas,monospace';
-      x.fillStyle = '#eaf6ff'; x.fillText(l1, W / 2, 38);
-      x.font = '600 27px ui-monospace,Consolas,monospace';
-      x.fillStyle = col; x.fillText(l2, W / 2, 82);
-      t.needsUpdate = true;
+    sp.userData.setText = function (l1, l2) {
+      sp.userData.txt = l1 + (l2 ? ' \u00b7 ' + l2 : '');
     };
+    var NSx = ns(); if (NSx && NSx.LBL_LAYER) sp.layers.set(NSx.LBL_LAYER);
     FL ? FL.grp.add(sp) : null;
     return sp;
   }
@@ -667,11 +633,10 @@
           ? shortName(uniq[0], 15) + (nMem > 1 ? ' ×' + nMem : '')
           : nMem + ' peers';
       }
-      var fam = protoFam(f) || 'unknown';
-      var l2 = fam + ' · ' + (nMem > 1 ? 'Σ ' : '') + fmtBps(g.bps)
-             + (g.internal ? '' : ' · WAN');
+      var NSs = ns(), sh = NSs && NSs.shortName ? NSs.shortName : function (x) { return x; };
+      srcName = sh(srcName) || srcName; dstName = sh(dstName) || dstName;
       sp.userData.entry = { flowIdx: g.best, bps: g.bps };
-      sp.userData.setText(srcName + ' → ' + dstName, l2, flowColor(f, _c).getHex());
+      sp.userData.setText(srcName + ' \u2192 ' + dstName, fmtBps(g.bps));
       g.members.forEach(function (mi) { FL.labeledIdx[mi] = true; });
     }
   }
@@ -683,7 +648,8 @@
      vertical-only nudging cannot separate them. A candidate whose rect leaves
      the HUD-safe region is rejected outright; if no candidate is clear the
      label is HIDDEN rather than drawn overlapping (higher-rate label wins). */
-  function tickLabels() {
+  function tickLabels(dt) {
+    var ke = 1 - Math.exp(-(dt || 0.016) * 21.4);   // == 0.3/frame at 60 fps, any fps
     var NS = ns();
     if (!NS || !NS.cam) return;
     var THREE = window.THREE;
@@ -737,8 +703,8 @@
       if (pick === null || best > ownArea * 0.02) { sp.visible = false; continue; }
       sp.userData.liftXT = pick[0]; sp.userData.liftT = pick[1];
       placed.push(pickRect);
-      sp.userData.lift += (sp.userData.liftT - sp.userData.lift) * 0.3;
-      sp.userData.liftX += (sp.userData.liftXT - sp.userData.liftX) * 0.3;
+      sp.userData.lift += (sp.userData.liftT - sp.userData.lift) * ke;
+      sp.userData.liftX += (sp.userData.liftXT - sp.userData.liftX) * ke;
       var gx = sp.userData.liftX, gy = sp.userData.lift;
       var ex = ax + _r.x * gx, ey = ay + _r.y * gx + gy, ez = az + _r.z * gx;
       /* re-validate the EASED position under the CURRENT camera: with a
@@ -775,6 +741,8 @@
      camera (viewOffset included) — the pinhole fovScale/dist approximation
      under-read at close range once the camera started flying. */
   function screenRect(sp, x, y, z, cam) {
+    var NSr = ns();
+    if (sp.userData && sp.userData.l2d && NSr && NSr.textRect) return NSr.textRect(sp, x, y, z);
     var THREE = window.THREE;
     if (!_v) _v = new THREE.Vector3();
     _v.set(x, y, z).project(cam);
@@ -832,6 +800,10 @@
       if (ra && rb && NSf && NSf.focusAll === false && typeof NSf.nodeFocus === 'function') {
         foc = Math.min(NSf.nodeFocus(ra.n.id), NSf.nodeFocus(rb.n.id));
       }
+      /* level of detail (2026-10-08): with measured inter-galaxy streams on
+         screen (netscene_traffic.js) the overview shows those; the individual
+         conversations they aggregate appear at a close-up of their galaxy */
+      if (NSf && NSf.T && NSf.T.active && NSf.T.active()) foc *= 1 - (NSf.overK === undefined ? 1 : NSf.overK);
       L.foc = foc;
       if (!ra || !rb || ra.n === rb.n || foc < 0.35) {
         if (L.ok || L.init === undefined) {          // collapse: draws nothing
@@ -949,13 +921,19 @@
   /* ============================ per-frame ============================ */
   function netFlowsTick(t, dt) {
     if (!FL || !window.scene) return;
+    /* once per scene frame (2026-10-04): galaxy.js/cinema.js/showtime.js wrap
+       netSceneTick without carrying __flows, so the self-healing wrap above
+       re-wraps and this ran twice a frame - every particle and pulse at 2x.
+       netscene_exo.js has carried the same guard since 2026-09-19. */
+    if (t === FL.lastT) return;
+    FL.lastT = t;
     try {
-      var d = +dt > 0 ? Math.min(+dt, 0.1) : 0.016;
+      var d = +dt > 0 ? Math.min(+dt, 0.05) : 0.016;
       updateGeometry();                     // arcs follow tweening nodes
       tickColors(d);                        // travelling pulses on the ribbons
       tickParticles(d);
       tickChevrons();
-      tickLabels();
+      tickLabels(d);
       hover();
     } catch (e) { /* never break the host render loop */ }
   }
@@ -995,9 +973,10 @@
     for (var s = 0; s < n; s++) {
       var L = FL.geom[FL.pFlow[s]];
       if (!L || !L.ok) { FL.pPos[s * 3 + 1] = -1e5; continue; }
-      var speed = (40 + 240 * L.u) / L.len;          // rate encodes measured bps
-      var pr = FL.pProg[s] + speed * dt;
-      if (pr >= 1) pr -= 1;
+      // rate encodes measured bps; capped at 0.5 laps/s (MOTION.FLOW_LAPS_MAX)
+      // so a short chord can never whip particles round at hundreds of laps/s
+      var speed = Math.min((40 + 240 * L.u) / L.len, 0.5);
+      var pr = (FL.pProg[s] + speed * dt) % 1;
       FL.pProg[s] = pr;
       var u = 1 - pr;
       FL.pPos[s * 3]     = u * u * L.ax + 2 * u * pr * L.mx + pr * pr * L.bx;
@@ -1010,6 +989,9 @@
   /* hover: runs AFTER netscene's hover each frame, so a flow hit overrides the
      (hidden-or-node) tip; when we lose the hit we hide only what we showed. */
   function hover() {
+    /* retired 2026-10-08: details come from the click card (netscene.js),
+       never from hover tooltips that showed raw addresses */
+    return;
     var NS = ns();
     if (!NS || !FL.tip || !NS.mouse || !NS.cam) return;
     if ((FL.hoverFrame++) & 1) return;

@@ -1,0 +1,2509 @@
+{
+ "apiVersion": "v1",
+ "items": [
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-09-30T02:40:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "coredns",
+     "pod-template-hash": "ccb96694c"
+    },
+    "name": "coredns-ccb96694c-7vq4x",
+    "namespace": "kube-system",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "blockOwnerDeletion": true,
+      "controller": true,
+      "kind": "ReplicaSet",
+      "name": "coredns-ccb96694c",
+      "uid": "27a6fdf7-c76e-23a1-a2fd-32fe54d320ae"
+     }
+    ],
+    "uid": "18c79f9d-619e-1e7e-11af-415c301e1897"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/coredns:1.0",
+      "name": "coredns"
+     }
+    ],
+    "nodeName": "pi-server",
+    "restartPolicy": "Always",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-30T02:40:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/coredns:1.0",
+      "lastState": {},
+      "name": "coredns",
+      "ready": true,
+      "restartCount": 0,
+      "started": true,
+      "state": {
+       "running": {
+        "startedAt": "2026-09-30T02:40:08Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.10",
+    "phase": "Running",
+    "podIP": "10.42.0.33",
+    "qosClass": "Burstable",
+    "startTime": "2026-09-30T02:40:01Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-09-30T02:40:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "local-path-provisioner",
+     "pod-template-hash": "5cf85fd84d"
+    },
+    "name": "local-path-provisioner-5cf85fd84d-p2c8w",
+    "namespace": "kube-system",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "blockOwnerDeletion": true,
+      "controller": true,
+      "kind": "ReplicaSet",
+      "name": "local-path-provisioner-5cf85fd84d",
+      "uid": "e60b7973-e00a-1adf-94ec-ff844389af05"
+     }
+    ],
+    "uid": "1101e97b-a857-38a8-b9a9-9798cebf6936"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/local:1.0",
+      "name": "local"
+     }
+    ],
+    "nodeName": "pi-server",
+    "restartPolicy": "Always",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-30T02:40:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/local:1.0",
+      "lastState": {},
+      "name": "local",
+      "ready": true,
+      "restartCount": 0,
+      "started": true,
+      "state": {
+       "running": {
+        "startedAt": "2026-09-30T02:40:08Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.10",
+    "phase": "Running",
+    "podIP": "10.42.0.49",
+    "qosClass": "Burstable",
+    "startTime": "2026-09-30T02:40:01Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-09-30T02:40:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "metrics-server",
+     "pod-template-hash": "5985cbc9d7"
+    },
+    "name": "metrics-server-5985cbc9d7-xk7lm",
+    "namespace": "kube-system",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "blockOwnerDeletion": true,
+      "controller": true,
+      "kind": "ReplicaSet",
+      "name": "metrics-server-5985cbc9d7",
+      "uid": "236350b9-4269-7793-a292-3e955ffc36f6"
+     }
+    ],
+    "uid": "62ce7e10-534d-8680-2225-c9ea83adc235"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/metrics:1.0",
+      "name": "metrics"
+     }
+    ],
+    "nodeName": "pi-server",
+    "restartPolicy": "Always",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-30T02:40:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/metrics:1.0",
+      "lastState": {},
+      "name": "metrics",
+      "ready": true,
+      "restartCount": 0,
+      "started": true,
+      "state": {
+       "running": {
+        "startedAt": "2026-09-30T02:40:08Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.10",
+    "phase": "Running",
+    "podIP": "10.42.0.41",
+    "qosClass": "Burstable",
+    "startTime": "2026-09-30T02:40:01Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-09-30T02:40:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "traefik",
+     "pod-template-hash": "57b79cf995"
+    },
+    "name": "traefik-57b79cf995-hc6qn",
+    "namespace": "kube-system",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "blockOwnerDeletion": true,
+      "controller": true,
+      "kind": "ReplicaSet",
+      "name": "traefik-57b79cf995",
+      "uid": "e9c12151-90f9-ebaf-2b47-6445753895e6"
+     }
+    ],
+    "uid": "1b707446-3364-3196-cc12-cda038e219a8"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/traefik:1.0",
+      "name": "traefik"
+     }
+    ],
+    "nodeName": "pi-agent-1",
+    "restartPolicy": "Always",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-30T02:40:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/traefik:1.0",
+      "lastState": {},
+      "name": "traefik",
+      "ready": true,
+      "restartCount": 0,
+      "started": true,
+      "state": {
+       "running": {
+        "startedAt": "2026-09-30T02:40:08Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.11",
+    "phase": "Running",
+    "podIP": "10.42.1.34",
+    "qosClass": "Burstable",
+    "startTime": "2026-09-30T02:40:01Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-09-30T02:40:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "svclb-traefik"
+    },
+    "name": "svclb-traefik-8k2mx",
+    "namespace": "kube-system",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "controller": true,
+      "kind": "DaemonSet",
+      "name": "svclb-traefik",
+      "uid": "220dfab9-d700-f410-b32b-10203441a0ed"
+     }
+    ],
+    "uid": "c4615314-321b-1750-d373-2682c6bb36af"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/svclb:1.0",
+      "name": "svclb"
+     }
+    ],
+    "nodeName": "pi-server",
+    "restartPolicy": "Always",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-30T02:40:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/svclb:1.0",
+      "lastState": {},
+      "name": "svclb",
+      "ready": true,
+      "restartCount": 0,
+      "started": true,
+      "state": {
+       "running": {
+        "startedAt": "2026-09-30T02:40:08Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.10",
+    "phase": "Running",
+    "podIP": "10.42.0.29",
+    "qosClass": "Burstable",
+    "startTime": "2026-09-30T02:40:01Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-09-30T02:40:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "svclb-traefik"
+    },
+    "name": "svclb-traefik-9l3ny",
+    "namespace": "kube-system",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "controller": true,
+      "kind": "DaemonSet",
+      "name": "svclb-traefik",
+      "uid": "220dfab9-d700-f410-b32b-10203441a0ed"
+     }
+    ],
+    "uid": "54917855-07dd-c135-9773-9e65667d3644"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/svclb:1.0",
+      "name": "svclb"
+     }
+    ],
+    "nodeName": "pi-agent-1",
+    "restartPolicy": "Always",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-30T02:40:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/svclb:1.0",
+      "lastState": {},
+      "name": "svclb",
+      "ready": true,
+      "restartCount": 0,
+      "started": true,
+      "state": {
+       "running": {
+        "startedAt": "2026-09-30T02:40:08Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.11",
+    "phase": "Running",
+    "podIP": "10.42.1.29",
+    "qosClass": "Burstable",
+    "startTime": "2026-09-30T02:40:01Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-09-30T02:40:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "svclb-traefik"
+    },
+    "name": "svclb-traefik-4p5qz",
+    "namespace": "kube-system",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "controller": true,
+      "kind": "DaemonSet",
+      "name": "svclb-traefik",
+      "uid": "220dfab9-d700-f410-b32b-10203441a0ed"
+     }
+    ],
+    "uid": "39b0da2f-d157-189f-cf74-0928b4d25650"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/svclb:1.0",
+      "name": "svclb"
+     }
+    ],
+    "nodeName": "pi-agent-2",
+    "restartPolicy": "Always",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-30T02:40:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/svclb:1.0",
+      "lastState": {},
+      "name": "svclb",
+      "ready": true,
+      "restartCount": 0,
+      "started": true,
+      "state": {
+       "running": {
+        "startedAt": "2026-09-30T02:40:08Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.12",
+    "phase": "Running",
+    "podIP": "10.42.2.29",
+    "qosClass": "Burstable",
+    "startTime": "2026-09-30T02:40:01Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-09-30T02:40:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "svclb-traefik"
+    },
+    "name": "svclb-traefik-7r6sw",
+    "namespace": "kube-system",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "controller": true,
+      "kind": "DaemonSet",
+      "name": "svclb-traefik",
+      "uid": "220dfab9-d700-f410-b32b-10203441a0ed"
+     }
+    ],
+    "uid": "2193fbcb-f510-6a92-da85-76eb5bf387f0"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/svclb:1.0",
+      "name": "svclb"
+     }
+    ],
+    "nodeName": "pi-agent-3",
+    "restartPolicy": "Always",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-30T02:40:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/svclb:1.0",
+      "lastState": {},
+      "name": "svclb",
+      "ready": true,
+      "restartCount": 0,
+      "started": true,
+      "state": {
+       "running": {
+        "startedAt": "2026-09-30T02:40:08Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.13",
+    "phase": "Running",
+    "podIP": "10.42.3.29",
+    "qosClass": "Burstable",
+    "startTime": "2026-09-30T02:40:01Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-06-12T02:40:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "helm-install-traefik-crd"
+    },
+    "name": "helm-install-traefik-crd-6xj2b",
+    "namespace": "kube-system",
+    "ownerReferences": [
+     {
+      "apiVersion": "batch/v1",
+      "controller": true,
+      "kind": "Job",
+      "name": "helm-install-traefik-crd",
+      "uid": "5211e36c-0cde-f995-96eb-398392095a1b"
+     }
+    ],
+    "uid": "c53c3036-ed31-fd1f-e7a3-b9ee83fb2dfa"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/helm:1.0",
+      "name": "helm"
+     }
+    ],
+    "nodeName": "pi-server",
+    "restartPolicy": "Never",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-06-12T02:40:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-06-12T02:40:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-06-12T02:40:06Z",
+      "status": "False",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-06-12T02:40:06Z",
+      "reason": "PodCompleted",
+      "status": "False",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/helm:1.0",
+      "lastState": {},
+      "name": "helm",
+      "ready": false,
+      "restartCount": 0,
+      "started": false,
+      "state": {
+       "terminated": {
+        "exitCode": 0,
+        "finishedAt": "2026-06-12T02:41:00Z",
+        "reason": "Completed",
+        "startedAt": "2026-06-12T02:40:02Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.10",
+    "phase": "Succeeded",
+    "podIP": "10.42.0.40",
+    "qosClass": "Burstable",
+    "startTime": "2026-06-12T02:40:01Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-06-12T02:40:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "helm-install-traefik"
+    },
+    "name": "helm-install-traefik-q8w4n",
+    "namespace": "kube-system",
+    "ownerReferences": [
+     {
+      "apiVersion": "batch/v1",
+      "controller": true,
+      "kind": "Job",
+      "name": "helm-install-traefik",
+      "uid": "054dfb50-aab1-88bd-c9fd-2f40945649a5"
+     }
+    ],
+    "uid": "9ee4057c-4785-c2ad-33b2-b1442c792e60"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/helm:1.0",
+      "name": "helm"
+     }
+    ],
+    "nodeName": "pi-server",
+    "restartPolicy": "Never",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-06-12T02:40:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-06-12T02:40:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-06-12T02:40:06Z",
+      "status": "False",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-06-12T02:40:06Z",
+      "reason": "PodCompleted",
+      "status": "False",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/helm:1.0",
+      "lastState": {},
+      "name": "helm",
+      "ready": false,
+      "restartCount": 1,
+      "started": false,
+      "state": {
+       "terminated": {
+        "exitCode": 0,
+        "finishedAt": "2026-06-12T02:41:00Z",
+        "reason": "Completed",
+        "startedAt": "2026-06-12T02:40:02Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.10",
+    "phase": "Succeeded",
+    "podIP": "10.42.0.36",
+    "qosClass": "Burstable",
+    "startTime": "2026-06-12T02:40:01Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-09-30T02:40:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "prometheus"
+    },
+    "name": "prometheus-0",
+    "namespace": "monitoring",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "controller": true,
+      "kind": "StatefulSet",
+      "name": "prometheus",
+      "uid": "bd663937-51d8-85b8-0202-335ac989361c"
+     }
+    ],
+    "uid": "a52e4f28-5618-3270-8e81-f108942b5b6b"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/prometheus:1.0",
+      "name": "prometheus"
+     }
+    ],
+    "nodeName": "pi-agent-2",
+    "restartPolicy": "Always",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-30T02:40:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/prometheus:1.0",
+      "lastState": {},
+      "name": "prometheus",
+      "ready": true,
+      "restartCount": 0,
+      "started": true,
+      "state": {
+       "running": {
+        "startedAt": "2026-09-30T02:40:08Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.12",
+    "phase": "Running",
+    "podIP": "10.42.2.22",
+    "qosClass": "Burstable",
+    "startTime": "2026-09-30T02:40:01Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-09-30T02:40:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "grafana",
+     "pod-template-hash": "6f7c8d9b5"
+    },
+    "name": "grafana-6f7c8d9b5-r2t9z",
+    "namespace": "monitoring",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "blockOwnerDeletion": true,
+      "controller": true,
+      "kind": "ReplicaSet",
+      "name": "grafana-6f7c8d9b5",
+      "uid": "01bfb8b5-fc58-1085-4c54-63a04782348d"
+     }
+    ],
+    "uid": "8046d495-4411-16b7-59bc-08cc1b2c751f"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/grafana:1.0",
+      "name": "grafana"
+     }
+    ],
+    "nodeName": "pi-agent-1",
+    "restartPolicy": "Always",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-30T02:40:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/grafana:1.0",
+      "lastState": {},
+      "name": "grafana",
+      "ready": true,
+      "restartCount": 0,
+      "started": true,
+      "state": {
+       "running": {
+        "startedAt": "2026-09-30T02:40:08Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.11",
+    "phase": "Running",
+    "podIP": "10.42.1.33",
+    "qosClass": "Burstable",
+    "startTime": "2026-09-30T02:40:01Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-09-30T02:40:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "kube-state-metrics",
+     "pod-template-hash": "7d9f4b6c8"
+    },
+    "name": "kube-state-metrics-7d9f4b6c8-m4k2p",
+    "namespace": "monitoring",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "blockOwnerDeletion": true,
+      "controller": true,
+      "kind": "ReplicaSet",
+      "name": "kube-state-metrics-7d9f4b6c8",
+      "uid": "4ff9410a-2249-6ad4-5431-ff63ebd4c8ae"
+     }
+    ],
+    "uid": "d5332ec0-4d16-03ae-6c34-26e98c284895"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/kube:1.0",
+      "name": "kube"
+     }
+    ],
+    "nodeName": "pi-agent-2",
+    "restartPolicy": "Always",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-30T02:40:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/kube:1.0",
+      "lastState": {},
+      "name": "kube",
+      "ready": true,
+      "restartCount": 0,
+      "started": true,
+      "state": {
+       "running": {
+        "startedAt": "2026-09-30T02:40:08Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.12",
+    "phase": "Running",
+    "podIP": "10.42.2.44",
+    "qosClass": "Burstable",
+    "startTime": "2026-09-30T02:40:01Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-09-30T02:40:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "node-exporter"
+    },
+    "name": "node-exporter-f8h2k",
+    "namespace": "monitoring",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "controller": true,
+      "kind": "DaemonSet",
+      "name": "node-exporter",
+      "uid": "4a428d29-ac51-a4d3-51ff-7b4948bfb429"
+     }
+    ],
+    "uid": "8c42f004-0b4d-2120-99af-6dedefa0e307"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/node:1.0",
+      "name": "node"
+     }
+    ],
+    "nodeName": "pi-server",
+    "restartPolicy": "Always",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-30T02:40:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/node:1.0",
+      "lastState": {},
+      "name": "node",
+      "ready": true,
+      "restartCount": 0,
+      "started": true,
+      "state": {
+       "running": {
+        "startedAt": "2026-09-30T02:40:08Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.10",
+    "phase": "Running",
+    "podIP": "10.42.0.29",
+    "qosClass": "Burstable",
+    "startTime": "2026-09-30T02:40:01Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-09-30T02:40:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "node-exporter"
+    },
+    "name": "node-exporter-j3l9m",
+    "namespace": "monitoring",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "controller": true,
+      "kind": "DaemonSet",
+      "name": "node-exporter",
+      "uid": "4a428d29-ac51-a4d3-51ff-7b4948bfb429"
+     }
+    ],
+    "uid": "9bf6dbf5-326f-b8e3-fc17-33a8d58e73f2"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/node:1.0",
+      "name": "node"
+     }
+    ],
+    "nodeName": "pi-agent-1",
+    "restartPolicy": "Always",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-30T02:40:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/node:1.0",
+      "lastState": {},
+      "name": "node",
+      "ready": true,
+      "restartCount": 0,
+      "started": true,
+      "state": {
+       "running": {
+        "startedAt": "2026-09-30T02:40:08Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.11",
+    "phase": "Running",
+    "podIP": "10.42.1.29",
+    "qosClass": "Burstable",
+    "startTime": "2026-09-30T02:40:01Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-09-30T02:40:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "node-exporter"
+    },
+    "name": "node-exporter-n4p6q",
+    "namespace": "monitoring",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "controller": true,
+      "kind": "DaemonSet",
+      "name": "node-exporter",
+      "uid": "4a428d29-ac51-a4d3-51ff-7b4948bfb429"
+     }
+    ],
+    "uid": "06580e76-4534-9c15-adcd-1f6f28f110f4"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/node:1.0",
+      "name": "node"
+     }
+    ],
+    "nodeName": "pi-agent-2",
+    "restartPolicy": "Always",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-30T02:40:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/node:1.0",
+      "lastState": {},
+      "name": "node",
+      "ready": true,
+      "restartCount": 0,
+      "started": true,
+      "state": {
+       "running": {
+        "startedAt": "2026-09-30T02:40:08Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.12",
+    "phase": "Running",
+    "podIP": "10.42.2.29",
+    "qosClass": "Burstable",
+    "startTime": "2026-09-30T02:40:01Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-09-30T02:40:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "node-exporter"
+    },
+    "name": "node-exporter-r7s1t",
+    "namespace": "monitoring",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "controller": true,
+      "kind": "DaemonSet",
+      "name": "node-exporter",
+      "uid": "4a428d29-ac51-a4d3-51ff-7b4948bfb429"
+     }
+    ],
+    "uid": "7e2cfbde-20f4-da9a-affc-86823b17d655"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/node:1.0",
+      "name": "node"
+     }
+    ],
+    "nodeName": "pi-agent-3",
+    "restartPolicy": "Always",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-30T02:40:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/node:1.0",
+      "lastState": {},
+      "name": "node",
+      "ready": true,
+      "restartCount": 0,
+      "started": true,
+      "state": {
+       "running": {
+        "startedAt": "2026-09-30T02:40:08Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.13",
+    "phase": "Running",
+    "podIP": "10.42.3.29",
+    "qosClass": "Burstable",
+    "startTime": "2026-09-30T02:40:01Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-09-30T02:40:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "cert-manager",
+     "pod-template-hash": "7b8f9c6d4"
+    },
+    "name": "cert-manager-7b8f9c6d4-wv5xz",
+    "namespace": "cert-manager",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "blockOwnerDeletion": true,
+      "controller": true,
+      "kind": "ReplicaSet",
+      "name": "cert-manager-7b8f9c6d4",
+      "uid": "06d14aea-53cb-0f29-681c-ebbd87e6080f"
+     }
+    ],
+    "uid": "17681760-f9ec-52e2-6717-a1136820999f"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/cert:1.0",
+      "name": "cert"
+     }
+    ],
+    "nodeName": "pi-agent-1",
+    "restartPolicy": "Always",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-30T02:40:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/cert:1.0",
+      "lastState": {},
+      "name": "cert",
+      "ready": true,
+      "restartCount": 0,
+      "started": true,
+      "state": {
+       "running": {
+        "startedAt": "2026-09-30T02:40:08Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.11",
+    "phase": "Running",
+    "podIP": "10.42.1.38",
+    "qosClass": "Burstable",
+    "startTime": "2026-09-30T02:40:01Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-09-30T02:40:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "cert-manager-cainjector",
+     "pod-template-hash": "5c9d8b7f6"
+    },
+    "name": "cert-manager-cainjector-5c9d8b7f6-a1b2c",
+    "namespace": "cert-manager",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "blockOwnerDeletion": true,
+      "controller": true,
+      "kind": "ReplicaSet",
+      "name": "cert-manager-cainjector-5c9d8b7f6",
+      "uid": "552b2dc9-3bce-663b-e44d-d3969b67d1a7"
+     }
+    ],
+    "uid": "cba2759e-2f7a-53ef-f225-ea53335c7f2f"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/cert:1.0",
+      "name": "cert"
+     }
+    ],
+    "nodeName": "pi-agent-2",
+    "restartPolicy": "Always",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-30T02:40:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/cert:1.0",
+      "lastState": {},
+      "name": "cert",
+      "ready": true,
+      "restartCount": 0,
+      "started": true,
+      "state": {
+       "running": {
+        "startedAt": "2026-09-30T02:40:08Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.12",
+    "phase": "Running",
+    "podIP": "10.42.2.49",
+    "qosClass": "Burstable",
+    "startTime": "2026-09-30T02:40:01Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-09-30T02:40:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "cert-manager-webhook",
+     "pod-template-hash": "6d4f5b8c9"
+    },
+    "name": "cert-manager-webhook-6d4f5b8c9-d3e4f",
+    "namespace": "cert-manager",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "blockOwnerDeletion": true,
+      "controller": true,
+      "kind": "ReplicaSet",
+      "name": "cert-manager-webhook-6d4f5b8c9",
+      "uid": "f85933e0-4154-b6ed-a94d-49269a8e9fad"
+     }
+    ],
+    "uid": "57e18069-233d-32bf-f2f0-2549feb40559"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/cert:1.0",
+      "name": "cert"
+     }
+    ],
+    "nodeName": "pi-agent-1",
+    "restartPolicy": "Always",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-30T02:40:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/cert:1.0",
+      "lastState": {},
+      "name": "cert",
+      "ready": true,
+      "restartCount": 0,
+      "started": true,
+      "state": {
+       "running": {
+        "startedAt": "2026-09-30T02:40:08Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.11",
+    "phase": "Running",
+    "podIP": "10.42.1.46",
+    "qosClass": "Burstable",
+    "startTime": "2026-09-30T02:40:01Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-10-08T02:40:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "web-frontend",
+     "pod-template-hash": "8c7d6f5b4"
+    },
+    "name": "web-frontend-8c7d6f5b4-g5h6j",
+    "namespace": "apps",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "blockOwnerDeletion": true,
+      "controller": true,
+      "kind": "ReplicaSet",
+      "name": "web-frontend-8c7d6f5b4",
+      "uid": "9855d261-3f0e-b799-0e7c-52674cec9a79"
+     }
+    ],
+    "uid": "7c9964f6-5405-2931-d8f8-96df709f6d57"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/web:1.0",
+      "name": "web"
+     }
+    ],
+    "nodeName": "pi-agent-1",
+    "restartPolicy": "Always",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-10-08T02:40:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-10-08T02:40:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-10-08T02:40:06Z",
+      "status": "True",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-10-08T02:40:06Z",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/web:1.0",
+      "lastState": {},
+      "name": "web",
+      "ready": true,
+      "restartCount": 0,
+      "started": true,
+      "state": {
+       "running": {
+        "startedAt": "2026-10-08T02:40:08Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.11",
+    "phase": "Running",
+    "podIP": "10.42.1.38",
+    "qosClass": "Burstable",
+    "startTime": "2026-10-08T02:40:01Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-10-08T02:40:30Z",
+    "labels": {
+     "app.kubernetes.io/name": "web-frontend",
+     "pod-template-hash": "8c7d6f5b4"
+    },
+    "name": "web-frontend-8c7d6f5b4-k7l8m",
+    "namespace": "apps",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "blockOwnerDeletion": true,
+      "controller": true,
+      "kind": "ReplicaSet",
+      "name": "web-frontend-8c7d6f5b4",
+      "uid": "9855d261-3f0e-b799-0e7c-52674cec9a79"
+     }
+    ],
+    "uid": "d6c62169-9d80-8e9f-a440-763554c979ff"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/web:1.0",
+      "name": "web"
+     }
+    ],
+    "nodeName": "pi-agent-2",
+    "restartPolicy": "Always",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-10-08T02:40:30Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-10-08T02:40:32Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-10-08T02:40:36Z",
+      "status": "True",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-10-08T02:40:36Z",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/web:1.0",
+      "lastState": {},
+      "name": "web",
+      "ready": true,
+      "restartCount": 0,
+      "started": true,
+      "state": {
+       "running": {
+        "startedAt": "2026-10-08T02:40:38Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.12",
+    "phase": "Running",
+    "podIP": "10.42.2.38",
+    "qosClass": "Burstable",
+    "startTime": "2026-10-08T02:40:31Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-10-08T02:41:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "web-frontend",
+     "pod-template-hash": "8c7d6f5b4"
+    },
+    "name": "web-frontend-8c7d6f5b4-n9p0q",
+    "namespace": "apps",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "blockOwnerDeletion": true,
+      "controller": true,
+      "kind": "ReplicaSet",
+      "name": "web-frontend-8c7d6f5b4",
+      "uid": "9855d261-3f0e-b799-0e7c-52674cec9a79"
+     }
+    ],
+    "uid": "220613c7-5aac-5b5c-29a9-eb2c8a33da97"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/web:1.0",
+      "name": "web"
+     }
+    ],
+    "nodeName": "pi-agent-3",
+    "restartPolicy": "Always",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-10-08T02:41:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-10-08T02:41:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-10-08T02:41:06Z",
+      "status": "True",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-10-08T02:41:06Z",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/web:1.0",
+      "lastState": {},
+      "name": "web",
+      "ready": true,
+      "restartCount": 0,
+      "started": true,
+      "state": {
+       "running": {
+        "startedAt": "2026-10-08T02:41:08Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.13",
+    "phase": "Running",
+    "podIP": "10.42.3.38",
+    "qosClass": "Burstable",
+    "startTime": "2026-10-08T02:41:01Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-09-30T02:40:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "api",
+     "pod-template-hash": "5f6g7h8j9"
+    },
+    "name": "api-5f6g7h8j9-r1s2t",
+    "namespace": "apps",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "blockOwnerDeletion": true,
+      "controller": true,
+      "kind": "ReplicaSet",
+      "name": "api-5f6g7h8j9",
+      "uid": "d96f81e6-9c8d-4e33-cf54-79b18d339274"
+     }
+    ],
+    "uid": "cafd8840-ac5f-3efd-6744-22c550cd1dbd"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/api:1.0",
+      "name": "api"
+     }
+    ],
+    "nodeName": "pi-agent-1",
+    "restartPolicy": "Always",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-30T02:40:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/api:1.0",
+      "lastState": {
+       "terminated": {
+        "exitCode": 1,
+        "finishedAt": "2026-10-09T20:40:00Z",
+        "reason": "Error",
+        "startedAt": "2026-10-09T20:39:30Z"
+       }
+      },
+      "name": "api",
+      "ready": true,
+      "restartCount": 2,
+      "started": true,
+      "state": {
+       "running": {
+        "startedAt": "2026-10-09T20:40:05Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.11",
+    "phase": "Running",
+    "podIP": "10.42.1.29",
+    "qosClass": "Burstable",
+    "startTime": "2026-09-30T02:40:01Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-09-30T02:40:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "api",
+     "pod-template-hash": "5f6g7h8j9"
+    },
+    "name": "api-5f6g7h8j9-u3v4w",
+    "namespace": "apps",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "blockOwnerDeletion": true,
+      "controller": true,
+      "kind": "ReplicaSet",
+      "name": "api-5f6g7h8j9",
+      "uid": "d96f81e6-9c8d-4e33-cf54-79b18d339274"
+     }
+    ],
+    "uid": "a570a8b7-2480-5b2e-9685-5a72b6186c98"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/api:1.0",
+      "name": "api"
+     }
+    ],
+    "nodeName": "pi-agent-2",
+    "restartPolicy": "Always",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-30T02:40:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/api:1.0",
+      "lastState": {},
+      "name": "api",
+      "ready": true,
+      "restartCount": 0,
+      "started": true,
+      "state": {
+       "running": {
+        "startedAt": "2026-09-30T02:40:08Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.12",
+    "phase": "Running",
+    "podIP": "10.42.2.29",
+    "qosClass": "Burstable",
+    "startTime": "2026-09-30T02:40:01Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-09-30T02:40:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "redis"
+    },
+    "name": "redis-0",
+    "namespace": "apps",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "controller": true,
+      "kind": "StatefulSet",
+      "name": "redis",
+      "uid": "1c99e2b0-296c-98a5-cdcb-bc3648b80ad1"
+     }
+    ],
+    "uid": "3c2a7903-2c67-579b-a7e9-d64192a45d10"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/redis:1.0",
+      "name": "redis"
+     }
+    ],
+    "nodeName": "pi-agent-2",
+    "restartPolicy": "Always",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-30T02:40:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/redis:1.0",
+      "lastState": {},
+      "name": "redis",
+      "ready": true,
+      "restartCount": 0,
+      "started": true,
+      "state": {
+       "running": {
+        "startedAt": "2026-09-30T02:40:08Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.12",
+    "phase": "Running",
+    "podIP": "10.42.2.17",
+    "qosClass": "Burstable",
+    "startTime": "2026-09-30T02:40:01Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-09-30T02:40:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "jellyfin",
+     "pod-template-hash": "9a8b7c6d5"
+    },
+    "name": "jellyfin-9a8b7c6d5-x5y6z",
+    "namespace": "media",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "blockOwnerDeletion": true,
+      "controller": true,
+      "kind": "ReplicaSet",
+      "name": "jellyfin-9a8b7c6d5",
+      "uid": "0584415d-09f2-37a2-e9c7-4b823c205887"
+     }
+    ],
+    "uid": "efae03ca-150a-aeaf-fbc8-e20a1500f120"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/jellyfin:1.0",
+      "name": "jellyfin"
+     }
+    ],
+    "nodeName": "pi-agent-2",
+    "restartPolicy": "Always",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-30T02:40:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/jellyfin:1.0",
+      "lastState": {},
+      "name": "jellyfin",
+      "ready": true,
+      "restartCount": 0,
+      "started": true,
+      "state": {
+       "running": {
+        "startedAt": "2026-09-30T02:40:08Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.12",
+    "phase": "Running",
+    "podIP": "10.42.2.34",
+    "qosClass": "Burstable",
+    "startTime": "2026-09-30T02:40:01Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-10-09T23:40:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "photo-sync",
+     "pod-template-hash": "4c5d6e7f8"
+    },
+    "name": "photo-sync-4c5d6e7f8-b7c8d",
+    "namespace": "photos",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "blockOwnerDeletion": true,
+      "controller": true,
+      "kind": "ReplicaSet",
+      "name": "photo-sync-4c5d6e7f8",
+      "uid": "946e5f49-44b4-4660-97fe-ce71efa63593"
+     }
+    ],
+    "uid": "e54c481f-0bf5-fe6a-be1c-25ce0c88d0ed"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/photo:1.0",
+      "name": "photo"
+     }
+    ],
+    "nodeName": "pi-agent-1",
+    "restartPolicy": "Always",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-10-09T23:40:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-10-09T23:40:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-10-09T23:40:06Z",
+      "status": "False",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-10-09T23:40:06Z",
+      "reason": "ContainersNotReady",
+      "status": "False",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/photo:1.0",
+      "lastState": {
+       "terminated": {
+        "exitCode": 1,
+        "finishedAt": "2026-10-10T02:37:40Z",
+        "reason": "Error",
+        "startedAt": "2026-10-10T02:37:10Z"
+       }
+      },
+      "name": "photo",
+      "ready": false,
+      "restartCount": 37,
+      "started": false,
+      "state": {
+       "waiting": {
+        "message": "back-off 5m0s restarting failed container",
+        "reason": "CrashLoopBackOff"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.11",
+    "phase": "Running",
+    "podIP": "10.42.1.36",
+    "qosClass": "Burstable",
+    "startTime": "2026-10-09T23:40:01Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-09-30T02:40:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "whisper",
+     "pod-template-hash": "3b4c5d6e7"
+    },
+    "name": "whisper-3b4c5d6e7-e9f0g",
+    "namespace": "ai",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "blockOwnerDeletion": true,
+      "controller": true,
+      "kind": "ReplicaSet",
+      "name": "whisper-3b4c5d6e7",
+      "uid": "60186f1c-71b9-7496-99b5-b3badbfc465b"
+     }
+    ],
+    "uid": "f79fdcc0-79ef-9fdd-cae7-8a509d2619c7"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/whisper:1.0",
+      "name": "whisper"
+     }
+    ],
+    "nodeName": "pi-agent-2",
+    "restartPolicy": "Always",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-09-30T02:40:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-09-30T02:40:06Z",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/whisper:1.0",
+      "lastState": {},
+      "name": "whisper",
+      "ready": true,
+      "restartCount": 0,
+      "started": true,
+      "state": {
+       "running": {
+        "startedAt": "2026-09-30T02:40:08Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.12",
+    "phase": "Running",
+    "podIP": "10.42.2.33",
+    "qosClass": "Burstable",
+    "startTime": "2026-09-30T02:40:01Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-10-10T02:00:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "ollama",
+     "pod-template-hash": "2a3b4c5d6"
+    },
+    "name": "ollama-2a3b4c5d6-h1i2j",
+    "namespace": "ai",
+    "ownerReferences": [
+     {
+      "apiVersion": "apps/v1",
+      "blockOwnerDeletion": true,
+      "controller": true,
+      "kind": "ReplicaSet",
+      "name": "ollama-2a3b4c5d6",
+      "uid": "e2640a35-2ab3-6b5e-ab9f-6d7dd327ce88"
+     }
+    ],
+    "uid": "b47dda94-75ab-c8c0-c362-12379c407d9c"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/ollama:1.0",
+      "name": "ollama"
+     }
+    ],
+    "restartPolicy": "Always",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-10-10T02:00:00Z",
+      "message": "0/4 nodes are available: 1 node(s) had untolerated taint {node.kubernetes.io/unreachable: }, 3 Insufficient memory.",
+      "reason": "Unschedulable",
+      "status": "False",
+      "type": "PodScheduled"
+     }
+    ],
+    "phase": "Pending",
+    "qosClass": "Burstable"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-10-09T17:40:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "nightly-backup-29341440"
+    },
+    "name": "nightly-backup-29341440-k3l4m",
+    "namespace": "default",
+    "ownerReferences": [
+     {
+      "apiVersion": "batch/v1",
+      "controller": true,
+      "kind": "Job",
+      "name": "nightly-backup-29341440",
+      "uid": "ed8a72e7-a270-7497-2784-2d8273fdaf17"
+     }
+    ],
+    "uid": "16cdb34b-a857-3f79-5dbe-1ad35bacaf70"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/nightly:1.0",
+      "name": "nightly"
+     }
+    ],
+    "nodeName": "pi-agent-1",
+    "restartPolicy": "Never",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-10-09T17:40:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-10-09T17:40:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-10-09T17:40:06Z",
+      "status": "False",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-10-09T17:40:06Z",
+      "reason": "PodCompleted",
+      "status": "False",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/nightly:1.0",
+      "lastState": {},
+      "name": "nightly",
+      "ready": false,
+      "restartCount": 0,
+      "started": false,
+      "state": {
+       "terminated": {
+        "exitCode": 0,
+        "finishedAt": "2026-10-09T17:41:00Z",
+        "reason": "Completed",
+        "startedAt": "2026-10-09T17:40:02Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.11",
+    "phase": "Succeeded",
+    "podIP": "10.42.1.39",
+    "qosClass": "Burstable",
+    "startTime": "2026-10-09T17:40:01Z"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Pod",
+   "metadata": {
+    "creationTimestamp": "2026-10-08T17:40:00Z",
+    "labels": {
+     "app.kubernetes.io/name": "nightly-backup-29340000"
+    },
+    "name": "nightly-backup-29340000-n5o6p",
+    "namespace": "default",
+    "ownerReferences": [
+     {
+      "apiVersion": "batch/v1",
+      "controller": true,
+      "kind": "Job",
+      "name": "nightly-backup-29340000",
+      "uid": "61359ca6-bde6-da34-9408-b62a4618605e"
+     }
+    ],
+    "uid": "431c5ca0-34f6-f86e-1175-18c374ad4407"
+   },
+   "spec": {
+    "containers": [
+     {
+      "image": "registry.example/nightly:1.0",
+      "name": "nightly"
+     }
+    ],
+    "nodeName": "pi-agent-2",
+    "restartPolicy": "Never",
+    "serviceAccountName": "default"
+   },
+   "status": {
+    "conditions": [
+     {
+      "lastTransitionTime": "2026-10-08T17:40:00Z",
+      "status": "True",
+      "type": "PodScheduled"
+     },
+     {
+      "lastTransitionTime": "2026-10-08T17:40:02Z",
+      "status": "True",
+      "type": "Initialized"
+     },
+     {
+      "lastTransitionTime": "2026-10-08T17:40:06Z",
+      "status": "False",
+      "type": "ContainersReady"
+     },
+     {
+      "lastTransitionTime": "2026-10-08T17:40:06Z",
+      "reason": "PodCompleted",
+      "status": "False",
+      "type": "Ready"
+     }
+    ],
+    "containerStatuses": [
+     {
+      "image": "registry.example/nightly:1.0",
+      "lastState": {},
+      "name": "nightly",
+      "ready": false,
+      "restartCount": 0,
+      "started": false,
+      "state": {
+       "terminated": {
+        "exitCode": 0,
+        "finishedAt": "2026-10-08T17:41:00Z",
+        "reason": "Completed",
+        "startedAt": "2026-10-08T17:40:02Z"
+       }
+      }
+     }
+    ],
+    "hostIP": "192.0.2.12",
+    "phase": "Succeeded",
+    "podIP": "10.42.2.39",
+    "qosClass": "Burstable",
+    "startTime": "2026-10-08T17:40:01Z"
+   }
+  }
+ ],
+ "kind": "PodList",
+ "metadata": {
+  "resourceVersion": "4242"
+ }
+}

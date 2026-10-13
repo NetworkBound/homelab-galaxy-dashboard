@@ -1,0 +1,23 @@
+# OPTIONAL (not in kustomization.yaml): publish through k3s's bundled Traefik.
+# The dashboard has no login of its own and accepts POSTs that drive the room
+# lights: keep the host LAN-only or put it behind an auth proxy (Authelia).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: galaxy-dashboard
+  namespace: galaxy
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: galaxy.lan
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: galaxy-dashboard
+                port:
+                  name: http

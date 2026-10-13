@@ -1,0 +1,415 @@
+{
+ "apiVersion": "metrics.k8s.io/v1beta1",
+ "items": [
+  {
+   "containers": [
+    {
+     "name": "coredns",
+     "usage": {
+      "cpu": "169m",
+      "memory": "379Mi"
+     }
+    }
+   ],
+   "metadata": {
+    "name": "coredns-ccb96694c-7vq4x",
+    "namespace": "kube-system"
+   },
+   "timestamp": "2026-10-10T02:39:45Z",
+   "window": "20s"
+  },
+  {
+   "containers": [
+    {
+     "name": "local",
+     "usage": {
+      "cpu": "139m",
+      "memory": "369Mi"
+     }
+    }
+   ],
+   "metadata": {
+    "name": "local-path-provisioner-5cf85fd84d-p2c8w",
+    "namespace": "kube-system"
+   },
+   "timestamp": "2026-10-10T02:39:45Z",
+   "window": "20s"
+  },
+  {
+   "containers": [
+    {
+     "name": "metrics",
+     "usage": {
+      "cpu": "85m",
+      "memory": "395Mi"
+     }
+    }
+   ],
+   "metadata": {
+    "name": "metrics-server-5985cbc9d7-xk7lm",
+    "namespace": "kube-system"
+   },
+   "timestamp": "2026-10-10T02:39:45Z",
+   "window": "20s"
+  },
+  {
+   "containers": [
+    {
+     "name": "traefik",
+     "usage": {
+      "cpu": "20m",
+      "memory": "410Mi"
+     }
+    }
+   ],
+   "metadata": {
+    "name": "traefik-57b79cf995-hc6qn",
+    "namespace": "kube-system"
+   },
+   "timestamp": "2026-10-10T02:39:45Z",
+   "window": "20s"
+  },
+  {
+   "containers": [
+    {
+     "name": "svclb",
+     "usage": {
+      "cpu": "14m",
+      "memory": "224Mi"
+     }
+    }
+   ],
+   "metadata": {
+    "name": "svclb-traefik-8k2mx",
+    "namespace": "kube-system"
+   },
+   "timestamp": "2026-10-10T02:39:45Z",
+   "window": "20s"
+  },
+  {
+   "containers": [
+    {
+     "name": "svclb",
+     "usage": {
+      "cpu": "19m",
+      "memory": "229Mi"
+     }
+    }
+   ],
+   "metadata": {
+    "name": "svclb-traefik-9l3ny",
+    "namespace": "kube-system"
+   },
+   "timestamp": "2026-10-10T02:39:45Z",
+   "window": "20s"
+  },
+  {
+   "containers": [
+    {
+     "name": "svclb",
+     "usage": {
+      "cpu": "24m",
+      "memory": "234Mi"
+     }
+    }
+   ],
+   "metadata": {
+    "name": "svclb-traefik-4p5qz",
+    "namespace": "kube-system"
+   },
+   "timestamp": "2026-10-10T02:39:45Z",
+   "window": "20s"
+  },
+  {
+   "containers": [
+    {
+     "name": "prometheus",
+     "usage": {
+      "cpu": "345m",
+      "memory": "1620Mi"
+     }
+    }
+   ],
+   "metadata": {
+    "name": "prometheus-0",
+    "namespace": "monitoring"
+   },
+   "timestamp": "2026-10-10T02:39:45Z",
+   "window": "20s"
+  },
+  {
+   "containers": [
+    {
+     "name": "grafana",
+     "usage": {
+      "cpu": "435m",
+      "memory": "1420Mi"
+     }
+    }
+   ],
+   "metadata": {
+    "name": "grafana-6f7c8d9b5-r2t9z",
+    "namespace": "monitoring"
+   },
+   "timestamp": "2026-10-10T02:39:45Z",
+   "window": "20s"
+  },
+  {
+   "containers": [
+    {
+     "name": "kube",
+     "usage": {
+      "cpu": "132m",
+      "memory": "222Mi"
+     }
+    }
+   ],
+   "metadata": {
+    "name": "kube-state-metrics-7d9f4b6c8-m4k2p",
+    "namespace": "monitoring"
+   },
+   "timestamp": "2026-10-10T02:39:45Z",
+   "window": "20s"
+  },
+  {
+   "containers": [
+    {
+     "name": "node",
+     "usage": {
+      "cpu": "22m",
+      "memory": "232Mi"
+     }
+    }
+   ],
+   "metadata": {
+    "name": "node-exporter-f8h2k",
+    "namespace": "monitoring"
+   },
+   "timestamp": "2026-10-10T02:39:45Z",
+   "window": "20s"
+  },
+  {
+   "containers": [
+    {
+     "name": "node",
+     "usage": {
+      "cpu": "34m",
+      "memory": "244Mi"
+     }
+    }
+   ],
+   "metadata": {
+    "name": "node-exporter-j3l9m",
+    "namespace": "monitoring"
+   },
+   "timestamp": "2026-10-10T02:39:45Z",
+   "window": "20s"
+  },
+  {
+   "containers": [
+    {
+     "name": "node",
+     "usage": {
+      "cpu": "44m",
+      "memory": "254Mi"
+     }
+    }
+   ],
+   "metadata": {
+    "name": "node-exporter-n4p6q",
+    "namespace": "monitoring"
+   },
+   "timestamp": "2026-10-10T02:39:45Z",
+   "window": "20s"
+  },
+  {
+   "containers": [
+    {
+     "name": "cert",
+     "usage": {
+      "cpu": "163m",
+      "memory": "113Mi"
+     }
+    }
+   ],
+   "metadata": {
+    "name": "cert-manager-7b8f9c6d4-wv5xz",
+    "namespace": "cert-manager"
+   },
+   "timestamp": "2026-10-10T02:39:45Z",
+   "window": "20s"
+  },
+  {
+   "containers": [
+    {
+     "name": "cert",
+     "usage": {
+      "cpu": "48m",
+      "memory": "278Mi"
+     }
+    }
+   ],
+   "metadata": {
+    "name": "cert-manager-cainjector-5c9d8b7f6-a1b2c",
+    "namespace": "cert-manager"
+   },
+   "timestamp": "2026-10-10T02:39:45Z",
+   "window": "20s"
+  },
+  {
+   "containers": [
+    {
+     "name": "cert",
+     "usage": {
+      "cpu": "111m",
+      "memory": "381Mi"
+     }
+    }
+   ],
+   "metadata": {
+    "name": "cert-manager-webhook-6d4f5b8c9-d3e4f",
+    "namespace": "cert-manager"
+   },
+   "timestamp": "2026-10-10T02:39:45Z",
+   "window": "20s"
+  },
+  {
+   "containers": [
+    {
+     "name": "web",
+     "usage": {
+      "cpu": "68m",
+      "memory": "18Mi"
+     }
+    }
+   ],
+   "metadata": {
+    "name": "web-frontend-8c7d6f5b4-g5h6j",
+    "namespace": "apps"
+   },
+   "timestamp": "2026-10-10T02:39:45Z",
+   "window": "20s"
+  },
+  {
+   "containers": [
+    {
+     "name": "web",
+     "usage": {
+      "cpu": "83m",
+      "memory": "33Mi"
+     }
+    }
+   ],
+   "metadata": {
+    "name": "web-frontend-8c7d6f5b4-k7l8m",
+    "namespace": "apps"
+   },
+   "timestamp": "2026-10-10T02:39:45Z",
+   "window": "20s"
+  },
+  {
+   "containers": [
+    {
+     "name": "api",
+     "usage": {
+      "cpu": "100m",
+      "memory": "350Mi"
+     }
+    }
+   ],
+   "metadata": {
+    "name": "api-5f6g7h8j9-r1s2t",
+    "namespace": "apps"
+   },
+   "timestamp": "2026-10-10T02:39:45Z",
+   "window": "20s"
+  },
+  {
+   "containers": [
+    {
+     "name": "api",
+     "usage": {
+      "cpu": "113m",
+      "memory": "363Mi"
+     }
+    }
+   ],
+   "metadata": {
+    "name": "api-5f6g7h8j9-u3v4w",
+    "namespace": "apps"
+   },
+   "timestamp": "2026-10-10T02:39:45Z",
+   "window": "20s"
+  },
+  {
+   "containers": [
+    {
+     "name": "redis",
+     "usage": {
+      "cpu": "90m",
+      "memory": "240Mi"
+     }
+    }
+   ],
+   "metadata": {
+    "name": "redis-0",
+    "namespace": "apps"
+   },
+   "timestamp": "2026-10-10T02:39:45Z",
+   "window": "20s"
+  },
+  {
+   "containers": [
+    {
+     "name": "jellyfin",
+     "usage": {
+      "cpu": "336m",
+      "memory": "408Mi"
+     }
+    }
+   ],
+   "metadata": {
+    "name": "jellyfin-9a8b7c6d5-x5y6z",
+    "namespace": "media"
+   },
+   "timestamp": "2026-10-10T02:39:45Z",
+   "window": "20s"
+  },
+  {
+   "containers": [
+    {
+     "name": "photo",
+     "usage": {
+      "cpu": "0m",
+      "memory": "226Mi"
+     }
+    }
+   ],
+   "metadata": {
+    "name": "photo-sync-4c5d6e7f8-b7c8d",
+    "namespace": "photos"
+   },
+   "timestamp": "2026-10-10T02:39:45Z",
+   "window": "20s"
+  },
+  {
+   "containers": [
+    {
+     "name": "whisper",
+     "usage": {
+      "cpu": "408m",
+      "memory": "1384Mi"
+     }
+    }
+   ],
+   "metadata": {
+    "name": "whisper-3b4c5d6e7-e9f0g",
+    "namespace": "ai"
+   },
+   "timestamp": "2026-10-10T02:39:45Z",
+   "window": "20s"
+  }
+ ],
+ "kind": "PodMetricsList",
+ "metadata": {}
+}

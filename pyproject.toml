@@ -30,3 +30,8 @@ ignore = [
 # fixtures where short lambdas, `l` loop names and printf strings read best.
 "tests/test_universe.py" = ["E731", "E741", "F841", "B905", "B017", "UP031", "SIM117"]
 "tests/test_tour.py" = ["UP031"]
+# The k3s poller and its fixtures, kept close to how they were written.
+"k8s.py" = ["UP031", "B007", "B023", "B904", "B905"]
+"tests/k8s_stub.py" = ["UP031", "SIM108"]
+"tests/test_k8s.py" = ["UP031", "E731"]
+"tests/fixtures/k8s/make_pi_cluster.py" = ["UP031"]

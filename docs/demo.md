@@ -43,6 +43,11 @@ the inter-galaxy traffic (flagged `demo: true`). Every `DEMO_NEW_EVERY` seconds
 (default 240, `0` = never) one more client joins the home network, up to three,
 so the birth animation and the "new device" cutaway play.
 
+The simulated k3s cluster in `tests/fixtures/k8s/pi-cluster` (one server, three
+Raspberry Pi agents with one NotReady, 32 pods with a crash loop and a Pending
+pod) is read by the real `k8s.py` poller through an in-process client, so the
+demo has a Kubernetes galaxy, the `asp:k8s` tour stop and its problems.
+
 ## It is alive, not a snapshot
 
 A background thread drifts the fixtures every few seconds so the scene behaves

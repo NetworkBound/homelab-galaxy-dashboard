@@ -59,7 +59,7 @@ jobs:
       - name: Byte-compile every module
         run: |
           python3 -m compileall -q app.py auth.py config.py pollers.py topology.py probe.py snmp.py edge.py threats.py \
-            showtime.py gpu_render.py demo.py setup.py addons.py universe.py tour.py addons tests deploy/lights/galaxy-lights.py \
+            showtime.py gpu_render.py demo.py setup.py addons.py universe.py tour.py k8s.py addons tests deploy/lights/galaxy-lights.py \
             deploy/edge/galaxy-audience-export.py
 
       - name: Regression tests

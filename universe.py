@@ -449,7 +449,7 @@ class Obs:
     """One device as reported by one or more feeds during a single build."""
     __slots__ = ("macs", "vm", "snmp", "ips", "name", "label", "cls", "cat", "topo",
                  "parent_topo", "parent_obs", "status", "m", "src", "sys_hint", "pve_node",
-                 "decl", "parent_ref", "hub", "merge_ok", "reclass_ok", "folded", "lab")
+                 "decl", "parent_ref", "hub", "merge_ok", "reclass_ok", "folded", "lab", "down_why")
 
     def __init__(self, label, cls, status="unknown", src=(), topo=None, mac=None, vm=None,
                  snmp=None, ip=None, name=None, cat=None, parent_topo=None, m=None,
@@ -460,6 +460,9 @@ class Obs:
         # lab: an operator-declared scratch Proxmox guest (PVE tag `lab` or
         # UNIVERSE_LAB_VMIDS, decided in topology/inventory; never inferred)
         self.lab = False
+        # down_why: a feed's own reason for status "down" (offline | stopped), e.g. a
+        # finished Kubernetes job is "stopped"; None = decided in build()
+        self.down_why = None
         self.merge_ok = self.reclass_ok = self.folded = False
         self.macs = [mac.lower()] if mac else []
         self.vm, self.snmp, self.name = vm, snmp, name
@@ -504,6 +507,7 @@ class Obs:
         self.parent_ref = self.parent_ref or o.parent_ref
         self.hub = self.hub or o.hub
         self.lab = self.lab or o.lab
+        self.down_why = self.down_why or o.down_why
         self.merge_ok = self.merge_ok or o.merge_ok
         self.reclass_ok = self.reclass_ok or o.reclass_ok
         self.snmp = self.snmp or o.snmp
@@ -1862,10 +1866,22 @@ def resolve(store, obs, now, degraded=None, excluded=None):
     return out, changed
 
 
-def expire(store, now, seen_ids):
-    """Drop bodies unseen for RETAIN_S (their slots become free). Clean holds."""
+# Kubernetes pods are replaced, not repaired: a rollout's surge replica or a deleted
+# workload is held this long (not 30 days). Nodes keep the normal hold.
+K8S_POD_RETAIN_S = float(os.environ.get("K8S_RETAIN_S", 6 * 3600))
+
+
+def _retain_s(bid):
+    return K8S_POD_RETAIN_S if bid.startswith("k8s:") and ":pod:" in bid else RETAIN_S
+
+
+def expire(store, now, seen_ids, hold_systems=()):
+    """Drop bodies unseen for their hold (RETAIN_S; Kubernetes pods K8S_POD_RETAIN_S),
+    so their slots become free. Bodies in hold_systems (a feed that is not answering)
+    are kept. Clean holds."""
     gone = [bid for bid, r in store["bodies"].items()
-            if bid not in seen_ids and now - r.get("last_seen", r.get("first_seen", now)) > RETAIN_S]
+            if bid not in seen_ids and r.get("system") not in hold_systems
+            and now - r.get("last_seen", r.get("first_seen", now)) > _retain_s(bid)]
     for bid in gone:
         del store["bodies"][bid]
     if gone:
@@ -1901,10 +1917,13 @@ def lab_host_match(label, ips):
 
 
 def build(obs, store_obj, now=None, fresh=True, topo=None, excluded=None, degraded=None,
-          traffic=None, lab_ips=None, names=None):
+          traffic=None, lab_ips=None, names=None, unknown_systems=()):
     """traffic: {"state": TrafficState, "tunnels": [...]} adds the `traffic` object;
     lab_ips: addresses of hosts in the Zabbix lab group (bodies get `lab: true`);
-    names: {id -> short} overrides (default: NAMES_PATH)."""
+    names: {id -> short} overrides (default: NAMES_PATH);
+    unknown_systems: system ids whose own feed is not answering (a Kubernetes API):
+    their unreported bodies are "unknown", never "gone", and are not expired."""
+    unknown_systems = set(unknown_systems or ())
     now = now or time.time()
     if excluded is None:
         excluded = []
@@ -1916,7 +1935,7 @@ def build(obs, store_obj, now=None, fresh=True, topo=None, excluded=None, degrad
         # body reported in this very build is never expired (alias pre-pass)
         alias = store["alias"]
         returning = {alias[k] for o in obs for k in o.keys() if k in alias}  # noqa: SIM118
-        gone = expire(store, now, returning)
+        gone = expire(store, now, returning, unknown_systems)
         resolved, changed = resolve(store, obs, now, degraded=degraded, excluded=excluded)
         seen = {bid for bid, _, _ in resolved}
         if changed or gone or merged:
@@ -1972,18 +1991,20 @@ def build(obs, store_obj, now=None, fresh=True, topo=None, excluded=None, degrad
         if o.status == "down":
             # why it is down (additive): a Proxmox guest that is powered off is "stopped",
             # not an outage; anything else a feed reported as down is "offline"
-            b["down_why"] = "stopped" if (o.vm and "proxmox" in o.src and o.cls in ("guest_lxc", "guest_vm")) else "offline"
+            b["down_why"] = o.down_why or (
+                "stopped" if (o.vm and "proxmox" in o.src and o.cls in ("guest_lxc", "guest_vm")) else "offline")
         bodies.append(b)
     # persisted but not reported this build: present as down (or unknown when stale)
     for bid, rec in bodies_store.items():
         if bid in seen:
             continue
         cls = rec.get("class") or "unknown"
+        held = rec.get("system") in unknown_systems
         b = {"id": bid, "label": rec.get("label") or bid, "class": cls,
              "cat": rec.get("cat") or CLASS_TO_CAT.get(cls, "infra"),
              "system": rec.get("system"), "parent": parent_of(rec.get("parent_topo")),
              "shell": rec["shell"], "slot": rec["slot"], "seed": hash32(bid),
-             "status": "down" if fresh else "unknown",
+             "status": "down" if fresh and not held else "unknown",
              "first_seen": rec.get("first_seen"), "last_seen": rec.get("last_seen"),
              "new": False, "m": {}, "src": []}
         if rec.get("topo") and rec["topo"] in topo_ids:
@@ -1996,7 +2017,7 @@ def build(obs, store_obj, now=None, fresh=True, topo=None, excluded=None, degrad
         if (rec.get("lab") or (lab_ips and lab_ips.intersection(rec.get("ips") or ())) or _lab_override(bid)
                 or lab_host_match(rec.get("label"), rec.get("ips") or ())):
             b["lab"] = True
-        if fresh:
+        if fresh and not held:
             # no feed reported it this build: it left (removed guest, departed client) and
             # is held in its slot for RETAIN_S. Shown as down, but it is not an outage.
             b["down_why"] = "gone"
@@ -2042,8 +2063,8 @@ def build(obs, store_obj, now=None, fresh=True, topo=None, excluded=None, degrad
     _SYS_SHORT.update({k: v.get("short") for k, v in defs.items() if v.get("short")})
     systems = []
     for sid, rec in sorted(systems_store.items(), key=lambda kv: kv[1]["slot"]):
-        d = defs.get(sid) or {"label": sid.split(":", 1)[1], "kind": "pvehost",
-                              "accent": system_accent(sid)}
+        d = defs.get(sid) or _extra_system_def(sid) or {"label": sid.split(":", 1)[1], "kind": "pvehost",
+                                                        "accent": system_accent(sid)}
         s = {"id": sid, "label": d["label"], "kind": d["kind"], "accent": d["accent"],
              "seed": hash32(sid), "slot": rec["slot"], "shells": caps.get(sid, {}),
              "count": sum(1 for b in bodies if b["system"] == sid)}
@@ -2119,8 +2140,10 @@ def _anchors(bodies, topo_nodes):
     gw = (kinds.get("gateway") or [None])[0]
     sw = (kinds.get("switch") or [None])[0]
     out = {"sys:core": gw, "sys:home": sw or gw}
+    meta = {n.get("id"): n.get("meta") or {} for n in topo_nodes}
     for pid in kinds.get("pvehost") or []:
-        out["sys:" + pid.split(":", 1)[1]] = pid
+        # a hub node may name the system it anchors (k8s.py's cluster hubs: meta.anchor_of)
+        out[meta.get(pid, {}).get("anchor_of") or "sys:" + pid.split(":", 1)[1]] = pid
     for sid, _label, _net, _accent in _site_defs():
         hub = next((b.get("topo") for b in bodies if b["system"] == sid
                     and b["class"] in ("gateway", "network_device", "switch") and b.get("topo")), None)
@@ -2128,6 +2151,18 @@ def _anchors(bodies, topo_nodes):
                     and b["class"] == "storage" and b.get("topo")), None)
         out[sid] = hub or nvr or gw
     return {k: v for k, v in out.items() if v}
+
+
+def _extra_system_def(sid):
+    """Label/kind/accent for systems owned by an optional feed module (k8s.py:
+    "sys:k8s-<cluster>", kind "k8s"). Kept by prefix even when the module is gone,
+    so a held cluster never turns into a Proxmox galaxy."""
+    if not str(sid).startswith("sys:k8s-"):
+        return None
+    mod = sys.modules.get("k8s")
+    fn = getattr(mod, "system_def", None) if mod is not None else None
+    d = fn(sid) if fn else None
+    return d or {"label": sid[len("sys:k8s-"):], "kind": "k8s", "accent": system_accent(sid)}
 
 
 # ---- new systems: a deliberate accent, not a raw hash colour ---------------------------
@@ -2816,9 +2851,19 @@ def build_from_data(DATA, store_obj, now=None, warm_gave_up=False):
                   same=load_same())
     fresh = bool(topo.get("ts")) and (now - float(topo["ts"]) < FRESH_S)
     degraded = degraded_state(DATA, tm, now, warm_gave_up)
+    k8s_held, k8s_names = (), {}
+    try:                       # Kubernetes clusters (k8s.py): one system each, optional
+        import k8s
+        obs = obs + k8s.observations(Obs, now=now)
+        topo = k8s.augment_topology(topo)
+        k8s_held = k8s.unknown_systems()
+        k8s_names = k8s.short_names()
+    except Exception as e:
+        print(f"[universe] k8s skipped: {type(e).__name__}: {e}", flush=True)
     res = build(obs, store_obj, now=now, fresh=fresh, topo=topo, excluded=excluded, degraded=degraded,
                 traffic={"state": _traffic, "tunnels": load_tunnels()} if _sampler["running"] else None,
-                lab_ips=_zbx.lab_set(now) if _zbx is not None else None)
+                lab_ips=_zbx.lab_set(now) if _zbx is not None else None, unknown_systems=k8s_held,
+                names=dict(k8s_names, **load_names()) if k8s_names else None)
     if _traffic_fn[0] is not None:               # demo mode: a synthetic traffic object
         try:
             res["traffic"] = _traffic_fn[0](res, now)

@@ -229,6 +229,12 @@ another directory (default `addons/`; see `addons/README.md`).
 | `TOUR_ANCHORS` | `{}` | `{"<aspect>": "<universe body id>"}`: where the camera flies for an aspect. Default: found by class and well-known application names. |
 | `TOUR_TZ` | *server local* | IANA zone for clock times on screen. |
 
+### Kubernetes / k3s (optional)
+
+`K8S_CLUSTERS`, `KUBECONFIG`, `K8S_CONTEXT`, `K8S_CLUSTER_NAME`, `K8S_POLL_S`,
+`K8S_NS_CATS`, `K8S_RETAIN_S`, `K8S_DISABLE`, `K8S_ALLOW_INSECURE` (environment
+only): see [k3s.md](k3s.md).
+
 ### Access control (optional)
 
 | Variable | Default | Meaning |

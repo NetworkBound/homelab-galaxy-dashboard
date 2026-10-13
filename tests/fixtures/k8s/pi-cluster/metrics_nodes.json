@@ -1,0 +1,40 @@
+{
+ "apiVersion": "metrics.k8s.io/v1beta1",
+ "items": [
+  {
+   "metadata": {
+    "name": "pi-server"
+   },
+   "timestamp": "2026-10-10T02:39:45Z",
+   "usage": {
+    "cpu": "812345678n",
+    "memory": "3145728Ki"
+   },
+   "window": "20s"
+  },
+  {
+   "metadata": {
+    "name": "pi-agent-1"
+   },
+   "timestamp": "2026-10-10T02:39:45Z",
+   "usage": {
+    "cpu": "1623456789n",
+    "memory": "4194304Ki"
+   },
+   "window": "20s"
+  },
+  {
+   "metadata": {
+    "name": "pi-agent-2"
+   },
+   "timestamp": "2026-10-10T02:39:45Z",
+   "usage": {
+    "cpu": "1290000000n",
+    "memory": "5033164Ki"
+   },
+   "window": "20s"
+  }
+ ],
+ "kind": "NodeMetricsList",
+ "metadata": {}
+}

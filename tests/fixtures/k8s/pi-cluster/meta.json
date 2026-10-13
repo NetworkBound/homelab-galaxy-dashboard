@@ -1,0 +1,6 @@
+{
+ "fixture_now": 1791600000,
+ "cluster": "pi-cluster",
+ "pods": 32,
+ "nodes": 4
+}

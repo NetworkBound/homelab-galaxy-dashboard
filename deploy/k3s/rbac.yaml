@@ -1,0 +1,38 @@
+# Read-only access for the dashboard's cluster poller (k8s.py): get/list/watch on
+# nodes, pods, namespaces, services, events and metrics.k8s.io. Nothing else: no
+# secrets, no configmaps, no exec/logs/proxy, no writes.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: galaxy-dashboard
+  namespace: galaxy
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: galaxy-dashboard-read
+  labels:
+    app.kubernetes.io/part-of: galaxy-dashboard
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "pods", "namespaces", "services", "events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["nodes", "pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: galaxy-dashboard-read
+  labels:
+    app.kubernetes.io/part-of: galaxy-dashboard
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: galaxy-dashboard-read
+subjects:
+  - kind: ServiceAccount
+    name: galaxy-dashboard
+    namespace: galaxy

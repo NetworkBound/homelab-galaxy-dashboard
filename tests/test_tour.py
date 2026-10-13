@@ -19,6 +19,24 @@ config.DOMAIN = "example.net"            # the operator's own domain: its sites 
 config.TOUR_ASPECTS, config.TOUR_ANCHORS, config.UI_FEATURED_NODE = [], {}, ""
 import tour as T  # noqa: E402
 
+
+def setUpModule():
+    # these tests describe an estate without Kubernetes: never pick up a cluster
+    # another test module registered with k8s.py
+    try:
+        import k8s
+        k8s.REGISTRY.set_snapshots([])
+    except ImportError:
+        pass
+
+
+def tearDownModule():
+    try:
+        import k8s
+        k8s.REGISTRY.set_snapshots(None)
+    except ImportError:
+        pass
+
 NOW = 1_791_600_000.0
 KEYS = ["asp:internet", "asp:security", "asp:web", "asp:wifi", "asp:storage", "asp:power",
         "asp:monitoring", "asp:ai", "asp:cameras", "asp:media"]

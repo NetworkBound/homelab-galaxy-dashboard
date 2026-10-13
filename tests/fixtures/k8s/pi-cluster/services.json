@@ -1,0 +1,280 @@
+{
+ "apiVersion": "v1",
+ "items": [
+  {
+   "apiVersion": "v1",
+   "kind": "Service",
+   "metadata": {
+    "creationTimestamp": "2026-07-02T02:40:00Z",
+    "name": "kubernetes",
+    "namespace": "default",
+    "uid": "efa11096-fbff-f1cd-8a42-28148eda6960"
+   },
+   "spec": {
+    "clusterIP": "10.43.7.10",
+    "ports": [
+     {
+      "name": "p443",
+      "port": 443,
+      "protocol": "TCP",
+      "targetPort": 443
+     }
+    ],
+    "type": "ClusterIP"
+   },
+   "status": {
+    "loadBalancer": {}
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Service",
+   "metadata": {
+    "creationTimestamp": "2026-07-02T02:40:00Z",
+    "name": "kube-dns",
+    "namespace": "kube-system",
+    "uid": "861a3f8a-864c-ae46-bb30-fee0f868d712"
+   },
+   "spec": {
+    "clusterIP": "10.43.11.8",
+    "ports": [
+     {
+      "name": "p53",
+      "port": 53,
+      "protocol": "TCP",
+      "targetPort": 53
+     }
+    ],
+    "type": "ClusterIP"
+   },
+   "status": {
+    "loadBalancer": {}
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Service",
+   "metadata": {
+    "creationTimestamp": "2026-07-02T02:40:00Z",
+    "name": "metrics-server",
+    "namespace": "kube-system",
+    "uid": "8521ecf1-99be-5491-8f06-b7fafa6375f2"
+   },
+   "spec": {
+    "clusterIP": "10.43.11.14",
+    "ports": [
+     {
+      "name": "p443",
+      "port": 443,
+      "protocol": "TCP",
+      "targetPort": 443
+     }
+    ],
+    "type": "ClusterIP"
+   },
+   "status": {
+    "loadBalancer": {}
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Service",
+   "metadata": {
+    "creationTimestamp": "2026-07-02T02:40:00Z",
+    "name": "traefik",
+    "namespace": "kube-system",
+    "uid": "9a92dc61-ac81-474b-847b-2dbd260480fc"
+   },
+   "spec": {
+    "clusterIP": "10.43.11.7",
+    "ports": [
+     {
+      "name": "p80",
+      "nodePort": 31080,
+      "port": 80,
+      "protocol": "TCP",
+      "targetPort": 80
+     },
+     {
+      "name": "p443",
+      "nodePort": 31443,
+      "port": 443,
+      "protocol": "TCP",
+      "targetPort": 443
+     }
+    ],
+    "type": "LoadBalancer"
+   },
+   "status": {
+    "loadBalancer": {
+     "ingress": [
+      {
+       "ip": "192.0.2.10"
+      },
+      {
+       "ip": "192.0.2.11"
+      },
+      {
+       "ip": "192.0.2.12"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Service",
+   "metadata": {
+    "creationTimestamp": "2026-07-02T02:40:00Z",
+    "name": "grafana",
+    "namespace": "monitoring",
+    "uid": "358c4cf2-95f7-6953-c56c-0f88bb4f02c7"
+   },
+   "spec": {
+    "clusterIP": "10.43.10.7",
+    "ports": [
+     {
+      "name": "p3000",
+      "port": 3000,
+      "protocol": "TCP",
+      "targetPort": 3000
+     }
+    ],
+    "type": "ClusterIP"
+   },
+   "status": {
+    "loadBalancer": {}
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Service",
+   "metadata": {
+    "creationTimestamp": "2026-07-02T02:40:00Z",
+    "name": "prometheus",
+    "namespace": "monitoring",
+    "uid": "b6925c4d-17d4-f05b-d985-ab92d51bda9f"
+   },
+   "spec": {
+    "clusterIP": "10.43.10.10",
+    "ports": [
+     {
+      "name": "p9090",
+      "port": 9090,
+      "protocol": "TCP",
+      "targetPort": 9090
+     }
+    ],
+    "type": "ClusterIP"
+   },
+   "status": {
+    "loadBalancer": {}
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Service",
+   "metadata": {
+    "creationTimestamp": "2026-07-02T02:40:00Z",
+    "name": "jellyfin",
+    "namespace": "media",
+    "uid": "e2457ae3-49f7-0418-0113-8e515c9a444f"
+   },
+   "spec": {
+    "clusterIP": "10.43.5.8",
+    "ports": [
+     {
+      "name": "p8096",
+      "nodePort": 30096,
+      "port": 8096,
+      "protocol": "TCP",
+      "targetPort": 8096
+     }
+    ],
+    "type": "NodePort"
+   },
+   "status": {
+    "loadBalancer": {}
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Service",
+   "metadata": {
+    "creationTimestamp": "2026-07-02T02:40:00Z",
+    "name": "web-frontend",
+    "namespace": "apps",
+    "uid": "0f7ec575-b4f9-c7fe-78e3-8be8f851b7a8"
+   },
+   "spec": {
+    "clusterIP": "10.43.4.12",
+    "ports": [
+     {
+      "name": "p80",
+      "port": 80,
+      "protocol": "TCP",
+      "targetPort": 80
+     }
+    ],
+    "type": "ClusterIP"
+   },
+   "status": {
+    "loadBalancer": {}
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Service",
+   "metadata": {
+    "creationTimestamp": "2026-07-02T02:40:00Z",
+    "name": "api",
+    "namespace": "apps",
+    "uid": "6acb5725-1ebb-8a3b-9d45-797cd78beae3"
+   },
+   "spec": {
+    "clusterIP": "10.43.4.3",
+    "ports": [
+     {
+      "name": "p8080",
+      "port": 8080,
+      "protocol": "TCP",
+      "targetPort": 8080
+     }
+    ],
+    "type": "ClusterIP"
+   },
+   "status": {
+    "loadBalancer": {}
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Service",
+   "metadata": {
+    "creationTimestamp": "2026-07-02T02:40:00Z",
+    "name": "redis",
+    "namespace": "apps",
+    "uid": "c31d0582-6e40-8b8e-3d44-4060fc53a72a"
+   },
+   "spec": {
+    "clusterIP": "10.43.4.5",
+    "ports": [
+     {
+      "name": "p6379",
+      "port": 6379,
+      "protocol": "TCP",
+      "targetPort": 6379
+     }
+    ],
+    "type": "ClusterIP"
+   },
+   "status": {
+    "loadBalancer": {}
+   }
+  }
+ ],
+ "kind": "ServiceList",
+ "metadata": {
+  "resourceVersion": "4242"
+ }
+}

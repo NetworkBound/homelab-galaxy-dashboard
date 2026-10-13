@@ -20,6 +20,7 @@ pulse stream, the DOOM takeover) works unchanged.
 Use it to try the dashboard before configuring anything, to take screenshots
 without exposing your network, and as the fixture set for the front-end tests.
 """
+import calendar
 import copy
 import json
 import math
@@ -570,3 +571,70 @@ def install_universe(app, data):
     store = os.path.join(tempfile.mkdtemp(prefix="galaxy-demo-"), "universe_slots.json")
     universe.install(app, data, store_path=store)
     threading.Thread(target=_grow, args=(data,), daemon=True, name="demo-grow").start()
+
+
+# ---------------------------------------------------------------- Kubernetes
+# A simulated k3s cluster (one server, three Raspberry Pi agents, one of them
+# NotReady, 32 pods incl. a crash loop and a Pending pod) from
+# tests/fixtures/k8s/pi-cluster, read by the REAL k8s.py poller through an
+# in-process client: no HTTP, no token, nothing leaves the process.
+K8S_FIXTURE = os.path.join(HERE, "tests", "fixtures", "k8s", "pi-cluster")
+
+
+class _FixtureClient:
+    """Answers k8s.Client.get / get_list from the fixture documents, re-dated so the
+    fixture's capture time is now (ages, restarts and events stay plausible)."""
+
+    ROUTES = {"/version": "version", "/api/v1/nodes": "nodes", "/api/v1/pods": "pods",
+              "/api/v1/namespaces": "namespaces", "/api/v1/services": "services", "/api/v1/events": "events",
+              "/apis/metrics.k8s.io/v1beta1/nodes": "metrics_nodes",
+              "/apis/metrics.k8s.io/v1beta1/pods": "metrics_pods"}
+
+    def __init__(self, path):
+        self.docs = {}
+        for f in os.listdir(path):
+            if f.endswith(".json"):
+                with open(os.path.join(path, f)) as fh:
+                    self.docs[f[:-5]] = json.load(fh)
+        self.fixture_now = float((self.docs.pop("meta", {}) or {}).get("fixture_now") or time.time())
+
+    @staticmethod
+    def _redate(obj, shift):
+        if isinstance(obj, dict):
+            return {k: _FixtureClient._redate(v, shift) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [_FixtureClient._redate(v, shift) for v in obj]
+        if isinstance(obj, str) and len(obj) >= 20 and obj.endswith("Z") and obj[4] == "-" and obj[10] == "T":
+            try:
+                t = calendar.timegm(time.strptime(obj[:19], "%Y-%m-%dT%H:%M:%S")) + shift
+                return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
+            except ValueError:
+                return obj
+        return obj
+
+    def get(self, path):
+        import k8s
+        key = self.ROUTES.get(path.split("?", 1)[0])
+        if key is None or key not in self.docs:
+            raise k8s.K8sError("notfound", "not found (HTTP 404)", 404)
+        doc = self._redate(copy.deepcopy(self.docs[key]), time.time() - self.fixture_now)
+        if key == "events" and "fieldSelector" in path:
+            doc = dict(doc, items=[e for e in doc.get("items") or [] if e.get("type") == "Warning"])
+        return doc
+
+    def get_list(self, path, limit=500, max_pages=40):
+        return {"items": list(self.get(path).get("items") or [])}
+
+
+def install_k8s(app):
+    """Register the simulated cluster with k8s.py and its /api/k8s route."""
+    if not os.path.isdir(K8S_FIXTURE):
+        return
+    import k8s
+    c = k8s.Cluster("pi-cluster", "https://k3s.demo.invalid:6443", source="demo")
+    p = k8s.ClusterPoller(c, interval=15.0, client=_FixtureClient(K8S_FIXTURE))
+    k8s.REGISTRY.add(p)
+    k8s.REGISTRY.started = True
+    p.poll_once()
+    p.start()
+    k8s.install(app)

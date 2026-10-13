@@ -1,0 +1,124 @@
+{
+ "apiVersion": "v1",
+ "items": [
+  {
+   "apiVersion": "v1",
+   "count": 412,
+   "firstTimestamp": "2026-10-09T23:39:30Z",
+   "involvedObject": {
+    "kind": "Pod",
+    "name": "photo-sync-4c5d6e7f8-b7c8d",
+    "namespace": "photos"
+   },
+   "kind": "Event",
+   "lastTimestamp": "2026-10-10T02:39:30Z",
+   "message": "Back-off restarting failed container",
+   "metadata": {
+    "creationTimestamp": "2026-10-10T02:29:30Z",
+    "name": "photo-sync-4c5d6e7f8-b7c8d.4a264dce-d",
+    "namespace": "photos"
+   },
+   "reason": "BackOff",
+   "source": {
+    "component": "kubelet"
+   },
+   "type": "Warning"
+  },
+  {
+   "apiVersion": "v1",
+   "count": 1,
+   "firstTimestamp": "2026-10-09T20:40:40Z",
+   "involvedObject": {
+    "kind": "Node",
+    "name": "pi-agent-3",
+    "namespace": null
+   },
+   "kind": "Event",
+   "lastTimestamp": "2026-10-09T23:40:40Z",
+   "message": "Node pi-agent-3 status is now: NodeNotReady",
+   "metadata": {
+    "creationTimestamp": "2026-10-09T23:30:40Z",
+    "name": "pi-agent-3.78703ef3-4",
+    "namespace": null
+   },
+   "reason": "NodeNotReady",
+   "source": {
+    "component": "kubelet"
+   },
+   "type": "Warning"
+  },
+  {
+   "apiVersion": "v1",
+   "count": 9,
+   "firstTimestamp": "2026-10-09T23:38:00Z",
+   "involvedObject": {
+    "kind": "Pod",
+    "name": "ollama-2a3b4c5d6-h1i2j",
+    "namespace": "ai"
+   },
+   "kind": "Event",
+   "lastTimestamp": "2026-10-10T02:38:00Z",
+   "message": "0/4 nodes are available: 3 Insufficient memory.",
+   "metadata": {
+    "creationTimestamp": "2026-10-10T02:28:00Z",
+    "name": "ollama-2a3b4c5d6-h1i2j.df65a8db-f",
+    "namespace": "ai"
+   },
+   "reason": "FailedScheduling",
+   "source": {
+    "component": "kubelet"
+   },
+   "type": "Warning"
+  },
+  {
+   "apiVersion": "v1",
+   "count": 3,
+   "firstTimestamp": "2026-10-09T17:40:00Z",
+   "involvedObject": {
+    "kind": "Pod",
+    "name": "api-5f6g7h8j9-r1s2t",
+    "namespace": "apps"
+   },
+   "kind": "Event",
+   "lastTimestamp": "2026-10-09T20:40:00Z",
+   "message": "Readiness probe failed: HTTP probe failed with statuscode: 503",
+   "metadata": {
+    "creationTimestamp": "2026-10-09T20:30:00Z",
+    "name": "api-5f6g7h8j9-r1s2t.718edf75-9",
+    "namespace": "apps"
+   },
+   "reason": "Unhealthy",
+   "source": {
+    "component": "kubelet"
+   },
+   "type": "Warning"
+  },
+  {
+   "apiVersion": "v1",
+   "count": 1,
+   "firstTimestamp": "2026-10-09T14:40:00Z",
+   "involvedObject": {
+    "kind": "Pod",
+    "name": "nightly-backup-29341440-k3l4m",
+    "namespace": "default"
+   },
+   "kind": "Event",
+   "lastTimestamp": "2026-10-09T17:40:00Z",
+   "message": "Container image already present",
+   "metadata": {
+    "creationTimestamp": "2026-10-09T17:30:00Z",
+    "name": "nightly-backup-29341440-k3l4m.84ad76bb-c",
+    "namespace": "default"
+   },
+   "reason": "Pulled",
+   "source": {
+    "component": "kubelet"
+   },
+   "type": "Normal"
+  }
+ ],
+ "kind": "EventList",
+ "metadata": {
+  "resourceVersion": "4242"
+ }
+}

@@ -2682,8 +2682,8 @@
   }
   function frameKind(s) {
     var node = String(s.topo || s.anchor || '').replace(/^pve:/, '') || String(s.id || '').replace(/^sys:/, ''), lbl = String(s.label || '').toLowerCase();
-    if (s.kind === 'pvehost' && !galaxies[node] && galaxies[String(s.id || '').replace(/^sys:/, '')]) node = String(s.id).replace(/^sys:/, '');
-    if (s.kind === 'pvehost') { var nid = galaxies[node] && NODES.some(function (n) { return n.id === node; }) ? node : (galaxies[lbl] && NODES.some(function (n) { return n.id === lbl; }) ? lbl : null); if (nid) { s._node = nid; return 'galaxy'; } return 'site'; }
+    if ((s.kind === 'pvehost' || s.kind === 'k8s') && !galaxies[node] && galaxies[String(s.id || '').replace(/^sys:/, '')]) node = String(s.id).replace(/^sys:/, '');
+    if (s.kind === 'pvehost' || s.kind === 'k8s') { var nid = galaxies[node] && NODES.some(function (n) { return n.id === node; }) ? node : (galaxies[lbl] && NODES.some(function (n) { return n.id === lbl; }) ? lbl : null); if (nid) { s._node = nid; return 'galaxy'; } return 'site'; }
     if (s.kind === 'network' && !UNI.netCore) return 'network';
     if (s.kind === 'clients' && !UNI.netClients) return 'clients';
     return 'site';
@@ -3050,7 +3050,7 @@
   function nodeOf(s) { return String(s.topo || s.anchor || '').replace(/^pve:/, '') || String(s.id || '').replace(/^sys:/, ''); }
   function ensureGalaxies(syss) {
     // the extra nodes' seats come from their order by system.slot, computed over the WHOLE document (stable under append)
-    var extra = syss.filter(function (s) { return s.kind === 'pvehost' && !NODES.some(function (n) { return n.id === nodeOf(s) && !n.dyn; }); });
+    var extra = syss.filter(function (s) { return (s.kind === 'pvehost' || s.kind === 'k8s') && !NODES.some(function (n) { return n.id === nodeOf(s) && !n.dyn; }); });
     // slot order, stable for equal / missing slots (the document is normally already in slot order)
     extra = extra.map(function (s, i) { return [s, i]; }).sort(function (a, b) { var sa = a[0].slot != null ? +a[0].slot : 1e9 + a[1], sb = b[0].slot != null ? +b[0].slot : 1e9 + b[1]; return (sa - sb) || (a[1] - b[1]); }).map(function (x) { return x[0]; });
     extra.forEach(function (s, k) {

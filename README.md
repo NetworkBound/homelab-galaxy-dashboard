@@ -169,6 +169,22 @@ Two feeds make the outside world visible:
   [`deploy/edge/`](deploy/edge/). Tunnel request counters are never labelled
   "viewers" — they are shown as in-flight requests, because that is what they are.
 
+## k3s / Kubernetes
+
+Point the dashboard at one or more Kubernetes clusters (k3s is the usual homelab
+case: `K8S_CLUSTERS`, a kubeconfig, or in-cluster when it runs on the cluster
+itself) and each one becomes its own galaxy: the control plane as the core,
+agent nodes and pods as bodies coloured by namespace, a Kubernetes stop on the
+tour, and node and workload problems (not ready, crash looping, image pull
+failing) in the shared problem list. Access is read-only, with a minimal RBAC
+role in [`deploy/k3s/`](deploy/k3s/), which also runs the dashboard itself on
+k3s. Demo mode includes a simulated four-node Raspberry Pi cluster. Details in
+[`docs/k3s.md`](docs/k3s.md).
+
+The idea of drawing a Pi cluster as part of the homelab comes from barney01's
+[nodeyard](https://github.com/Codemanhtmlpythoncss/nodeyard). No code was taken
+from it; this is an independent implementation.
+
 ## The 3D assets are generated, not downloaded
 
 [`blender/galaxy_assets.py`](blender/galaxy_assets.py) is a headless Blender
@@ -224,6 +240,7 @@ The front end is just a client of a small JSON API; drive your own view from it.
 | `GET /api/all` | Everything: guests, nodes, storage, pools, UniFi, Zabbix, cameras, health, topology, edge, add-ons |
 | `GET /api/topology` | The network graph: nodes, links with measured rates, flows, totals |
 | `GET /api/universe` | Every device in one stable, append-only layout, grouped into systems, plus measured traffic between them |
+| `GET /api/k8s` | Per-cluster Kubernetes summary (no secrets, no addresses) |
 | `GET /api/tour` | The aspect stops (internet, security, Wi-Fi, storage, power, monitoring, AI, cameras, media) and the shared problem list |
 | `GET /api/gpu` | Per-GPU utilisation, memory, temperature, power |
 | `GET /api/showtime` | Ollama instances, Frigate, media sessions, display mode |
@@ -242,6 +259,7 @@ Full shapes, including what the screens depend on, are in
 - [`docs/data-sources.md`](docs/data-sources.md) — what each backend contributes
 - [`docs/architecture.md`](docs/architecture.md) — pollers, cache, scene
 - [`docs/contracts.md`](docs/contracts.md) — API shapes, add-on and wizard contracts
+- [`docs/k3s.md`](docs/k3s.md) — Kubernetes / k3s clusters, and running on k3s
 - [`docs/demo.md`](docs/demo.md) — what demo mode is and how the fixtures were made
 
 ## Troubleshooting

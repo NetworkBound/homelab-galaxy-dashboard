@@ -52,6 +52,8 @@ PRIVATE_NETS = [
 
 PLACEHOLDER_NETS = [
     ipaddress.ip_network("10.0.0.0/16"),       # the repo's example LAN
+    ipaddress.ip_network("10.42.0.0/16"),      # k3s's default pod network (tests/fixtures/k8s)
+    ipaddress.ip_network("10.43.0.0/16"),      # k3s's default service network
 ]
 
 # Exactly two files are allowed to contain a counter-example, because stating

@@ -231,7 +231,7 @@
       var g = geom[s.id] || {}, k = s._k || SCALE, list = [];
       d.bodies.forEach(function (b) { if (b.system === s.id && !(s.anchor && b.topo === s.anchor) && offs[b.id]) list.push(b); });
       var grp = [];
-      if (s.kind === 'pvehost') {
+      if (s.kind === 'pvehost' || s.kind === 'k8s') {
         var by = {}, n = {};
         list.forEach(function (b) {
           if (b.shell !== 3 && b.shell !== 4) return;
@@ -366,7 +366,7 @@
      star's world position + a colour code per body (B.lights), kept current
      while the hubs tween. */
   var PHOTO_R = 0.62;           // planet radius vs the sprite-era size: plausible, not toy-like
-  var STAR_CODE = { pvehost: 1, gateway: 2, 'switch': 3, ap: 4, wan: 5 };
+  var STAR_CODE = { pvehost: 1, k8s: 1, gateway: 2, 'switch': 3, ap: 4, wan: 5 };
   function gatewayNode() { for (var i = 0; i < NS.nodes.length; i++) if (NS.nodes[i].kind === 'gateway') return NS.nodes[i]; return null; }
   function starOf(it) {
     var h = it.hub;
@@ -703,7 +703,7 @@
      reads full. Plus a resolved starfield along the same arms (one Points draw
      per system, a photographic PSF) for depth and sparkle. Re-baked only when a
      system's spec changes (cached), drawn as one additive quad per system. */
-  var HAZE = { pvehost: 1.9, network: 1.55, clients: 1.65, site: 1.7 };
+  var HAZE = { pvehost: 1.9, k8s: 1.9, network: 1.55, clients: 1.65, site: 1.7 };
   var GAL_RGB = { ai: [1.0, 0.36, 0.66], media: [0.30, 0.86, 1.0], network: [0.32, 1.0, 0.66], monitor: [1.0, 0.70, 0.30],
                   web: [0.62, 0.55, 1.0], infra: [0.56, 0.74, 0.98] };
   var GAL_K = 1.0, GAL_STARS_K = 0.9;   // plate / starfield gain (HDR, before the page's exposure)
@@ -714,7 +714,7 @@
     var sec = grp.filter(function (q) { return q.kind === 'sector'; }), rings = grp.filter(function (q) { return q.kind === 'ring'; });
     var Rh = D.R * (HAZE[s.kind] || 1.7);
     var acc = new THREE.Color(s.accent || '#8fb0d0');
-    var spec = { size: s.kind === 'pvehost' && D.R > 150 ? 2048 : 1024, seed: (s.seed >>> 0) || 7, accent: [acc.r, acc.g, acc.b],
+    var spec = { size: (s.kind === 'pvehost' || s.kind === 'k8s') && D.R > 150 ? 2048 : 1024, seed: (s.seed >>> 0) || 7, accent: [acc.r, acc.g, acc.b],
                  bright: 1, core: 7, hii: 1, dust: 0.85, haze: 1, tilt: ((((s.seed >>> 0) || 7) % 628) / 100) };
     if (sec.length) {
       spec.kind = 'spiral';
@@ -787,7 +787,7 @@
     if (sys.kind === 'pvehost' && Cf.nodeFromSys && Cf.nodeIndex) { var nid = Cf.nodeFromSys(sys.id); if (nid) k = 'node:' + Cf.nodeIndex(nid); }
     else if (sys.kind === 'site' && Cf.siteIndex && Cf.siteIndex(sys.id) >= 0) k = 'site:' + Cf.siteIndex(sys.id);
     if (k && d[k] && d[k].file) return d[k].file;
-    if (sys.kind === 'pvehost' && d.pve_pool && d.pve_pool.length) return d.pve_pool[((sys.seed >>> 0) || 0) % d.pve_pool.length];
+    if ((sys.kind === 'pvehost' || sys.kind === 'k8s') && d.pve_pool && d.pve_pool.length) return d.pve_pool[((sys.seed >>> 0) || 0) % d.pve_pool.length];
     return null;
   }
   function g2Material(tex) {
@@ -1106,7 +1106,7 @@
         fd = 0;
       }
       if (D.arms) {                                  // soft core glow: a galaxy's bulge, or a star's zodiacal light
-        var pv = D.sys.kind === 'pvehost';
+        var pv = (D.sys.kind === 'pvehost' || D.sys.kind === 'k8s');
         r = D.R * (pv ? 0.62 : 0.30); fd = (pv ? 0.20 : D.sys.kind === 'site' ? 0.2 : 0.12) * Math.max(0.3, hubFoc(hd));
       }
       if (D.gal) fd = 0;                             // the baked plate carries the bulge glow

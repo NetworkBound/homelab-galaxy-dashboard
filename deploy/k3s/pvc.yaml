@@ -1,0 +1,13 @@
+# Registry slots, names, traffic EWMA state (/var/lib/homelab-dashboard). k3s's
+# bundled local-path provisioner backs it on the node the pod lands on.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: galaxy-dashboard-state
+  namespace: galaxy
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi

@@ -554,9 +554,19 @@ def _featured_node():
     return best
 
 
+def _topology():
+    """DATA["topology"] plus one hub node per Kubernetes cluster (k8s.py; a copy, never mutated)."""
+    t = DATA.get("topology")
+    try:
+        import k8s
+        return k8s.augment_topology(t)
+    except Exception:
+        return t
+
+
 @app.route("/api/topology")
 def api_topology():
-    return jsonify(DATA.get("topology") or {})
+    return jsonify(_topology() or {})
 
 
 @app.route("/api/all")
@@ -570,7 +580,8 @@ def api_all():
         "ts_age": round(time.time() - DATA["ts"], 1) if DATA.get("ts") else None, "ts_err": DATA.get("ts_err"),
         **{k: DATA.get(k) for k in ("nodes2", "zfs", "backups", "frigate", "top", "certs", "zbx2", "latency",
                                     "topology", "probe", "snmp", "telemetry", "edge", "external")
-           if DATA.get(k) is not None}})
+           if DATA.get(k) is not None},
+        **({"topology": _topology()} if DATA.get("topology") is not None else {})})
 
 
 # ---- room light sync ------------------------------------------------------
@@ -951,6 +962,7 @@ DEMO_FEED = None
 if config.DEMO:
     import demo
     DEMO_FEED = demo.install(app, DATA)
+    demo.install_k8s(app)
     demo.install_universe(app, DATA)
     try:   # the lights slot starts from the fixture instead of the neutral default
         with open(os.path.join(demo.FIXTURES, "lightstate.json")) as fh:
@@ -967,6 +979,13 @@ else:
     if config.SETUP_UI:
         import setup
         setup.install(app)
+    try:   # Kubernetes / k3s clusters (K8S_CLUSTERS, KUBECONFIG or in-cluster): read-only pollers + /api/k8s
+        import k8s
+        k8s.start()
+        k8s.install(app)
+        print(f"[k8s] installed ({len(k8s.REGISTRY.pollers)} cluster(s))", flush=True)
+    except Exception as e:
+        print("[k8s] not installed:", e, flush=True)
     try:   # /api/universe: one deduplicated device registry with a stable, append-only layout
         import universe
         universe.install(app, DATA)

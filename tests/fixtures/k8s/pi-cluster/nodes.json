@@ -1,0 +1,359 @@
+{
+ "apiVersion": "v1",
+ "items": [
+  {
+   "apiVersion": "v1",
+   "kind": "Node",
+   "metadata": {
+    "annotations": {
+     "flannel.alpha.coreos.com/public-ip": "192.0.2.10",
+     "k3s.io/node-args": "[\"agent\"]"
+    },
+    "creationTimestamp": "2026-06-12T02:40:00Z",
+    "labels": {
+     "beta.kubernetes.io/instance-type": "k3s",
+     "kubernetes.io/arch": "arm64",
+     "kubernetes.io/hostname": "pi-server",
+     "kubernetes.io/os": "linux",
+     "node-role.kubernetes.io/control-plane": "true",
+     "node-role.kubernetes.io/master": "true",
+     "node.kubernetes.io/instance-type": "k3s"
+    },
+    "name": "pi-server",
+    "uid": "8b994312-6cf7-3b70-d8eb-c83b3e4f6f15"
+   },
+   "spec": {
+    "podCIDR": "10.42.0.0/24",
+    "providerID": "k3s://pi-server"
+   },
+   "status": {
+    "addresses": [
+     {
+      "address": "192.0.2.10",
+      "type": "InternalIP"
+     },
+     {
+      "address": "pi-server",
+      "type": "Hostname"
+     }
+    ],
+    "allocatable": {
+     "cpu": "4",
+     "memory": "8268608Ki",
+     "pods": "110"
+    },
+    "capacity": {
+     "cpu": "4",
+     "ephemeral-storage": "61202244Ki",
+     "memory": "8268608Ki",
+     "pods": "110"
+    },
+    "conditions": [
+     {
+      "lastHeartbeatTime": "2026-10-10T02:39:40Z",
+      "lastTransitionTime": "2026-06-12T02:40:00Z",
+      "reason": "KubeletHasSufficientMemory",
+      "status": "False",
+      "type": "MemoryPressure"
+     },
+     {
+      "lastHeartbeatTime": "2026-10-10T02:39:40Z",
+      "lastTransitionTime": "2026-06-12T02:40:00Z",
+      "reason": "KubeletHasNoDiskPressure",
+      "status": "False",
+      "type": "DiskPressure"
+     },
+     {
+      "lastHeartbeatTime": "2026-10-10T02:39:40Z",
+      "lastTransitionTime": "2026-06-12T02:40:00Z",
+      "reason": "KubeletHasSufficientPID",
+      "status": "False",
+      "type": "PIDPressure"
+     },
+     {
+      "lastHeartbeatTime": "2026-10-10T02:39:40Z",
+      "lastTransitionTime": "2026-10-05T02:40:00Z",
+      "message": "kubelet is posting ready status",
+      "reason": "KubeletReady",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "nodeInfo": {
+     "architecture": "arm64",
+     "containerRuntimeVersion": "containerd://1.7.23-k3s2",
+     "kernelVersion": "6.6.51+rpt-rpi-2712",
+     "kubeProxyVersion": "v1.31.4+k3s1",
+     "kubeletVersion": "v1.31.4+k3s1",
+     "operatingSystem": "linux",
+     "osImage": "Debian GNU/Linux 12 (bookworm)"
+    }
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Node",
+   "metadata": {
+    "annotations": {
+     "flannel.alpha.coreos.com/public-ip": "192.0.2.11",
+     "k3s.io/node-args": "[\"agent\"]"
+    },
+    "creationTimestamp": "2026-06-14T02:40:00Z",
+    "labels": {
+     "beta.kubernetes.io/instance-type": "k3s",
+     "kubernetes.io/arch": "arm64",
+     "kubernetes.io/hostname": "pi-agent-1",
+     "kubernetes.io/os": "linux",
+     "node.kubernetes.io/instance-type": "k3s"
+    },
+    "name": "pi-agent-1",
+    "uid": "29b0d5f0-b073-0c0b-8e96-88b45dd008e1"
+   },
+   "spec": {
+    "podCIDR": "10.42.1.0/24",
+    "providerID": "k3s://pi-agent-1"
+   },
+   "status": {
+    "addresses": [
+     {
+      "address": "192.0.2.11",
+      "type": "InternalIP"
+     },
+     {
+      "address": "pi-agent-1",
+      "type": "Hostname"
+     }
+    ],
+    "allocatable": {
+     "cpu": "4",
+     "memory": "8268608Ki",
+     "pods": "110"
+    },
+    "capacity": {
+     "cpu": "4",
+     "ephemeral-storage": "61202244Ki",
+     "memory": "8268608Ki",
+     "pods": "110"
+    },
+    "conditions": [
+     {
+      "lastHeartbeatTime": "2026-10-10T02:39:40Z",
+      "lastTransitionTime": "2026-06-14T02:40:00Z",
+      "reason": "KubeletHasSufficientMemory",
+      "status": "False",
+      "type": "MemoryPressure"
+     },
+     {
+      "lastHeartbeatTime": "2026-10-10T02:39:40Z",
+      "lastTransitionTime": "2026-06-14T02:40:00Z",
+      "reason": "KubeletHasNoDiskPressure",
+      "status": "False",
+      "type": "DiskPressure"
+     },
+     {
+      "lastHeartbeatTime": "2026-10-10T02:39:40Z",
+      "lastTransitionTime": "2026-06-14T02:40:00Z",
+      "reason": "KubeletHasSufficientPID",
+      "status": "False",
+      "type": "PIDPressure"
+     },
+     {
+      "lastHeartbeatTime": "2026-10-10T02:39:40Z",
+      "lastTransitionTime": "2026-10-05T02:40:00Z",
+      "message": "kubelet is posting ready status",
+      "reason": "KubeletReady",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "nodeInfo": {
+     "architecture": "arm64",
+     "containerRuntimeVersion": "containerd://1.7.23-k3s2",
+     "kernelVersion": "6.6.51+rpt-rpi-2712",
+     "kubeProxyVersion": "v1.31.4+k3s1",
+     "kubeletVersion": "v1.31.4+k3s1",
+     "operatingSystem": "linux",
+     "osImage": "Debian GNU/Linux 12 (bookworm)"
+    }
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Node",
+   "metadata": {
+    "annotations": {
+     "flannel.alpha.coreos.com/public-ip": "192.0.2.12",
+     "k3s.io/node-args": "[\"agent\"]"
+    },
+    "creationTimestamp": "2026-06-14T02:40:00Z",
+    "labels": {
+     "beta.kubernetes.io/instance-type": "k3s",
+     "kubernetes.io/arch": "arm64",
+     "kubernetes.io/hostname": "pi-agent-2",
+     "kubernetes.io/os": "linux",
+     "node.kubernetes.io/instance-type": "k3s"
+    },
+    "name": "pi-agent-2",
+    "uid": "31604df7-b8d4-a304-3643-75077d4e818f"
+   },
+   "spec": {
+    "podCIDR": "10.42.2.0/24",
+    "providerID": "k3s://pi-agent-2"
+   },
+   "status": {
+    "addresses": [
+     {
+      "address": "192.0.2.12",
+      "type": "InternalIP"
+     },
+     {
+      "address": "pi-agent-2",
+      "type": "Hostname"
+     }
+    ],
+    "allocatable": {
+     "cpu": "4",
+     "memory": "8268608Ki",
+     "pods": "110"
+    },
+    "capacity": {
+     "cpu": "4",
+     "ephemeral-storage": "61202244Ki",
+     "memory": "8268608Ki",
+     "pods": "110"
+    },
+    "conditions": [
+     {
+      "lastHeartbeatTime": "2026-10-10T02:39:40Z",
+      "lastTransitionTime": "2026-06-14T02:40:00Z",
+      "reason": "KubeletHasSufficientMemory",
+      "status": "False",
+      "type": "MemoryPressure"
+     },
+     {
+      "lastHeartbeatTime": "2026-10-10T02:39:40Z",
+      "lastTransitionTime": "2026-06-14T02:40:00Z",
+      "reason": "KubeletHasNoDiskPressure",
+      "status": "False",
+      "type": "DiskPressure"
+     },
+     {
+      "lastHeartbeatTime": "2026-10-10T02:39:40Z",
+      "lastTransitionTime": "2026-06-14T02:40:00Z",
+      "reason": "KubeletHasSufficientPID",
+      "status": "False",
+      "type": "PIDPressure"
+     },
+     {
+      "lastHeartbeatTime": "2026-10-10T02:39:40Z",
+      "lastTransitionTime": "2026-10-05T02:40:00Z",
+      "message": "kubelet is posting ready status",
+      "reason": "KubeletReady",
+      "status": "True",
+      "type": "Ready"
+     }
+    ],
+    "nodeInfo": {
+     "architecture": "arm64",
+     "containerRuntimeVersion": "containerd://1.7.23-k3s2",
+     "kernelVersion": "6.6.51+rpt-rpi-2712",
+     "kubeProxyVersion": "v1.31.4+k3s1",
+     "kubeletVersion": "v1.31.4+k3s1",
+     "operatingSystem": "linux",
+     "osImage": "Debian GNU/Linux 12 (bookworm)"
+    }
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Node",
+   "metadata": {
+    "annotations": {
+     "flannel.alpha.coreos.com/public-ip": "192.0.2.13",
+     "k3s.io/node-args": "[\"agent\"]"
+    },
+    "creationTimestamp": "2026-08-11T02:40:00Z",
+    "labels": {
+     "beta.kubernetes.io/instance-type": "k3s",
+     "kubernetes.io/arch": "arm64",
+     "kubernetes.io/hostname": "pi-agent-3",
+     "kubernetes.io/os": "linux",
+     "node.kubernetes.io/instance-type": "k3s"
+    },
+    "name": "pi-agent-3",
+    "uid": "455421fa-0124-2230-8e0c-cec8ac46085b"
+   },
+   "spec": {
+    "podCIDR": "10.42.3.0/24",
+    "providerID": "k3s://pi-agent-3"
+   },
+   "status": {
+    "addresses": [
+     {
+      "address": "192.0.2.13",
+      "type": "InternalIP"
+     },
+     {
+      "address": "pi-agent-3",
+      "type": "Hostname"
+     }
+    ],
+    "allocatable": {
+     "cpu": "4",
+     "memory": "4074304Ki",
+     "pods": "110"
+    },
+    "capacity": {
+     "cpu": "4",
+     "ephemeral-storage": "61202244Ki",
+     "memory": "4074304Ki",
+     "pods": "110"
+    },
+    "conditions": [
+     {
+      "lastHeartbeatTime": "2026-10-09T23:40:00Z",
+      "lastTransitionTime": "2026-08-11T02:40:00Z",
+      "reason": "NodeStatusUnknown",
+      "status": "Unknown",
+      "type": "MemoryPressure"
+     },
+     {
+      "lastHeartbeatTime": "2026-10-09T23:40:00Z",
+      "lastTransitionTime": "2026-08-11T02:40:00Z",
+      "reason": "NodeStatusUnknown",
+      "status": "Unknown",
+      "type": "DiskPressure"
+     },
+     {
+      "lastHeartbeatTime": "2026-10-09T23:40:00Z",
+      "lastTransitionTime": "2026-08-11T02:40:00Z",
+      "reason": "NodeStatusUnknown",
+      "status": "Unknown",
+      "type": "PIDPressure"
+     },
+     {
+      "lastHeartbeatTime": "2026-10-09T23:40:00Z",
+      "lastTransitionTime": "2026-10-09T23:40:40Z",
+      "message": "Kubelet stopped posting node status.",
+      "reason": "NodeStatusUnknown",
+      "status": "Unknown",
+      "type": "Ready"
+     }
+    ],
+    "nodeInfo": {
+     "architecture": "arm64",
+     "containerRuntimeVersion": "containerd://1.7.23-k3s2",
+     "kernelVersion": "6.6.51+rpt-rpi-2712",
+     "kubeProxyVersion": "v1.31.4+k3s1",
+     "kubeletVersion": "v1.31.4+k3s1",
+     "operatingSystem": "linux",
+     "osImage": "Debian GNU/Linux 12 (bookworm)"
+    }
+   }
+  }
+ ],
+ "kind": "NodeList",
+ "metadata": {
+  "resourceVersion": "4242"
+ }
+}

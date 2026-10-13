@@ -37,8 +37,13 @@ estate.
   unreadable source is reported as unknown, never as "never backed up".
 - **Lab gear**: `UNIVERSE_LAB_GROUPS` / `UNIVERSE_LAB_HOSTS` / `UNIVERSE_LAB_VMIDS`
   or a Proxmox `lab` tag — a LAB badge, never an outage, never a red alert.
-- Demo mode shows all of it: a remote site, a lab switch, synthetic traffic and
-  devices that join the network while you watch.
+- **Kubernetes / k3s clusters** (`k8s.py`, `docs/k3s.md`, `deploy/k3s/`): each
+  cluster is a galaxy of nodes and pods with stable ids through rollouts, a tour
+  stop and its own problems, read-only over a minimal RBAC role; the dashboard
+  can also run on k3s. Inspired by barney01's nodeyard.
+- Demo mode shows all of it: a remote site, a lab switch, synthetic traffic,
+  a simulated Raspberry Pi k3s cluster and devices that join the network while
+  you watch.
 
 ### Fixed
 

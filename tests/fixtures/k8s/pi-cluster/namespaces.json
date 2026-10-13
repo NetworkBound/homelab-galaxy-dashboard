@@ -1,0 +1,129 @@
+{
+ "apiVersion": "v1",
+ "items": [
+  {
+   "apiVersion": "v1",
+   "kind": "Namespace",
+   "metadata": {
+    "creationTimestamp": "2026-06-12T02:40:00Z",
+    "name": "ai",
+    "uid": "acfe8d4d-dc22-a079-cf15-143a1d045751"
+   },
+   "status": {
+    "phase": "Active"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Namespace",
+   "metadata": {
+    "creationTimestamp": "2026-06-12T02:40:00Z",
+    "name": "apps",
+    "uid": "e9956b43-0a98-b5b4-1fdc-f034a9b4f592"
+   },
+   "status": {
+    "phase": "Active"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Namespace",
+   "metadata": {
+    "creationTimestamp": "2026-06-12T02:40:00Z",
+    "name": "cert-manager",
+    "uid": "6fa9c448-5854-b765-10de-936086a89533"
+   },
+   "status": {
+    "phase": "Active"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Namespace",
+   "metadata": {
+    "creationTimestamp": "2026-06-12T02:40:00Z",
+    "name": "default",
+    "uid": "23167c80-6ad2-4285-f859-9ced3d2fb17b"
+   },
+   "status": {
+    "phase": "Active"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Namespace",
+   "metadata": {
+    "creationTimestamp": "2026-06-12T02:40:00Z",
+    "name": "kube-node-lease",
+    "uid": "223cdb39-f7c0-9b97-743d-db3260a14f09"
+   },
+   "status": {
+    "phase": "Active"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Namespace",
+   "metadata": {
+    "creationTimestamp": "2026-06-12T02:40:00Z",
+    "name": "kube-public",
+    "uid": "691507a1-0f39-f56e-853f-d362e91e44eb"
+   },
+   "status": {
+    "phase": "Active"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Namespace",
+   "metadata": {
+    "creationTimestamp": "2026-06-12T02:40:00Z",
+    "name": "kube-system",
+    "uid": "d5bfd664-ee0e-d7b0-9247-9cff4c3b87f8"
+   },
+   "status": {
+    "phase": "Active"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Namespace",
+   "metadata": {
+    "creationTimestamp": "2026-06-12T02:40:00Z",
+    "name": "media",
+    "uid": "a7b565fd-df10-7d1c-b0e2-e7f785f5ebf6"
+   },
+   "status": {
+    "phase": "Active"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Namespace",
+   "metadata": {
+    "creationTimestamp": "2026-06-12T02:40:00Z",
+    "name": "monitoring",
+    "uid": "03ff1cd5-e88d-edde-e1e4-1291999d7ead"
+   },
+   "status": {
+    "phase": "Active"
+   }
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Namespace",
+   "metadata": {
+    "creationTimestamp": "2026-06-12T02:40:00Z",
+    "name": "photos",
+    "uid": "e3f0ddf0-8952-6b6c-da3e-d11a6d0e31c2"
+   },
+   "status": {
+    "phase": "Active"
+   }
+  }
+ ],
+ "kind": "NamespaceList",
+ "metadata": {
+  "resourceVersion": "4242"
+ }
+}

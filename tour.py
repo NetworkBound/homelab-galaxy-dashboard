@@ -242,7 +242,9 @@ class Uni:
             else:
                 rx = re.compile(arg, re.I)
                 hits = [b for b in pool if rx.search(str(b.get("label") or "")) or rx.search(str(b.get("short") or ""))]
-            hits.sort(key=lambda b: (b.get("status") != "up", b.get("id")))
+            # a Proxmox guest before a Kubernetes pod of the same name: the guest has a host stop to follow
+            hits.sort(key=lambda b: (b.get("status") != "up",
+                                     (self.systems.get(b.get("system")) or {}).get("kind") != "pvehost", b.get("id")))
             if hits:
                 return hits[0]["id"]
         # the system itself was missing too: any system rather than a dead anchor
@@ -873,7 +875,25 @@ def build(D, universe_body=None, show=None, now=None):
         anchor = U.resolve(([str(pin)] if pin else []) + list(cands))
         aspects.append(dict({"key": key, "name": name, "anchor": anchor,
                              "after": U.stop_after(anchor, after)}, **body))
+    k8s_aspects, k8s_problems = _k8s_parts(U, now)
+    if k8s_aspects or k8s_problems:
+        aspects += k8s_aspects
+        problems = sorted(problems + k8s_problems,
+                          key=lambda p: (p["lab"], -p["sev"], -p["n"], p["host"].lower()))
     return {"v": V, "ts": round(now), "aspects": aspects, "problems": problems}
+
+
+def _k8s_parts(U, now):
+    """asp:k8s (one per configured cluster, after the last host stop) and the
+    clusters' rows for the shared problem list. Empty without k8s.py or clusters."""
+    try:
+        import k8s
+        if not k8s.REGISTRY.snapshots():
+            return [], []
+        return k8s.tour_aspects(U, now=now), k8s.tour_problems(U, now=now)
+    except Exception as e:                     # optional feed: never take the tour down
+        print(f"[tour] k8s failed: {type(e).__name__}: {e}", flush=True)
+        return [], []
 
 
 # ------------------------------------------------------------------ flask --

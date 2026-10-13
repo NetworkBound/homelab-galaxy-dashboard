@@ -1,5 +1,51 @@
 # Changelog
 
+## Unreleased — the universe
+
+The scene is no longer drawn from a handful of hardcoded node lists. Both
+screens now read one registry of every device and fly a complete tour of the
+estate.
+
+### Added
+
+- **`/api/universe`** (`universe.py`): one deduplicated registry of every device
+  any feed reports — Proxmox guests and hosts, UniFi devices and clients, SNMP
+  switches and their LLDP neighbours, probe discoveries, NMS devices, cameras,
+  the internet edge — grouped into systems: the network core, one galaxy per
+  Proxmox node, home, and any remote sites you declare (`UNIVERSE_SITES`).
+  Identity is stable (`vm:` > `mac:` > `snmp:` > `ip:` > `name:`) and the layout
+  is append-only: a device keeps its slot for 30 days after it was last seen and
+  a new one never reshuffles the others. Unmanaged switches are detected from
+  vendor, LLDP and chassis evidence or inferred from several wired clients on one
+  port; operator files can name, merge or declare devices. Short on-screen names,
+  `down_why` (offline / stopped / gone), lab gear and a guard that never mints
+  ghosts from a short station list after an outage.
+- **Measured traffic between galaxies**: switch-port, client and WAN counters,
+  ntopng flows and (optionally) site-to-site tunnel interfaces from Zabbix,
+  smoothed and aggregated per system pair. Unmeasured is absent, never zero.
+- **`/api/tour`** (`tour.py`): ten aspect stops — internet, security, websites,
+  Wi-Fi, storage, power, monitoring, AI, cameras, media — with at most four facts
+  each, and one plain problem vocabulary ("host · problem") both screens share.
+  Anchors are found by class and application name; `TOUR_ANCHORS` / `TOUR_ASPECTS`
+  override them.
+- **The look**: photographic galaxy plates per node, devices drawn as lit planets,
+  moons and stars (`static/assets/celestial`), deep-sky fillers so wide shots fill
+  the frame, measured traffic streams between galaxies, cinematic legs the TV
+  mirrors, event cutaways and a calm, product-style UI with details on click.
+- **Backups** now come from a PBS exporter in Prometheus when there is one (the
+  storage listing as a fallback), with the last vzdump run per node; an
+  unreadable source is reported as unknown, never as "never backed up".
+- **Lab gear**: `UNIVERSE_LAB_GROUPS` / `UNIVERSE_LAB_HOSTS` / `UNIVERSE_LAB_VMIDS`
+  or a Proxmox `lab` tag — a LAB badge, never an outage, never a red alert.
+- Demo mode shows all of it: a remote site, a lab switch, synthetic traffic and
+  devices that join the network while you watch.
+
+### Fixed
+
+- A clustered Proxmox endpoint no longer doubles every guest.
+- Light sync: the wall reads every keepalive reply, so posts no longer stall after
+  a few dozen requests.
+
 ## Unreleased — the clean-room pass
 
 Someone cloned this repo, followed the README literally and wrote down every

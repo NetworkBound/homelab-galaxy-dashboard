@@ -212,6 +212,23 @@ An indexed list set in the environment replaces the whole list from
 rendered as rows in the fleet panel. `ADDONS_DIR` points the add-on loader at
 another directory (default `addons/`; see `addons/README.md`).
 
+### Universe registry and tour (optional)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `UNIVERSE_SITES` | `[]` | JSON list of remote sites `{"id", "label", "cidr", "accent"}`. Each becomes a system `sys:<id>`; a device whose address falls in `cidr` joins it. |
+| `UNIVERSE_CAMERA_SITE` | *empty* | Site id the NVR cameras belong to. Default: the site holding `NP_NVR_IP`, else home. |
+| `UNIVERSE_LAB_GROUPS` | *empty* | Zabbix host groups that are bench gear: LAB badge, never an outage, never red. |
+| `UNIVERSE_LAB_HOSTS` | *empty* | Host names or addresses that are bench gear (same effect). |
+| `UNIVERSE_LAB_VMIDS` | *empty* | Proxmox guests that are scratch boxes (`vmid` or `node:vmid`). A guest tagged `lab` counts too. Lab guests are left out of the backup totals. |
+| `UNIVERSE_TUNNELS` | `[]` | Site-to-site tunnels `{"host", "if", "local", "remote", "local_ip", "remote_ip", "label"}`: the Zabbix `net.if.in/out` items of `host`/`if` measure the traffic between the two systems. Needs the Zabbix credentials. |
+| `UNIVERSE_NAME_PREFIXES` | *empty* | Words dropped from the start of on-screen short names ("Acme UDM" → "UDM"). The brand and the first label of `DOMAIN` are dropped too. |
+| `UNIVERSE_DIR` | `DATA_DIR` | Where `universe_slots.json` (the append-only layout) lives, plus the optional operator files `universe_names.json` (`{"<id>": "<short>" or null}`), `universe_same.json` (same-device groups), `universe_declared.json` (devices no feed sees, e.g. unmanaged switches) and `universe_traffic.json` (`{"tunnels": [...]}`). |
+| `UI_FEATURED_NODE` | *most guests* | The node whose galaxy gets one tour stop per guest category. |
+| `TOUR_ASPECTS` | *all ten* | Which aspect stops `/api/tour` lists, in order (`asp:internet`, `asp:security`, `asp:web`, `asp:wifi`, `asp:storage`, `asp:power`, `asp:monitoring`, `asp:ai`, `asp:cameras`, `asp:media`). |
+| `TOUR_ANCHORS` | `{}` | `{"<aspect>": "<universe body id>"}`: where the camera flies for an aspect. Default: found by class and well-known application names. |
+| `TOUR_TZ` | *server local* | IANA zone for clock times on screen. |
+
 ### Access control (optional)
 
 | Variable | Default | Meaning |

@@ -21,9 +21,11 @@ Served in every mode (demo or real). Never contains a credential.
               "monitor": "#ffb347", "web": "#9b8cff", "infra": "#8fb0d0", "stopped": "#ff5a6a"},
   "features": {"nexus": true, "cameras": false, "threats": true, "audience": true,
                "lights": false, "doom": false, "setup": true, "chat": false, "snmp": false,
-               "cinematics": false},
+               "cinematics": false, "universe": true, "tour": true},
   "cinematics": {"laps": 3, "moves": ["roll", "explode", "closeup", "arc"]},
-  "addons": ["speedtest", "backup-check"]
+  "addons": ["speedtest", "backup-check"],
+  "featured_node": "pve2",
+  "sites": [{"id": "sys:branch", "label": "Branch office", "accent": "#fc8181"}]
 }
 ```
 
@@ -39,6 +41,9 @@ Served in every mode (demo or real). Never contains a credential.
   screen can still override it per-session with `?cinematics=on|off`. The
   `cinematics` block gives the default lap count between moves and the rotation
   of move names; the front end clamps `laps` to 1..50 and ignores unknown moves.
+- `featured_node` is the node whose galaxy gets one tour stop per guest category
+  (`UI_FEATURED_NODE`, else the node with the most guests). `sites` lists the
+  remote sites from `UNIVERSE_SITES` with their universe system ids.
 - Everything in `brand`, `domain`, `tagline`, `wan_label`, `nodes[].label/accent`,
   `palette` and `categories` is user-editable in the setup wizard.
 
@@ -126,6 +131,75 @@ in the **ADD-ONS** panel (title · status pip · rows); `/api/config.addons` lis
 the ids so the screens can hide the panel when there are none. Row `cls` is
 one of `ok | warn | bad` (or absent).
 
+## `GET /api/universe` — every device, one stable layout
+
+One deduplicated registry of every device the dashboard knows about, grouped into
+systems (galaxies), with a layout that is append-only: a device keeps its slot
+forever (30 days after it was last seen), so both screens place it in the same
+spot and a new device never reshuffles the others.
+
+```json
+{"v": 1, "ts": 1791156000.1, "fresh": true,
+ "counts": {"total": 147, "up": 132, "down": 14, "new": 0, "lab": 1,
+            "down_by": {"offline": 10, "stopped": 4, "gone": 0}, "by_class": {"phone": 9}},
+ "systems": [{"id": "sys:pve1", "label": "pve1", "short": "PVE1", "kind": "pvehost",
+              "accent": "#5ad7ff", "seed": 2959989296, "slot": 1, "count": 9,
+              "anchor": "pve:pve1", "shells": {"0": 1, "3": 8}}],
+ "bodies": [{"id": "mac:02:00:5e:10:00:01", "label": "Living room TV", "short": "Living room TV",
+             "class": "tv_av", "cat": "media", "system": "sys:home", "parent": "unifi:...",
+             "shell": 7, "slot": 2, "seed": 918273645, "status": "up",
+             "first_seen": 1790000000, "last_seen": 1791155990, "new": false,
+             "m": {"rx_bps": 1200.0, "wired": true}, "src": ["unifi"]}],
+ "links": [{"a": "<body id>", "b": "<body id>", "kind": "uplink", "bps": 1000.0}],
+ "traffic": {"ts": 1791450000.0, "window_s": 30,
+             "pairs": [{"a": "sys:core", "b": "sys:pve2", "bps": 4600000.0,
+                        "a_to_b_bps": 1200000.0, "b_to_a_bps": 3400000.0, "kind": "lan",
+                        "links": 1, "layer": "interface", "top": [], "src": ["unifi_port"]}],
+             "wan": [{"system": "sys:core", "in_bps": 900000.0, "out_bps": 150000.0, "bps": 1050000.0,
+                      "via": "ISP", "layer": "interface", "src": ["unifi_wan"]}]}}
+```
+
+- Systems: `sys:core` (kind `network`: gateway, switches, APs), `sys:<node>` (kind
+  `pvehost`, one per Proxmox node), `sys:home` (kind `clients`), `sys:<site>` (kind
+  `site`, from `UNIVERSE_SITES`). New systems are appended; the screens branch on
+  `kind`, never on an id.
+- Body ids are stable: `vm:<node>:<vmid>` for guests, then `mac:` > `snmp:` > `ip:` >
+  `name:`. Classes: `pve_host guest_vm guest_lxc gateway switch ap server storage
+  computer phone tablet tv_av iot appliance camera printer game_console
+  network_device edge unknown`.
+- Honesty: an unmeasured value is absent, never 0. `status` is `up | down | idle |
+  unknown`; a down body carries `down_why`: `offline` (an outage), `stopped` (a
+  powered-off guest) or `gone` (no longer reported, holding its slot). `lab: true`
+  marks bench gear (badge only, never an outage).
+- `short` is the on-screen name (≤ 14 characters, unique inside a system); `label`
+  is the full name for the detail card. `new: true` for 10 minutes after a device
+  first appears (birth animation, "new device" cutaway).
+- `traffic` (optional): measured traffic between systems, EWMA-smoothed, one
+  measurement layer per pair (`interface` counters, else `flow` conversations,
+  then `partial: true` = a lower bound). A pair with nothing measured is absent.
+  In demo mode the object is synthetic and carries `demo: true`.
+
+## `GET /api/tour` — the aspect stops and one problem vocabulary
+
+```json
+{"v": 1, "ts": 1791600000,
+ "aspects": [{"key": "asp:cameras", "name": "Cameras", "anchor": "vm:pve1:113",
+              "after": "host:pve:pve1", "status": "ok",
+              "facts": [{"k": "Recording", "v": "4 / 4", "s": "ok"},
+                        {"k": "Detector", "v": "6.4", "u": "ms", "s": "ok"}],
+              "line": "4 cameras recording"}],
+ "problems": [{"host": "mini-pc", "text": "no ping response", "sev": 4, "lab": false, "n": 1}]}
+```
+
+- `key` is one of `asp:internet asp:security asp:web asp:wifi asp:storage asp:power
+  asp:monitoring asp:ai asp:cameras asp:media` (filter/order with `TOUR_ASPECTS`).
+  `anchor` is a `/api/universe` body or system id; `after` is the tour stop the
+  aspect follows (`wan`, `fabric` or `host:pve:<node>`).
+- At most four `facts`; `s` is `ok | warn | crit | ""` (colour only for status). An
+  aspect whose feeds are all missing or stale is listed with `status: "unknown"`.
+- `problems`: one row per host (its worst problem), short host name and plain text,
+  no addresses. Lab hosts and stopped guests are never red (`sev` capped at 3).
+
 ## Data the screens read (unchanged shapes, listed for completeness)
 
 `/api/all` (`guests, nodes, nodes2, storage, pools, zfs, backups, unifi, zabbix,
@@ -133,7 +207,8 @@ zbx2, cameras, frigate, sources, health, latency, netmap, top, certs, telemetry,
 probe, snmp, topology, edge, external, addons, ts`), `/api/topology` (`nodes, links,
 flows, totals, flow_meta, edge, external`), `/api/gpu`, `/api/showtime`,
 `/api/threats` (+`/stream`), `/api/lightstate` (+`/stream`, `/api/lightcolor`,
-`/api/lightenable`), `/api/mode` (+`/stream`), `/api/presence` (+`/stream`),
+`/api/lightenable`; a wall may also send an optional `move` token and `move_dir`
+of ±1 so the TV flies the same cinematic leg), `/api/mode` (+`/stream`), `/api/presence` (+`/stream`),
 `/api/pulse/stream`, `/api/takeover` (+`/stream`), `/api/history`,
 `/api/inventory`, `/api/telemetry`, `/cam/<name>.jpg`, `/frigate/thumb/<id>.jpg`.
 `edge` contains `cloudflare`, `crowdsec`, `secmon`, `audience`, `threats`; any of

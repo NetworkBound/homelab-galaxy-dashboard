@@ -182,6 +182,16 @@ blender -b --python blender/galaxy_assets.py -- --out static/assets
 The baked results are committed, so you never need Blender unless you want to
 restyle it. Change the palette arguments and re-run to make it yours.
 
+The photographic look comes from three more committed sets, each with a
+`manifest.json` that documents its conventions: `static/assets/galaxy2/` (galaxy
+plates rendered from a physical model and processed like astrophotographs, a
+deep-sky sphere and background galaxies, clusters and nebulae for wide shots),
+`static/assets/celestial/` (planet, moon and star surfaces, rings and glows that
+every device is drawn as) and `static/assets/universe/` (birth and flow sprites
+and the discs of the home and site systems). Galaxy plates are assigned by node
+order: the first node gets the blue-white spiral, the second the golden one, and
+further nodes alternate two more.
+
 ## Deploying
 
 ```bash
@@ -213,6 +223,8 @@ The front end is just a client of a small JSON API; drive your own view from it.
 | `GET /api/config` | Who this instance is: brand, nodes, palette, enabled features, add-on ids |
 | `GET /api/all` | Everything: guests, nodes, storage, pools, UniFi, Zabbix, cameras, health, topology, edge, add-ons |
 | `GET /api/topology` | The network graph: nodes, links with measured rates, flows, totals |
+| `GET /api/universe` | Every device in one stable, append-only layout, grouped into systems, plus measured traffic between them |
+| `GET /api/tour` | The aspect stops (internet, security, Wi-Fi, storage, power, monitoring, AI, cameras, media) and the shared problem list |
 | `GET /api/gpu` | Per-GPU utilisation, memory, temperature, power |
 | `GET /api/showtime` | Ollama instances, Frigate, media sessions, display mode |
 | `GET /api/threats` (+ `/stream`) | The unified intrusion timeline, SSE on change |

@@ -166,6 +166,12 @@ class Feed:
                     if bp.get(k) is not None:
                         p[k] = round(_wobble(bp[k], 0.3), 1)
         T["ts"] = now
+        # every fixture feed carries the capture time; keep them "just polled" so
+        # freshness checks (/api/tour) treat the demo as live
+        for feed in (D.get("telemetry"), D.get("certs"), (D.get("edge") or {}).get("secmon"),
+                     (D.get("edge") or {}).get("crowdsec")):
+            if isinstance(feed, dict) and "ts" in feed:
+                feed["ts"] = now
         # GPUs breathe
         for i, g in enumerate((D.get("gpu") or {}).get("gpus") or []):
             u = 8 + 30 * (0.5 + 0.5 * math.sin((now - self.t0) / (23.0 + 9 * i))) + _rnd.uniform(-4, 4)
@@ -382,3 +388,185 @@ def install(app, data):
     print("[demo] fixtures loaded from", FIXTURES, "-", len(data.get("guests") or []), "guests,",
           len((data.get("topology") or {}).get("nodes") or []), f"topology nodes; a demo intrusion every ~{THREAT_EVERY_S:.0f} s", flush=True)
     return feed
+
+
+# ---------------------------------------------------------------- universe
+# /api/universe and /api/tour run the REAL universe.py / tour.py over the demo DATA,
+# with the slot store in a throwaway directory. Demo mode adds what a fixture
+# snapshot cannot show on its own: a remote site, a lab device, measured-looking
+# traffic between the systems (flagged `demo: true`), and new devices that appear
+# every few minutes so the birth animation and the "new device" cutaway play.
+DEMO_SITES = [{"id": "remote", "label": "Remote site", "cidr": "10.0.2.0/24", "accent": "#fc8181"}]
+DEMO_LAB_HOSTS = ["lab-sw-1"]
+NEW_EVERY_S = float(os.environ.get("DEMO_NEW_EVERY", "240"))     # seconds between demo device arrivals (0 = never)
+NEW_DEVICES = [("guest-laptop", "pc", "02:00:5e:10:00:01", "10.0.0.231"),
+               ("smart-plug", "smart-home", "02:00:5e:10:00:02", "10.0.0.232"),
+               ("tablet-2", "phone", "02:00:5e:10:00:03", "10.0.0.233")]
+
+
+def _seed_problems(data):
+    """A lab switch with a critical-looking problem: it must render as LAB, never red."""
+    z = data.get("zabbix") or {}
+    ah = z.setdefault("alert_hosts", {})
+    ah.setdefault("lab-sw-1", {"n": 1, "sev": 4, "unack": 1, "lab": True,
+                               "names": ["Interface Gi1/0/6(): Link down"],
+                               "top": [{"name": "Interface Gi1/0/6(): Link down", "sev": 4}]})
+    for a in ah.values():
+        a.setdefault("top", [{"name": nm, "sev": int(a.get("sev") or 0)} for nm in a.get("names") or []][:5])
+
+
+def _seed_backups(data, now):
+    """A plausible backup state (the fixture's was captured from a token that could not see backups)."""
+    guests = data.get("guests") or []
+    nodes = sorted({g.get("node") for g in guests if g.get("node")})
+    lab = [g for g in guests if g.get("lab")]
+    real = [g for g in guests if not g.get("lab")]
+    night = now - ((now - 3 * 3600) % 86400) + 1800           # ~02:30 server time, the most recent one
+    runs = []
+    for i, nd in enumerate(nodes):
+        mine = [g for g in real if g.get("node") == nd]
+        failed = 1 if i == len(nodes) - 1 and len(mine) > 20 else 0
+        start = night + i * 600
+        runs.append({"node": nd, "start": int(start), "end": int(start + 40 * len(mine)),
+                     "duration_s": 40 * len(mine), "guests": len(mine), "ok": len(mine) - failed,
+                     "failed": failed, "state": "partial" if failed else "ok",
+                     "age_h": round((now - start) / 3600.0, 1)})
+    data["backups"] = {"src": "demo", "storages": ["pbs"], "ts": int(now), "archives": 14 * len(real),
+                       "guests": len(real), "backed": len(real) - 1, "stale7": 2, "missing": 1,
+                       "unverified": 3, "worst": [], "lab_skipped": len(lab), "lab_backed": 0,
+                       "newest_age_h": round((now - night) / 3600.0, 1), "storage_errors": [], "runs": runs}
+
+
+def _breath(now, period, phase=0.0):
+    return 0.5 + 0.5 * math.sin(now / period + phase)
+
+
+def demo_traffic(data, doc, now):
+    """A `traffic` object (CONTRACTS section 6 shape) for the demo universe: the core
+    to each galaxy over its trunk, the home clients, the remote site over a tunnel,
+    a storage flow between the first two Proxmox nodes, and the WAN. Values breathe
+    on slow cycles; nothing here pretends to be measured (`demo: true`)."""
+    systems = {s["id"]: s for s in doc.get("systems") or []}
+    bodies = doc.get("bodies") or []
+    by_sys = {}
+    for b in bodies:
+        by_sys.setdefault(b.get("system"), []).append(b)
+
+    def name(b):
+        return (b or {}).get("short") or (b or {}).get("label") or "?"
+
+    def hub(sid, cls):
+        return next((b for b in by_sys.get(sid, []) if b.get("class") == cls), None)
+
+    def pair(a, b, a_to_b, b_to_a, kind, top, src, layer="interface", partial=False):
+        if a not in systems or b not in systems:
+            return None
+        if b < a:
+            a, b, a_to_b, b_to_a = b, a, b_to_a, a_to_b
+        e = {"a": a, "b": b, "bps": round(a_to_b + b_to_a, 1), "kind": kind, "links": max(1, len(top)),
+             "layer": layer, "top": top, "src": src}
+        if not partial:
+            e["a_to_b_bps"], e["b_to_a_bps"] = round(a_to_b, 1), round(b_to_a, 1)
+        else:
+            e["partial"] = True
+        return e
+
+    gw = hub("sys:core", "gateway")
+    pairs = []
+    pve = [s for s in systems.values() if s.get("kind") == "pvehost"]
+    for i, s in enumerate(pve):
+        host = hub(s["id"], "pve_host")
+        down = 4e6 + 36e6 * _breath(now, 41.0 + 7 * i, i)
+        up = 1.5e6 + 9e6 * _breath(now, 53.0 + 5 * i, 2 * i)
+        top = [{"a": gw["id"] if gw else None, "b": host["id"] if host else None, "bps": round(down + up, 1),
+                "kind": "lan", "label": f"{name(gw)} ⇄ {name(host)}", "src": "unifi_port"}]
+        p = pair("sys:core", s["id"], down, up, "lan", top, ["unifi_port"])
+        if p:
+            pairs.append(p)
+    home = sorted((b for b in by_sys.get("sys:home", []) if b.get("status") == "up"),
+                  key=lambda b: -((b.get("m") or {}).get("rx_bps") or 0) - ((b.get("m") or {}).get("tx_bps") or 0))
+    if home:
+        k = 0.6 + 0.8 * _breath(now, 37.0)
+        rx = sum(((b.get("m") or {}).get("rx_bps") or 0) for b in home) * k + 2e6 * k
+        tx = sum(((b.get("m") or {}).get("tx_bps") or 0) for b in home) * k + 0.4e6 * k
+        top = [{"a": gw["id"] if gw else None, "b": b["id"], "kind": "lan",
+                "bps": round((((b.get("m") or {}).get("rx_bps") or 0) + ((b.get("m") or {}).get("tx_bps") or 0)) * k + 2e5, 1),
+                "label": f"{name(b)} (client)", "src": "unifi_sta"} for b in home[:4]]
+        p = pair("sys:core", "sys:home", rx, tx, "lan", top, ["unifi_port", "unifi_sta"])
+        if p:
+            pairs.append(p)
+    for i, s in enumerate(x for x in systems.values() if x.get("kind") == "site"):
+        nvr = hub(s["id"], "storage")
+        video = 6e6 + 5e6 * _breath(now, 29.0, i)
+        top = [{"a": gw["id"] if gw else None, "b": nvr["id"] if nvr else None, "bps": round(video + 2e5, 1),
+                "kind": "media", "label": f"{name(nvr)} camera streams", "src": "snmp",
+                "a_to_b_bps": 2e5, "b_to_a_bps": round(video, 1)}]
+        p = pair("sys:core", s["id"], 2e5, video, "vpn", top, ["snmp"])
+        if p:
+            pairs.append(p)
+    if len(pve) >= 2:
+        a, b = pve[0], pve[1]
+        nfs = 2e6 + 60e6 * max(0.0, math.sin(now / 97.0)) ** 2
+        top = [{"a": hub(a["id"], "pve_host")["id"] if hub(a["id"], "pve_host") else None,
+                "b": hub(b["id"], "pve_host")["id"] if hub(b["id"], "pve_host") else None,
+                "bps": round(nfs, 1), "kind": "storage", "label": "NFS", "src": "flow"}]
+        p = pair(a["id"], b["id"], nfs * 0.8, nfs * 0.2, "storage", top, ["flow"], layer="flow", partial=True)
+        if p:
+            pairs.append(p)
+    tot = ((data.get("topology") or {}).get("totals") or {})
+    wan = []
+    if gw and tot.get("wan_rx_bps") is not None:
+        rx, tx = float(tot.get("wan_rx_bps") or 0), float(tot.get("wan_tx_bps") or 0)
+        wan.append({"system": "sys:core", "in_bps": round(rx, 1), "out_bps": round(tx, 1), "bps": round(rx + tx, 1),
+                    "via": str((data.get("unifi") or {}).get("isp") or "WAN"), "layer": "interface", "src": ["unifi_wan"]})
+    return {"ts": round(now, 1), "window_s": 30, "pairs": pairs, "wan": wan, "demo": True,
+            "sources": {"demo": {"keys": len(pairs), "age_s": 0.0}}}
+
+
+def _grow(data):
+    """Every NEW_EVERY_S, one more client joins the home network (at most len(NEW_DEVICES))."""
+    if NEW_EVERY_S <= 0:
+        return
+    time.sleep(NEW_EVERY_S)
+    for label, cat, mac, ip in NEW_DEVICES:
+        T = data.get("topology") or {}
+        sw = next((n for n in T.get("nodes") or [] if n.get("kind") == "switch"), None) or \
+            next((n for n in T.get("nodes") or [] if n.get("kind") == "gateway"), None)
+        node = {"id": "client:" + mac, "ip": ip, "kind": "client", "label": label, "measured": True,
+                "meta": {"cat": cat, "mac": mac, "wired": cat == "pc", "vendor": None},
+                "parent": sw["id"] if sw else None, "rx": 1800.0, "tx": 600.0, "status": "up"}
+        T.setdefault("nodes", []).append(node)
+        if sw:
+            T.setdefault("links", []).append({"source": sw["id"], "target": node["id"], "bps": 19200.0, "measured": True})
+        print(f"[demo] new device on the network: {label}", flush=True)
+        time.sleep(NEW_EVERY_S)
+
+
+def install_universe(app, data):
+    """Register /api/universe over the demo DATA (real universe.py, throwaway store)."""
+    import tempfile
+
+    import config
+    if not config.UNIVERSE_SITES:
+        config.UNIVERSE_SITES = [dict(s) for s in DEMO_SITES]
+    if not config.UNIVERSE_LAB_HOSTS:
+        config.UNIVERSE_LAB_HOSTS = list(DEMO_LAB_HOSTS)
+    if not config.DOMAIN:
+        config.DOMAIN = "example.com"
+    _seed_problems(data)
+    _seed_backups(data, time.time())
+    # the fixture's camera events are as old as the capture: replay them as recent ones
+    ev = ((data.get("showtime") or {}).get("frigate") or {}).get("events") or []
+    starts = [e.get("start") for e in ev if isinstance(e, dict) and isinstance(e.get("start"), (int, float))]
+    if starts:
+        shift = time.time() - 180 - max(starts)
+        for e in ev:
+            if isinstance(e, dict) and isinstance(e.get("start"), (int, float)):
+                e["start"] += shift
+                if isinstance(e.get("end"), (int, float)):
+                    e["end"] += shift
+    import universe
+    universe.set_traffic_fn(lambda doc, now: demo_traffic(data, doc, now))
+    store = os.path.join(tempfile.mkdtemp(prefix="galaxy-demo-"), "universe_slots.json")
+    universe.install(app, data, store_path=store)
+    threading.Thread(target=_grow, args=(data,), daemon=True, name="demo-grow").start()

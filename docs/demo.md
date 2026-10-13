@@ -32,6 +32,17 @@ tell the difference.
 | `history_net.json`, `history_gpu.json` | `/api/history`, re-based so the newest sample is "now" |
 | `lightstate.json`, `mode.json`, `presence.json` | the tour position, display mode, presence |
 
+## The universe and the tour
+
+`/api/universe` and `/api/tour` run the real `universe.py` and `tour.py` over the
+demo data, with the slot store in a throwaway temp directory. Demo mode adds a
+remote site (`10.0.2.0/24`, holding the camera NVR and its cameras), marks the
+SNMP switch `lab-sw-1` as bench gear (it carries a critical-looking problem that
+must show as LAB, never red), seeds a plausible backup history, and synthesises
+the inter-galaxy traffic (flagged `demo: true`). Every `DEMO_NEW_EVERY` seconds
+(default 240, `0` = never) one more client joins the home network, up to three,
+so the birth animation and the "new device" cutaway play.
+
 ## It is alive, not a snapshot
 
 A background thread drifts the fixtures every few seconds so the scene behaves

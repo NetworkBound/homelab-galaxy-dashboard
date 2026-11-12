@@ -27,6 +27,10 @@ import config
 
 V = 1
 CACHE_S = 5.0
+STORY_MAX = 48         # one line a phone can read inside the 9:16 crop of the wall
+# never a slogan, a question, a "did you know", an IP: the same rule story.js applies on the wall
+_STORY_BAD = re.compile(r"[?!]|did you know|orbit|galaxy|from orbit|now showing|\d+\.\d+\.\d+\.\d+", re.I)
+_STORY_KINDS = ("status", "rate", "count", "age")
 STALE_S = 600          # a feed with a ts older than this is treated as absent
 SHOW_STALE_S = 120     # showtime pollers run every 3-15 s
 
@@ -101,6 +105,55 @@ def _fact(k, v, u=None, s=""):
     return out
 
 
+# Advance widths of Inter 500 with tabular figures, 1/100 em, ASCII 32..126. The wall sets the
+# line at 26 px in a 560 px box (what a phone's 9:16 crop of the screen keeps), so the rule is
+# pixels as well as characters: 48 characters of this face run to ~660 px.
+_ADV = (27, 30, 49, 64, 65, 99, 65, 31, 39, 39, 65, 65, 27, 65, 27, 37, 65, 65, 65, 65, 65, 65, 65, 65, 65, 65, 27,
+        27, 65, 65, 65, 53, 98, 71, 66, 73, 72, 60, 59, 75, 74, 27, 58, 69, 57, 91, 76, 77, 64, 77, 65, 65, 65, 74,
+        71, 100, 70, 70, 64, 39, 37, 39, 48, 46, 34, 57, 62, 58, 62, 59, 38, 62, 60, 25, 25, 56, 25, 89, 60, 60, 62,
+        62, 39, 54, 34, 60, 57, 83, 56, 58, 56, 39, 35, 39, 65)
+_ADV_X = {"\u00b7": 30, "\u2013": 50, "\u00b0": 46, "\u2026": 91}
+STORY_FONT_PX = 26
+STORY_PX = 556         # the 560 px box; the wall measures the real glyphs and skips a line that does not fit
+
+
+def story_px(text):
+    """Estimated width of a story line on the wall, CSS px."""
+    return sum(_ADV[ord(c) - 32] if 32 <= ord(c) < 127 else _ADV_X.get(c, 65) for c in str(text)) * STORY_FONT_PX / 100.0
+
+
+def story_ok(text):
+    """The story-line rule: <= 48 chars and one line of the wall's box, no slogan /
+    question / IP; a number is a measured fact, so every candidate but a plain status carries one."""
+    t = " ".join(str(text or "").split())
+    return bool(t) and len(t) <= STORY_MAX and story_px(t) <= STORY_PX and not _STORY_BAD.search(t)
+
+
+def _story(text, kind="count", prio=2):
+    """One story candidate {text, kind, prio} or None when the text breaks the rule."""
+    if text is None or kind not in _STORY_KINDS:
+        return None
+    t = " ".join(str(text).split())
+    if not story_ok(t) or (kind != "status" and not re.search(r"\d", t)):
+        return None
+    return {"text": t, "kind": kind, "prio": int(prio)}
+
+
+_KIND_ORDER = {"status": 0, "rate": 1, "count": 2, "age": 3}
+
+
+def _stories(cands, limit=3):
+    """Dedupe, rank (status > rate > count > age, then prio), keep <= limit."""
+    out, seen = [], set()
+    for c in cands:
+        if not c or c["text"] in seen:
+            continue
+        seen.add(c["text"])
+        out.append(c)
+    out.sort(key=lambda c: (_KIND_ORDER[c["kind"]], c["prio"]))
+    return out[:limit]
+
+
 def _fresh(d, now, max_age=STALE_S):
     """A feed dict that is present, not marked down, not an error stub, not stale."""
     if not isinstance(d, dict) or not d:
@@ -160,6 +213,8 @@ class Uni:
         self.known = bool(body.get("bodies") or body.get("systems"))
         self.bodies = {b.get("id"): b for b in (body.get("bodies") or []) if isinstance(b, dict) and b.get("id")}
         self.systems = {s.get("id"): s for s in (body.get("systems") or []) if isinstance(s, dict) and s.get("id")}
+        self.traffic = body.get("traffic") if isinstance(body.get("traffic"), dict) else {}
+        self.counts = body.get("counts") if isinstance(body.get("counts"), dict) else {}
         self._by_vmid = {}
         for b in self.bodies.values():
             m = b.get("m") or {}
@@ -267,13 +322,19 @@ def _norm(s):
 
 
 # ------------------------------------------------------------------ aspects --
-def _aspect(facts, line, sources_up, status=None):
-    """facts: list of facts (None entries dropped). sources_up False -> unknown."""
+def _aspect(facts, line, sources_up, status=None, story=None):
+    """facts: list of facts (None entries dropped). sources_up False -> unknown.
+    story: candidate lines for the wall's story layer; absent when the feed is down,
+    so a dead feed never puts a number on the big line."""
     facts = [f for f in facts if f][:4]
     if not sources_up or not facts:
         return {"status": "unknown", "facts": [dict(UNAVAILABLE)], "line": line or "Feed unavailable"}
     st = status or _worst(facts) or "ok"
-    return {"status": st, "facts": facts, "line": line}
+    out = {"status": st, "facts": facts, "line": line}
+    s = _stories(story or [])
+    if s:
+        out["story"] = s
+    return out
 
 
 def asp_internet(D, U, S, now):
@@ -308,7 +369,19 @@ def asp_internet(D, U, S, now):
     else:
         line = "%s link up" % (isp or "Internet")
     st = _worst(facts + ([{"s": wan_s}] if wan_s else []))
-    return _aspect(facts, line, unifi_ok or tel_ok or bool(inet), st or None)
+    story = []
+    if wan_s == "crit":
+        story.append(_story("Internet link is down", "status", 1))
+    if loss is not None and loss >= 2:
+        story.append(_story("%s %% packet loss to the internet" % _fmt(loss), "status", 2))
+    if rx is not None and tx is not None:
+        story.append(_story("%s Mb/s down · %s Mb/s up right now" % (_rate(rx), _rate(tx)), "rate", 1))
+    elif rx is not None:
+        story.append(_story("%s Mb/s coming in from the internet" % _rate(rx), "rate", 1))
+    if lat is not None:
+        story.append(_story("%s ms to the internet%s" % (_fmt(lat), (" via " + isp) if isp else ""), "rate", 2)
+                     or _story("%s ms to the internet" % _fmt(lat), "rate", 2))
+    return _aspect(facts, line, unifi_ok or tel_ok or bool(inet), st or None, story)
 
 
 THREAT = {0: ("Normal", "ok"), 1: ("Elevated", "warn"), 2: ("High", "warn"), 3: ("Severe", "warn")}
@@ -340,26 +413,37 @@ def asp_security(D, U, S, now):
     if banned is not None:
         facts.append(_fact("Banned IPs", _fmt(banned)))
     level = None
+    story = []
     if sm_ok and _num(sm.get("threat_level")) is not None:
         level = max(0, min(3, int(_num(sm.get("threat_level")))))
         name, s = THREAT[level]
         last = sm.get("last_24h") or {}
-        if level >= 3 and (_num(last.get("CRITICAL")) or 0) > 0:
+        ncrit = int(_num(last.get("CRITICAL")) or 0)
+        if level >= 3 and ncrit > 0:
             s = "crit"            # new critical findings today, not just an unacked backlog
+            story.append(_story("%s today at the edge" % _plural(ncrit, "critical security finding"), "status", 1)
+                         or _story("%s critical security findings today" % _fmt(ncrit), "status", 1))
         facts.append(_fact("Threat", name, None, s))
     if cf_ok and cf.get("up") is not False and _num(cf.get("ha_connections")) is not None:
         n = int(_num(cf.get("ha_connections")))
         facts.append(_fact("Tunnel", f"{n} / 4" if n <= 4 else str(n), "links",
                            "ok" if n >= 4 else ("warn" if n > 0 else "crit")))
+        if n <= 4:
+            story.append(_story("%d of 4 Cloudflare tunnel links up" % n, "status" if n < 4 else "count", 1 if n < 4 else 3))
     elif cf_ok and cf.get("up") is False:
         facts.append(_fact("Tunnel", "Down", None, "crit"))
+        story.append(_story("Cloudflare tunnel is down", "status", 1))
+    if attacks is not None:
+        story.append(_story("%s blocked in the last 24 h" % _plural(attacks, "attack"), "rate", 1))
+    if banned is not None:
+        story.append(_story("%s IPs banned at the edge right now" % _fmt(banned), "count", 1))
     if attacks is not None:
         line = "{} blocked in the last 24 h".format(_plural(attacks, "attack"))
     elif level is not None:
         line = f"Threat level {THREAT[level][0].lower()}"
     else:
         line = "Edge protection"
-    return _aspect(facts, line, tel_ok or sm_ok or cf_ok or cs_ok)
+    return _aspect(facts, line, tel_ok or sm_ok or cf_ok or cs_ok, None, story)
 
 
 def _site_short(host, own=None):
@@ -395,13 +479,18 @@ def asp_web(D, U, S, now):
                       key=lambda r: (-(_num(r.get("uniques")) or 0), -(_num(r.get("requests")) or 0)))
         if rows:
             facts.append(_fact("Top site", _site_short(rows[0]["host"])))
+    story = []
+    if now5 is not None:
+        story.append(_story("%s on the websites right now" % _plural(now5, "visitor"), "count", 1))
     if hr is not None and cc:
         line = "{} from {} this hour".format(_plural(hr, "visitor"), _plural(cc, "country", "countries"))
+        story.append(_story("%s this hour from %s" % (_plural(hr, "visitor"), _plural(cc, "country", "countries")), "count", 2))
     elif hr is not None:
         line = "{} this hour".format(_plural(hr, "visitor"))
+        story.append(_story("%s on the websites this hour" % _plural(hr, "visitor"), "count", 2))
     else:
         line = "Public websites"
-    return _aspect(facts, line, ok)
+    return _aspect(facts, line, ok, None, story)
 
 
 def asp_wifi(D, U, S, now):
@@ -424,6 +513,16 @@ def asp_wifi(D, U, S, now):
     if isinstance(apc, dict) and len(apc) > 1:
         busiest = max(apc.items(), key=lambda kv: _num(kv[1]) or 0)
         facts.append(_fact("Busiest AP", (U.match_host(busiest[0]) or {}).get("short") or busiest[0][:14]))
+    story = []
+    if aps and up < len(aps):
+        story.append(_story("%d of %d access points down" % (len(aps) - up, len(aps)), "status", 1))
+    if wifi is not None and aps:
+        story.append(_story("%s Wi-Fi %s on %s" % (_fmt(wifi), "client" if int(wifi) == 1 else "clients",
+                                                    _plural(len(aps), "access point")), "count", 1))
+    elif wifi is not None:
+        story.append(_story("%s Wi-Fi %s connected" % (_fmt(wifi), "client" if int(wifi) == 1 else "clients"), "count", 1))
+    if allc is not None:
+        story.append(_story("%s on the network right now" % _plural(allc, "client"), "count", 2))
     if wifi is not None and aps:
         line = "{} wireless {} on {}".format(_fmt(wifi), "client" if int(wifi) == 1 else "clients",
                                          _plural(len(aps), "access point"))
@@ -431,7 +530,7 @@ def asp_wifi(D, U, S, now):
         line = "{} on the network".format(_plural(allc, "client"))
     else:
         line = "Wireless network"
-    return _aspect(facts, line, ok or bool(aps))
+    return _aspect(facts, line, ok or bool(aps), None, story)
 
 
 def _backup_fact(b):
@@ -492,15 +591,37 @@ def asp_storage(D, U, S, now):
         hot = max(_num(v) or 0 for v in tel["smart_hot"].values())
         facts.append(_fact("Hottest", _fmt(hot), "°C", "ok" if hot < 50 else ("warn" if hot < 60 else "crit")))
     parts = []
+    story = []
     if rows:
         online = sum(1 for r in rows if r[2] == "ONLINE")
         parts.append("{} online".format(_plural(online, "pool")) if online == len(rows)
                      else f"{online} of {len(rows)} pools online")
+        if online < len(rows):
+            story.append(_story("%d of %d ZFS pools not online" % (len(rows) - online, len(rows)), "status", 1))
+        tib = sum(r[0] for r in rows) / 1024.0 ** 4
+        story.append(_story("ZFS %s TB · %s %% used" % (_fmt(tib), _fmt(pct)), "count", 1))
     if bstat:
         parts.append(f"last backup {bstat[0]} of {bstat[1]} ok")
+        if bstat[2]:
+            story.append(_story("%s failed in last night's backup" % _plural(bstat[2], "guest"), "status", 1))
+    bk = b if isinstance(b, dict) and not b.get("error") and not b.get("unknown") else {}
+    if _num(bk.get("backed")) is not None and _num(bk.get("guests")):
+        story.append(_story("%d of %d guests backed up" % (_num(bk["backed"]), _num(bk["guests"])), "count", 1))
+        if _num(bk.get("missing")):
+            story.append(_story("%s without a backup" % _plural(_num(bk["missing"]), "guest"), "status", 2))
+    elif bstat:
+        story.append(_story("%d of %d guests backed up overnight" % (bstat[0], bstat[1]), "count", 1))
+    if drives is not None:
+        bad = int(_num(tel.get("smart_bad")) or 0)
+        if bad:
+            story.append(_story("%s failing" % _plural(bad, "drive"), "status", 1))
+        elif tel_ok and isinstance(tel.get("smart_hot"), dict) and tel["smart_hot"]:
+            story.append(_story("%d drives healthy, hottest %s °C" % (drives, _fmt(max(_num(v) or 0 for v in tel["smart_hot"].values()))), "count", 2))
+        else:
+            story.append(_story("%d drives healthy" % drives, "count", 2))
     line = (", ".join(parts) or "Storage").capitalize() if parts else "Storage"
     line = line[0].upper() + line[1:]
-    return _aspect(facts, line, bool(rows) or bool(bf) or drives is not None)
+    return _aspect(facts, line, bool(rows) or bool(bf) or drives is not None, None, story)
 
 
 def _gpu_watts(S, now):
@@ -533,13 +654,22 @@ def asp_power(D, U, S, now):
     fan = _num(tel.get("fan_max")) if ok else None
     if fan is not None:
         facts.append(_fact("Fans", _fmt(fan), "rpm"))
+    story = []
+    if inlet is not None and inlet >= 42:
+        story.append(_story("Inlet air at %s °C, too warm" % _fmt(inlet), "status", 1))
+    if w is not None:
+        story.append(_story("Servers drawing %s W right now" % _fmt(w), "rate", 1))
+    if gw is not None:
+        story.append(_story("GPUs drawing %s W right now" % _fmt(gw), "rate", 2))
+    if inlet is not None:
+        story.append(_story("Inlet air at %s °C" % _fmt(inlet), "count", 3))
     if w is not None and inlet is not None:
         line = f"Server drawing {_fmt(w)} W at {_fmt(inlet)} °C inlet"
     elif w is not None:
         line = f"Server drawing {_fmt(w)} W"
     else:
         line = "Power and cooling"
-    return _aspect(facts, line, ok or gw is not None)
+    return _aspect(facts, line, ok or gw is not None, None, story)
 
 
 def asp_monitoring(D, U, S, now, problems):
@@ -566,13 +696,24 @@ def asp_monitoring(D, U, S, now, problems):
         facts.append(_fact("Checks", f"{up} / {len(h)}", None,
                            "ok" if up == len(h) else ("crit" if up <= len(h) / 2 else "warn")))
     hosts = _num(z.get("hosts")) if z_ok else None
+    story = []
+    if z_ok and crit_hosts:
+        story.append(_story("%s with critical problems" % _plural(len(crit_hosts), "host"), "status", 1))
+    elif z_ok and hosts:
+        story.append(_story("%s watched, no critical problems" % _plural(hosts, "host"), "count", 1))
+    if so is not None and st:
+        story.append(_story("%d of %d endpoints up" % (so, st), "status" if so < st else "count", 1 if so < st else 2))
+    if h:
+        story.append(_story("%d of %d synthetic checks passing" % (up, len(h)), "status" if up < len(h) else "count", 1 if up < len(h) else 2))
+    if md is not None:
+        story.append(_story("TLS certificates good for %s more days" % _fmt(md), "age", 3))
     if z_ok and crit_hosts:
         line = "{} watched, {} with critical problems".format(_plural(hosts or 0, "host"), _fmt(len(crit_hosts)))
     elif z_ok:
         line = "All systems normal across {}".format(_plural(hosts or 0, "host")) if hosts else "All systems normal"
     else:
         line = "Zabbix feed unavailable"
-    return _aspect(facts, line, z_ok or tel_ok or bool(h) or md is not None)
+    return _aspect(facts, line, z_ok or tel_ok or bool(h) or md is not None, None, story)
 
 
 def asp_ai(D, U, S, now):
@@ -596,6 +737,11 @@ def asp_ai(D, U, S, now):
             sup = sum(1 for s in srv if s.get("ollama_up") or s.get("up"))
             facts.insert(0, _fact("Servers", f"{sup} / {len(srv)}", None,
                                   "ok" if sup == len(srv) else ("crit" if not sup else "warn")))
+    story = []
+    if inst and not up:
+        story.append(_story("Ollama is down", "status", 1))
+    if inst and up:
+        story.append(_story("%s loaded, %s GB of VRAM" % (_plural(len(loaded), "model"), _fmt(vram / 1024, 1)), "count", 1))
     if loaded:
         names = sorted({str(m.get("name") or "") for m in loaded if m.get("name")})
         where = next((i.get("gpu_label") for i in up if i.get("loaded")), None)
@@ -605,7 +751,7 @@ def asp_ai(D, U, S, now):
         line = "Ollama up, no model loaded"
     else:
         line = "Local AI"
-    return _aspect(facts, line, bool(inst) or r_ok or bool(D.get("ai_servers")))
+    return _aspect(facts, line, bool(inst) or r_ok or bool(D.get("ai_servers")), None, story)
 
 
 def asp_cameras(D, U, S, now):
@@ -634,14 +780,28 @@ def asp_cameras(D, U, S, now):
     if ms is not None:
         facts.append(_fact("Detector", _fmt(ms, 1), "ms", "ok" if ms < 30 else "warn"))
     ev = [e for e in (sf.get("events") or []) if isinstance(e, dict)] if sf_ok else []
+    story = []
+    if live is not None:
+        story.append(_story("%d of %d cameras recording" % (live, total), "status" if live < total else "count", 1))
+    elif down_feed and names:
+        story.append(_story("Cameras are not recording", "status", 1))
     if ev:
         e = max(ev, key=lambda e: _num(e.get("start")) or 0)
         age = now - _num(e.get("start")) if _num(e.get("start")) else _num(e.get("age"))
         lbl = str(e.get("label") or "object").replace("_", " ").capitalize()
         facts.append(_fact("Last event", lbl, _ago(age) if age is not None else None))
+        if age is not None:
+            ago = ("%d s ago" % age) if age < 90 else _ago(age)
+            if live is not None and live == total and live >= 2:
+                # the line a stranger repeats: how many eyes, and what they last saw
+                story.append(_story("%d cameras recording \u00b7 last %s %s" % (live, lbl.lower(), ago), "count", 0))
+            story.append(_story("Last %s seen %s" % (lbl.lower(), ago), "age", 2))
+    if ms is not None:
+        story.append(_story("Detector at %s ms per frame" % _fmt(ms, 1), "count", 3))
     days = _num((fr.get("rec") or {}).get("est_days")) if fr_ok else None
     if days is not None:
         facts.append(_fact("Retention", "~" + _fmt(round(days, -1) if days >= 100 else days), "d"))
+        story.append(_story("About %s of recordings kept" % _plural(round(days, -1) if days >= 100 else days, "day"), "age", 3))
     elif fr_ok and _num((fr.get("rec") or {}).get("pct")) is not None:     # estimate not ready yet
         pct = _num(fr["rec"]["pct"])
         facts.append(_fact("Disk used", _fmt(pct, 1), "%", "ok" if pct < 85 else ("warn" if pct < 95 else "crit")))
@@ -651,7 +811,7 @@ def asp_cameras(D, U, S, now):
         line = "Frigate is not responding"
     else:
         line = "Cameras"
-    return _aspect(facts, line, fr_ok or sf_ok or bool(down_feed and names))
+    return _aspect(facts, line, fr_ok or sf_ok or bool(down_feed and names), None, story)
 
 
 _MEDIA_CHECKS = ("emby", "jellyfin", "plex")
@@ -674,29 +834,37 @@ def asp_media(D, U, S, now):
         live = [p for p in play if p.get("live") and p.get("title")]
         if live:      # a channel name is not personal; a film or episode someone is watching is
             facts.append(_fact("Live TV", str(live[0]["title"]).split(" · ")[0][:16]))
+        story = []
         if play:
             line = "{} playing{}".format(_plural(len(play), "stream"), f", {tc} transcoding" if tc else "")
+            story.append(_story("%s playing on the media server%s" % (_plural(len(play), "stream"), (", %d transcoding" % tc) if tc else ""), "count", 1))
         else:
             line = "Media server up, {} connected, nothing playing".format(_plural(sess, "session"))
-        return _aspect(facts, line, True, "ok")
+        story.append(_story("%s connected to the media server" % _plural(sess, "session"), "count", 2))
+        return _aspect(facts, line, True, "ok", story)
     if configured and e.get("up") is False:
         h = next((x for x in (D.get("health") or []) if isinstance(x, dict) and str(x.get("name", "")).lower() in _MEDIA_CHECKS), None)
         if h and h.get("up"):      # the API failed but the web check passes: degraded, not down
             return _aspect([_fact("Server", "Up", None, "ok"), _fact("Sessions", "unavailable", None, "warn")],
-                           "Media server up, session feed unavailable", True)
-        return _aspect([_fact("Server", "Down", None, "crit")], "Media server is not responding", True)
+                           "Media server up, session feed unavailable", True, None,
+                           [_story("Media server up, session feed unavailable", "status", 2)])
+        return _aspect([_fact("Server", "Down", None, "crit")], "Media server is not responding", True, None,
+                       [_story("Media server is not responding", "status", 1)])
     h = next((x for x in (D.get("health") or []) if isinstance(x, dict)
               and str(x.get("name", "")).lower() in _MEDIA_CHECKS), None)
     if h:
         return _aspect([_fact("Server", "Up" if h.get("up") else "Down", None, "ok" if h.get("up") else "crit")],
-                       "Media server up" if h.get("up") else "Media server is not responding", True)
+                       "Media server up" if h.get("up") else "Media server is not responding", True, None,
+                       [_story("Media server is up" if h.get("up") else "Media server is not responding", "status", 2)])
     return _aspect([], "Media server", False)
 
 
 # ----------------------------------------------------------------- problems --
 _PAREN_ID = re.compile(r"\s*\((?:CT|VM|LXC)\s*\d+\)", re.I)
 _PVE = re.compile(r"^Proxmox:\s*(VM|LXC)\s*\[(?P<node>[^/\]]+)/(?P<name>[^\]\(]+?)\s*(?:\((?:qemu|lxc)/(?P<id>\d+)\))?\]:\s*(?P<what>.*)$", re.I)
-_PREFIX = re.compile(r"^(?:Linux|Windows|Proxmox|ICMP|Juniper|Cisco|Nokia|ADVA|Interface|Generic|SNMP|HTTP|DEMO|MikroTik|Ubiquiti|UniFi)\s*:\s*", re.I)
+_PREFIX = re.compile(r"^(?:Alcatel\s+Timetra\s+TiMOS|Cisco\s+IOS(?:\s*XR)?|Juniper\s+Junos|Generic\s+SNMP|Linux|Windows|Proxmox|ICMP|Juniper|Cisco|Nokia|ADVA|Interface|Generic|SNMP|HTTP|DEMO|MikroTik|Ubiquiti|UniFi)\s*:\s*", re.I)
+# "security-mon · active CRITICAL security finding" -> "critical finding" (contracts 9.3: no template boilerplate)
+_FINDING = re.compile(r"^(?:active\s+)?(critical|high|medium|low)\s+security\s+finding", re.I)
 
 # (pattern on the cleaned text, replacement text)
 _RULES = [
@@ -745,10 +913,13 @@ def problem_text(raw, host=None):
         s = _PREFIX.sub("", s)
     if host:                                     # "freeradius: FreeRADIUS port 1812 ..." / "pve1: Too many"
         s = re.sub(rf"^{re.escape(host)}\s*:\s*", "", s, flags=re.I)
+    fm = _FINDING.match(s)
+    if fm:
+        return f"{fm.group(1).lower()} finding", vmid, "finding"
     im = _IFACE.match("Interface " + s if not s.lower().startswith("interface") else s)
     if im and ":" in s:
         name = im.group("alias").strip() or im.group("if")
-        what = _lower_first(im.group("what").strip())
+        what = _lower_first(_tidy(im.group("what").strip()))
         return _clip(f"{name} {what}"), vmid, "iface"
     for rx, rep in _RULES:
         if rx.search(s):
@@ -880,7 +1051,284 @@ def build(D, universe_body=None, show=None, now=None):
         aspects += k8s_aspects
         problems = sorted(problems + k8s_problems,
                           key=lambda p: (p["lab"], -p["sev"], -p["n"], p["host"].lower()))
-    return {"v": V, "ts": round(now), "aspects": aspects, "problems": problems}
+    out = {"v": V, "ts": round(now), "aspects": aspects, "problems": problems}
+    for k, fn in (("systems", build_systems), ("links", build_links), ("estate", build_estate)):
+        try:
+            v = fn(U, now)
+        except Exception as e:                 # additive: the story layer is never worth a 500
+            print("[tour] %s story failed: %s: %s" % (k, type(e).__name__, e), flush=True)
+            v = []
+        if v:
+            out[k] = {"story": v} if k == "estate" else v
+    return out
+
+
+# ------------------------------------------------------------ system story --
+# Story candidates for the stops that are not aspects (additive): one list per
+# system galaxy (`systems`), per guest category of a Proxmox host (`systems[].cats`, the
+# blk:<hub>:<cat> stops), per measured system-to-system stream (`links`, the stream stop)
+# and one for the whole estate (`estate`, the overviews). Same honesty rules as the facts:
+# measured values only, no body names (a guest can be named after a customer), no ids, no
+# IPs; a body the registry marked `gone` is not part of any total, bench gear (`lab`) is
+# never counted or reported.
+# the wall's own acronym list (netscene.js ACRO), so a system is named alike on both
+_ACRO = {"gpu": "GPU", "nas": "NAS", "nvr": "NVR", "udm": "UDM", "usw": "USW", "ai": "AI", "dns": "DNS",
+         "vpn": "VPN", "wan": "WAN", "lan": "LAN", "pve": "PVE", "sd-wan": "SD-WAN", "pbs": "PBS",
+         "tv": "TV", "av": "AV"}
+_CAT_TITLE = {"ai": "AI", "media": "Media", "network": "Network", "monitor": "Monitoring", "web": "Web",
+              "infra": "Infra"}
+_CAT_WORD = {"ai": "AI", "media": "media", "network": "network", "monitor": "monitoring", "web": "web",
+             "infra": "infra"}
+# only these can be "offline" news: a laptop asleep or a phone out of the house is not an outage
+_INFRA_CLASSES = ("pve_host", "switch", "ap", "gateway", "storage", "server", "camera", "guest_lxc", "guest_vm")
+STATUS_RECENT_H = 6.0       # a status line is a CHANGE: offline for longer is old news
+LINK_MIN_BPS = 1e5
+CAT_MIN = 3                 # netscene.js makes a blk: stop for a category of >= 3 guests
+
+
+def _sys_name(s):
+    """The galaxy's product name, as the wall's caption sets it (netscene.js sysName): the
+    registry's short in sentence case with the usual acronyms kept ("PVE1" -> "PVE1",
+    "HOMELAB" -> "Homelab", "gpu" -> "GPU"); never an id."""
+    raw = str((s or {}).get("short") or (s or {}).get("label") or str((s or {}).get("id") or "").split(":")[-1]).strip()
+    if not raw:
+        return "system"
+    shout = bool(re.search(r"[A-Z]", raw)) and raw == raw.upper()
+    out = []
+    for i, t in enumerate(raw.split()):
+        k = t.lower()
+        m = re.match(r"^([a-z-]+?)(\d*)$", k)
+        if k in _ACRO:
+            out.append(_ACRO[k])
+            continue
+        if m and m.group(1) in _ACRO:
+            out.append(_ACRO[m.group(1)] + m.group(2))
+            continue
+        if shout:
+            t = k
+        out.append(t[0].upper() + t[1:] if i == 0 else t)
+    return " ".join(out)
+
+
+def _bps_text(bps):
+    return ("%s Mb/s" % _rate(bps / 1e6)) if bps >= 1e6 else ("%s kb/s" % _fmt(bps / 1e3))
+
+
+def _first(*cands):
+    """The first candidate that passed the story rule (a long form, then its shorter form)."""
+    for c in cands:
+        if c:
+            return c
+    return None
+
+
+def _live(bs):
+    """Bodies that count: not bench gear, not gone from the registry."""
+    return [b for b in bs if not b.get("lab") and b.get("down_why") != "gone"]
+
+
+def _is_guest(b):
+    return str(b.get("class") or "").startswith("guest_")
+
+
+def _guest_split(bs):
+    up = [b for b in bs if _is_guest(b) and b.get("status") == "up"]
+    return (sum(1 for b in up if b.get("class") == "guest_lxc"), sum(1 for b in up if b.get("class") == "guest_vm"))
+
+
+def _guests_text(ct, vm, tail):
+    if ct and vm:
+        both = "%s and %s" % (_plural(ct, "container"), _plural(vm, "VM"))
+        return _first(_story("%s running %s" % (both, tail), "count", 1), _story("%s %s" % (both, tail), "count", 1),
+                      _story("%s running %s" % (_plural(ct + vm, "guest"), tail), "count", 1))
+    if ct or vm:
+        return _story("%s running %s" % (_plural(ct, "container") if ct else _plural(vm, "VM"), tail), "count", 1)
+    return None
+
+
+def _recent_offline(bs):
+    """Infrastructure that went offline within STATUS_RECENT_H, by the registry's own clock."""
+    out = []
+    for b in bs:
+        if b.get("status") != "down" or b.get("down_why") != "offline" or b.get("class") not in _INFRA_CLASSES:
+            continue
+        h = _num((b.get("m") or {}).get("offline_h"))
+        if h is not None and 0 <= h <= STATUS_RECENT_H:
+            out.append(b)
+    return out
+
+
+def _pairs(U):
+    out = []
+    for p in (U.traffic.get("pairs") or []):
+        if isinstance(p, dict) and p.get("a") in U.systems and p.get("b") in U.systems:
+            bps = _num(p.get("bps"))
+            if bps is not None and bps >= 0:
+                out.append((bps, p))
+    return out
+
+
+def _traffic_fresh(U, now):
+    ts = _num(U.traffic.get("ts"))
+    return ts is not None and abs(now - ts) <= STALE_S
+
+
+def _sys_story(U, sid, now):
+    s = U.systems.get(sid) or {}
+    bs = _live([b for b in U.bodies.values() if b.get("system") == sid])
+    if not bs:
+        return []
+    nm = _sys_name(dict(s, id=sid))
+    kind = str(s.get("kind") or "")
+    st = []
+    off = _recent_offline(bs)
+    if off and kind != "clients":
+        word = "guest" if all(_is_guest(b) for b in off) else "device"
+        prep = "on" if kind == "pvehost" else "at"
+        st.append(_story("%s offline %s %s" % (_plural(len(off), word), prep, nm), "status", 1))
+    if kind == "k8s":
+        # a Kubernetes cluster's guests are its pods (k8s.py), its servers the nodes
+        pods = [b for b in bs if _is_guest(b)]
+        nodes = [b for b in bs if not _is_guest(b)]
+        run = sum(1 for b in pods if b.get("status") == "up")
+        if pods:
+            st.append(_first(_story("%d of %d pods running on %s" % (run, len(pods), nm), "count", 1),
+                             _story("%d of %d pods running" % (run, len(pods)), "count", 1)))
+        if nodes:
+            ready = sum(1 for b in nodes if b.get("status") == "up")
+            st.append(_story("%d of %d nodes ready" % (ready, len(nodes)), "status" if ready < len(nodes) else "count", 2))
+    elif any(_is_guest(b) for b in bs):
+        ct, vm = _guest_split(bs)
+        st.append(_guests_text(ct, vm, "on %s" % nm))
+    elif len(bs) >= 2:
+        up = sum(1 for b in bs if b.get("status") == "up")
+        cams = [b for b in bs if b.get("class") == "camera"]
+        if kind == "clients":
+            st.append(_story("%d of %d home devices online" % (up, len(bs)), "count", 1))
+        elif kind == "network":
+            st.append(_story("%d of %d network devices up" % (up, len(bs)), "count", 2))
+        elif len(cams) >= 2 and len(cams) >= len(bs) - 1:
+            st.append(_story("%d of %d cameras streaming at %s" % (
+                sum(1 for b in cams if b.get("status") == "up"), len(cams), nm), "count", 1))
+        else:
+            st.append(_story("%d of %d devices up at %s" % (up, len(bs), nm), "count", 1))
+    if _traffic_fresh(U, now):
+        mine = [(bps, p) for bps, p in _pairs(U) if sid in (p.get("a"), p.get("b"))]
+        if kind == "network":
+            # the core is what everything crosses: the sum of its measured streams
+            tot = sum(bps for bps, _ in mine)
+            if tot >= LINK_MIN_BPS:
+                st.append(_first(_story("%s crossing the network core right now" % _bps_text(tot), "rate", 1),
+                                 _story("%s crossing the core right now" % _bps_text(tot), "rate", 1),
+                                 _story("%s crossing the network core" % _bps_text(tot), "rate", 1)))
+        elif kind != "pvehost" and mine:
+            # a host's own stream is the stream stop's line (`links`); its stop shows what runs on it
+            bps, p = max(mine, key=lambda x: x[0])
+            if bps >= LINK_MIN_BPS:
+                other = p["b"] if p["a"] == sid else p["a"]
+                on = _sys_name(dict(U.systems.get(other) or {}, id=other))
+                st.append(_first(_story("%s between %s and %s right now" % (_bps_text(bps), nm, on), "rate", 1),
+                                 _story("%s between %s and %s" % (_bps_text(bps), nm, on), "rate", 1)))
+    if kind == "site":
+        anchor = U.bodies.get(s.get("anchor")) or {}
+        rtts = [_num((b.get("m") or {}).get("rtt_ms")) for b in ([anchor] if anchor in bs else bs)]
+        rtts = sorted(r for r in rtts if r is not None and r > 0)
+        if rtts and (anchor.get("status") == "up" or any(b.get("status") == "up" for b in bs)):
+            st.append(_story("%s ms round trip to %s" % (_fmt(rtts[len(rtts) // 2]), nm), "rate", 2))
+    return _stories(st)
+
+
+def _cat_story(bs, cat, nm):
+    """One guest category of a Proxmox host (the blk:<hub>:<cat> stop)."""
+    word, title = _CAT_WORD.get(cat), _CAT_TITLE.get(cat)
+    if not word:
+        return []
+    up = [b for b in bs if b.get("status") == "up"]
+    st = []
+    bps = sum((_num((b.get("m") or {}).get("rx_bps")) or 0) + (_num((b.get("m") or {}).get("tx_bps")) or 0) for b in up)
+    if bps >= LINK_MIN_BPS:
+        st.append(_first(_story("%s on %s moving %s right now" % (title, nm, _bps_text(bps)), "rate", 1),
+                         _story("%s on %s moving %s" % (title, nm, _bps_text(bps)), "rate", 1),
+                         _story("%s on %s \u00b7 %s" % (title, nm, _bps_text(bps)), "rate", 1)))
+    if up:
+        st.append(_first(
+            _story("%d of %d %s guests running on %s" % (len(up), len(bs), word, nm), "count", 1) if len(up) < len(bs) else None,
+            _story("%d of %d %s guests up on %s" % (len(up), len(bs), word, nm), "count", 1) if len(up) < len(bs) else None,
+            _story("%d %s %s running on %s" % (len(up), word, "guest" if len(up) == 1 else "guests", nm), "count", 1),
+            _story("%d %s %s on %s" % (len(up), word, "guest" if len(up) == 1 else "guests", nm), "count", 1)))
+    return _stories(st)
+
+
+def build_systems(U, now):
+    """[{id: "sys:<x>", story: [...], cats: {<cat>: [...]}}] for every system with at least
+    one candidate. `cats` only on Proxmox hosts, only for categories of >= 3 guests."""
+    out = []
+    for sid, s in U.systems.items():
+        st = _sys_story(U, sid, now)
+        row = {"id": sid, "story": st}
+        if str(s.get("kind") or "") == "pvehost":
+            nm = _sys_name(dict(s, id=sid))
+            by = {}
+            for b in U.bodies.values():
+                if b.get("system") == sid and _is_guest(b) and not b.get("lab") and b.get("down_why") != "gone":
+                    by.setdefault(str(b.get("cat") or "infra"), []).append(b)
+            cats = {}
+            for cat, bs in sorted(by.items()):
+                cs = _cat_story(bs, cat, nm) if len(bs) >= CAT_MIN else []
+                if cs:
+                    cats[cat] = cs
+            if cats:
+                row["cats"] = cats
+        if st or row.get("cats"):
+            out.append(row)
+    return out
+
+
+def build_links(U, now):
+    """[{a, b, story}] per measured system-to-system stream, strongest first (the stream stop)."""
+    if not _traffic_fresh(U, now):
+        return []
+    out = []
+    for bps, p in sorted(_pairs(U), key=lambda x: -x[0]):
+        if bps < LINK_MIN_BPS:
+            continue
+        a, b = p["a"], p["b"]
+        na, nb = _sys_name(dict(U.systems[a], id=a)), _sys_name(dict(U.systems[b], id=b))
+        st = [_first(_story("%s between %s and %s right now" % (_bps_text(bps), na, nb), "rate", 1),
+                     _story("%s between %s and %s" % (_bps_text(bps), na, nb), "rate", 1),
+                     _story("%s \u00b7 %s and %s" % (_bps_text(bps), na, nb), "rate", 1))]
+        ab, ba = _num(p.get("a_to_b_bps")), _num(p.get("b_to_a_bps"))
+        if ab is not None and ba is not None and min(ab, ba) >= 1e3:
+            st.append(_first(_story("%s %s to %s · %s back" % (_bps_text(ab), na, nb, _bps_text(ba)), "rate", 2),
+                             _story("%s to %s · %s back" % (_bps_text(ab), nb, _bps_text(ba)), "rate", 2)))
+        st = _stories(st)
+        if st:
+            out.append({"a": a, "b": b, "story": st})
+    return out[:12]
+
+
+def build_estate(U, now):
+    """Candidates for the two overviews: the whole estate in one measured line."""
+    if not U.known:
+        return []
+    bs = [b for b in _live(list(U.bodies.values())) if b.get("class") != "edge"]   # the ISP is not a device
+    st = []
+    if _traffic_fresh(U, now):
+        tot = sum(bps for bps, _ in _pairs(U))
+        if tot >= LINK_MIN_BPS:
+            st.append(_first(_story("%s moving across the estate right now" % _bps_text(tot), "rate", 1),
+                             _story("%s across the estate right now" % _bps_text(tot), "rate", 1),
+                             _story("%s moving across the estate" % _bps_text(tot), "rate", 1)))
+    hosts = sum(1 for b in bs if b.get("class") == "pve_host" and b.get("status") == "up")
+    # "on N hosts" counts the Proxmox hosts, so only their guests (a cluster's pods are not on them)
+    pve = {sid for sid, s in U.systems.items() if str(s.get("kind") or "") == "pvehost"}
+    ct, vm = _guest_split([b for b in bs if b.get("system") in pve])
+    if hosts and (ct or vm):
+        st.append(_guests_text(ct, vm, "on %s" % _plural(hosts, "host")))
+    # no "N of M devices online" here: the overview caption under this line counts every body the
+    # registry knows (bench gear and long-gone ones too), and two different totals on one screen
+    # read as a mistake
+    return _stories(st)
 
 
 def _k8s_parts(U, now):

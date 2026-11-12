@@ -24,6 +24,7 @@ Frigate / Emby feeds, display modes, presence), ``addons`` (panels dropped into
 ``addons/``), ``setup`` (wizard API), ``demo`` (fixture feed).
 """
 import json
+import math
 import os
 import re
 import socket
@@ -644,8 +645,86 @@ _ls_cond = threading.Condition(_ls_lock)
 _ls_version = 0
 
 
+# lightstate v13: two optional fields for the story line the wall and the TV share.
+# `story` is the wall's finished one-line text, `shot` its shot family. Whitelisted like
+# everything else; absent when the wall sends none, so the light drivers and an older TV
+# see no change.
+LS_SHOTS = ("wide", "core", "planet", "stream", "edge")
+LS_STORY_MAX = 64
+_LS_CTRL = re.compile("[\\x00-\\x1f\\x7f-\\x9f\\u200b-\\u200f\\u2028-\\u202f\\u2060-\\u206f\\ufeff]")
+
+
+def _ls_story(v):
+    """A story line: a string, control / invisible characters removed, whitespace
+    collapsed, <= 64 chars. Anything else (or nothing left) -> None, the field is dropped."""
+    if not isinstance(v, str):
+        return None
+    t = " ".join(_LS_CTRL.sub(" ", v).split())[:LS_STORY_MAX].strip()
+    return t or None
+
+
+def _ls_shot(v):
+    t = v.strip().lower() if isinstance(v, str) else ""
+    return t if t in LS_SHOTS else None
+
+
+def _ls_sanitize(d):
+    """The whitelist: a POSTed lightstate body -> the state that is stored and streamed,
+    or None when there is no usable rgb. Raises TypeError/ValueError on a field that
+    cannot be coerced (the route answers 400). Every key not named here is dropped."""
+    rgb = d.get("rgb") if isinstance(d, dict) else None
+    if not (isinstance(rgb, list) and len(rgb) == 3):
+        return None
+    mode = str(d.get("mode", "tour")).lower()
+    if mode not in ("tour", "doom", "alert", "threat"):   # threat: the room flashes red on a new intrusion
+        mode = "tour"
+    phase = "travel" if str(d.get("phase", "")).lower() == "travel" else "hold"
+    new_state = {
+        "rgb": [max(0, min(255, int(c))) for c in rgb],
+        "hue": int(d.get("hue", 0)),
+        "lit": int(d.get("lit", 0)),
+        "mode": mode,
+        "phase": phase,
+        "beat": max(0, int(d.get("beat", 0))),
+        "bri": max(0, min(100, int(d.get("bri", 100)))),
+        "stop": str(d.get("stop", ""))[:64],
+        "stop_name": str(d.get("stop_name", ""))[:96],
+        "from": str(d.get("from", ""))[:64],
+        "to": str(d.get("to", ""))[:64],
+        "to_name": str(d.get("to_name", ""))[:96],
+        "idx": max(0, min(10000, int(d.get("idx", 0)))),
+        "n": max(0, min(10000, int(d.get("n", 0)))),
+        "prog": _ls_clamp01(d.get("prog", 1.0)),
+        "travel_s": _ls_finite_nonneg(d.get("travel_s", 0.0), 120.0),
+        "hold_s": _ls_finite_nonneg(d.get("hold_s", 0.0), 120.0),
+        "manual": bool(d.get("manual", False)),
+        "stops": _ls_clamp_stops(d.get("stops")),
+        "ts": time.time(),
+    }
+    # optional cinematic leg style, so the TV can fly its own version of the wall's
+    # move. Whitelisted like every other field: a short lowercase token and a direction
+    # of -1/+1. Absent when the wall sends none.
+    mv = re.sub(r"[^a-z0-9_-]", "", str(d.get("move") or "").lower())[:24]
+    if mv:
+        new_state["move"] = mv
+        new_state["move_dir"] = -1 if str(d.get("move_dir", 1)).strip() in ("-1", "-1.0") else 1
+    # the tour's beat grid (every leg one bar at this tempo); the light drivers can pulse
+    # from the arrival. Optional, clamped like the rest.
+    if d.get("bpm") is not None:
+        bpm = float(d.get("bpm"))
+        if math.isfinite(bpm) and 60.0 <= bpm <= 220.0:
+            new_state["bpm"] = round(bpm, 2)
+    story, shot = _ls_story(d.get("story")), _ls_shot(d.get("shot"))
+    if story:
+        new_state["story"] = story
+    if shot:
+        new_state["shot"] = shot
+    return new_state
+
+
 def _ls_changed(old, new):
-    return any(old.get(k) != new.get(k) for k in new if k != "ts")
+    # both key sets: an optional field going away (the story line clearing) is a change too
+    return any(old.get(k) != new.get(k) for k in set(old) | set(new) if k != "ts")
 
 
 @app.route("/api/lightstate", methods=["GET", "POST"])
@@ -653,44 +732,11 @@ def api_lightstate():
     global LIGHTSTATE, _ls_version
     if request.method == "POST":
         d = request.get_json(silent=True) or {}
-        rgb = d.get("rgb")
-        if isinstance(rgb, list) and len(rgb) == 3:
-            try:
-                mode = str(d.get("mode", "tour")).lower()
-                if mode not in ("tour", "doom", "alert", "threat"):   # threat: the room flashes red on a new intrusion
-                    mode = "tour"
-                phase = "travel" if str(d.get("phase", "")).lower() == "travel" else "hold"
-                new_state = {
-                    "rgb": [max(0, min(255, int(c))) for c in rgb],
-                    "hue": int(d.get("hue", 0)),
-                    "lit": int(d.get("lit", 0)),
-                    "mode": mode,
-                    "phase": phase,
-                    "beat": max(0, int(d.get("beat", 0))),
-                    "bri": max(0, min(100, int(d.get("bri", 100)))),
-                    "stop": str(d.get("stop", ""))[:64],
-                    "stop_name": str(d.get("stop_name", ""))[:96],
-                    "from": str(d.get("from", ""))[:64],
-                    "to": str(d.get("to", ""))[:64],
-                    "to_name": str(d.get("to_name", ""))[:96],
-                    "idx": max(0, min(10000, int(d.get("idx", 0)))),
-                    "n": max(0, min(10000, int(d.get("n", 0)))),
-                    "prog": _ls_clamp01(d.get("prog", 1.0)),
-                    "travel_s": _ls_finite_nonneg(d.get("travel_s", 0.0), 120.0),
-                    "hold_s": _ls_finite_nonneg(d.get("hold_s", 0.0), 120.0),
-                    "manual": bool(d.get("manual", False)),
-                    "stops": _ls_clamp_stops(d.get("stops")),
-                    "ts": time.time(),
-                }
-                # optional cinematic leg style, so the TV can fly its own version of the
-                # wall's move. Whitelisted like every other field: a short lowercase token
-                # and a direction of -1/+1. Absent when the wall sends none.
-                mv = re.sub(r"[^a-z0-9_-]", "", str(d.get("move") or "").lower())[:24]
-                if mv:
-                    new_state["move"] = mv
-                    new_state["move_dir"] = -1 if str(d.get("move_dir", 1)).strip() in ("-1", "-1.0") else 1
-            except (TypeError, ValueError):
-                return jsonify({"ok": False, "err": "bad rgb"}), 400
+        try:
+            new_state = _ls_sanitize(d)
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "err": "bad rgb"}), 400
+        if new_state is not None:
             with _ls_cond:
                 if _ls_changed(LIGHTSTATE, new_state):
                     _ls_version += 1

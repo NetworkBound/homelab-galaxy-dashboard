@@ -1229,6 +1229,25 @@ def _last_host_stop(U):
     return "host:" + last["anchor"]
 
 
+def _tour_story(nr, nn, pr, pn, sm):
+    """Story candidates for the wall's big line at the cluster's stop (tour.py's rule)."""
+    try:
+        import tour
+    except Exception:                          # the story layer is optional
+        return []
+    st = []
+    if nr < nn:
+        st.append(tour._story("%d of %d Kubernetes nodes not ready" % (nn - nr, nn), "status", 1))
+    if sm.get("crashloop"):
+        st.append(tour._story("%d %s crash looping" % (len(sm["crashloop"]), "pod" if len(sm["crashloop"]) == 1 else "pods"),
+                              "status", 1))
+    st.append(tour._first(tour._story("%d of %d pods running on %d %s" % (pr, pn, nn, "node" if nn == 1 else "nodes"), "count", 1),
+                          tour._story("%d of %d pods running" % (pr, pn), "count", 1)))
+    if "cpu_pct" in sm:
+        st.append(tour._story("Cluster CPU at %s %%" % _pct(sm["cpu_pct"]), "rate", 2))
+    return tour._stories(st)
+
+
 def tour_aspects(U, snaps=None, now=None):
     """One CONTRACTS 9.1 aspect per cluster: Nodes n/n, Pods n/n, Restarts /24h,
     CPU / mem %. Anchored at the cluster system, after the last host stop."""
@@ -1274,6 +1293,9 @@ def tour_aspects(U, snaps=None, now=None):
             line += " · no metrics-server"
         worst = max((f["s"] for f in facts), key=lambda x: {"crit": 3, "warn": 2, "ok": 1, "": 0}[x])
         a.update({"status": worst or "ok", "facts": facts[:4], "line": line})
+        story = _tour_story(nr, nn, pr, pn, sm)
+        if story:
+            a["story"] = story
         out.append(a)
     return out
 

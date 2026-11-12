@@ -200,6 +200,34 @@ spot and a new device never reshuffles the others.
 - `problems`: one row per host (its worst problem), short host name and plain text,
   no addresses. Lab hosts and stopped guests are never red (`sev` capped at 3).
 
+### Story candidates (additive)
+
+The wall shows one large measured line per stop (`static/story.js`) and the TV
+repeats it. The candidates come with the tour, all optional:
+
+```json
+{"aspects": [{"key": "asp:storage", "...": "...",
+              "story": [{"text": "ZFS 48 TB · 5 % used", "kind": "count", "prio": 1}]}],
+ "systems": [{"id": "sys:pve2", "story": [{"text": "62 containers and 15 VMs running on PVE2",
+                                           "kind": "count", "prio": 1}],
+              "cats": {"web": [{"text": "9 of 10 web guests running on PVE2", "kind": "count", "prio": 1}]}}],
+ "links":   [{"a": "sys:core", "b": "sys:pve1", "story": [{"text": "24.5 Mb/s between Core and PVE1",
+                                                           "kind": "rate", "prio": 1}]}],
+ "estate":  {"story": [{"text": "88.3 Mb/s across the estate right now", "kind": "rate", "prio": 1}]}}
+```
+
+- `kind` is `status | rate | count | age`; a list is ranked status > rate > count >
+  age, then `prio`, and holds at most three. Every line but a plain status carries a
+  measured number with its unit.
+- A line is at most 48 characters and one line of the wall's 560 px box at 26 px;
+  never a question, a slogan or an address. A guest's name never appears (a guest
+  can be named after someone's business), bench gear is never counted, and a body
+  the registry marked `gone` is in no total.
+- An aspect whose feeds are down carries no `story`; `systems`, `links` and `estate`
+  are absent until `/api/universe` has been built, and `links` while the traffic
+  measurement is stale. `cats` exist only on Proxmox hosts, for guest categories of
+  three or more (the wall's category stops).
+
 ## Data the screens read (unchanged shapes, listed for completeness)
 
 `/api/all` (`guests, nodes, nodes2, storage, pools, zfs, backups, unifi, zabbix,
@@ -208,7 +236,11 @@ probe, snmp, topology, edge, external, addons, ts`), `/api/topology` (`nodes, li
 flows, totals, flow_meta, edge, external`), `/api/gpu`, `/api/showtime`,
 `/api/threats` (+`/stream`), `/api/lightstate` (+`/stream`, `/api/lightcolor`,
 `/api/lightenable`; a wall may also send an optional `move` token and `move_dir`
-of ±1 so the TV flies the same cinematic leg), `/api/mode` (+`/stream`), `/api/presence` (+`/stream`),
+of ±1 so the TV flies the same cinematic leg, `bpm` (60–220, the tour's beat grid),
+`story` (the wall's story line, verbatim: control and invisible characters removed,
+whitespace collapsed, at most 64 characters) and `shot` (`wide | core | planet |
+stream | edge`); anything else is dropped and an unusable `story` / `shot` / `bpm`
+is left out rather than stored), `/api/mode` (+`/stream`), `/api/presence` (+`/stream`),
 `/api/pulse/stream`, `/api/takeover` (+`/stream`), `/api/history`,
 `/api/inventory`, `/api/telemetry`, `/cam/<name>.jpg`, `/frigate/thumb/<id>.jpg`.
 `edge` contains `cloudflare`, `crowdsec`, `secmon`, `audience`, `threats`; any of

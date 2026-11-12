@@ -1,5 +1,53 @@
 # Changelog
 
+## Unreleased — the story line
+
+Both screens are built to be filmed: a phone pointed at the wall, often cropped
+to 9:16, should come away with a frame that looks photographed and one line a
+stranger would repeat.
+
+### Added
+
+- **The story line.** One large, centred line on the wall (`static/story.js`) —
+  a measured fact for the stop on screen, inside the 9:16 centre crop, changed on
+  the arrival beat (and at most once more in a long hold). The TV shows the same
+  string on the same beat.
+- **`/api/tour` story candidates**: `aspects[].story`, `systems` (per galaxy and per
+  guest category), `links` (per measured stream) and `estate` (the overviews).
+  Measured values only, ranked status > rate > count > age, at most 48 characters
+  and one line of the wall's box, never a guest's name, an address or a question.
+  Kubernetes clusters get their own lines. See `docs/contracts.md`.
+- **Lightstate v13**: optional `story` and `shot` (`wide | core | planet | stream |
+  edge`) next to `bpm`; `app.py` whitelists and cleans them, drops everything else.
+  The room-light colour now follows the shot family on screen.
+- **v2 assets** (`static/assets/galaxy2`, additive keys, v1 untouched): sharper hero
+  plates with cores that keep their structure, 16 distinct background galaxies,
+  nebula and sky plates, a star corona set, star-lit planet surfaces with normal
+  maps, ring plates, point spreads, a traffic streak and film grain. A consumer
+  that finds no v2 key keeps its v1 look.
+- **Wall chrome, visual first** (`static/hero_viz.js`): compute as meters and rings,
+  visitors as a sparkline and country chips, problems as a severity strip; details
+  on click. At the hero stops the left column folds to one key row per panel.
+
+### Changed
+
+- The wall: one distinct shot per guest-category stop, bodies as star-lit planets
+  with a lit limb and terminator, far bodies as point-spread stars, soft traffic
+  streams instead of thin lines at the wide shots, the Internet as a photographed
+  star with a ringed planet and calm red points for blocked sources, legs that keep
+  the next subject in frame, an exposure payoff on the arrival beat, a filmic grade
+  with a highlight shoulder, grain and dither, and a label budget per hold.
+- The TV: the wall's shot family and brightness at every stop, black sky around a
+  hero galaxy, the same corona and blocked-source scene at the edge, labels kept
+  out of its panels, the story strip above the caption.
+- The tour's dwells are whole bars of a fixed beat grid (150 BPM by default,
+  `?bpm=` on the wall), published as `bpm` for the lights.
+
+### Fixed
+
+- The wall's pixel readback no longer re-writes a buffer that is still being read
+  back (Chrome logged 256 performance warnings per page).
+
 ## Unreleased — the universe
 
 The scene is no longer drawn from a handful of hardcoded node lists. Both

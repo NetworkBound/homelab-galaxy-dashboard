@@ -211,6 +211,8 @@
     '#nbalerts .pr .dot{margin-right:8px;width:6px;height:6px}',
     '#nbalerts .pr em{font-style:normal} #nbalerts .pr .ph{color:var(--t1)} #nbalerts .pr .ps{color:var(--t3);white-space:pre}',
     '#nbalerts .pr b.pn{color:var(--t3);font-size:11px}',
+    /* a problem row is never cut: it wraps, 12 px, and "+N" keeps its place */
+    'body.hero #nbalerts .pr{align-items:flex-start} body.hero #nbalerts .pr span{display:block;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;font-size:12px;line-height:16px;margin:1px 0}',
     '#nbalerts .lab{display:inline-block;margin-left:5px;padding:0 3px;font-size:9px;line-height:11px;font-weight:600;letter-spacing:.05em;color:var(--t2);border:1px solid rgba(154,164,177,.5);border-radius:2px;font-style:normal;vertical-align:1px}',
     '#nbkey{right:var(--sx);top:calc(29% + 300px);opacity:0}',
     '#nbkey.on{opacity:1}',
@@ -233,11 +235,27 @@
     '  display:flex;align-items:center;gap:8px}',
     'body.hero #st-alert b{font-size:0;margin:0;width:8px;height:8px;border-radius:50%;background:var(--crit);display:inline-block}',
     'body.hero #st-alert .why:first-letter{text-transform:uppercase}',
-    /* contracts 9.4: during a travel leg the side panels step back to ~35 % so the
-       move reads; they are back before the camera lands (nb-travel drops at 75 % of the leg) */
-    'body.hero .nbp,body.hero #h-aud{transition:opacity .6s ease,top .45s ease}',
-    'body.hero #st-ai,body.hero #st-emby{transition:opacity .6s ease}',
-    'body.hero.nb-travel .nbp,body.hero.nb-travel #h-aud,body.hero.nb-travel #st-ai,body.hero.nb-travel #st-emby{opacity:.35!important}',
+    /* HUD rhythm (contracts 9.4): for the whole travel leg the side panels step
+       back to 25 % so the move reads, and they return over one bar after the camera lands */
+    'body.hero .nbp,body.hero #h-aud{transition:opacity var(--nb-bar,1.6s) ease,top .45s ease}',
+    'body.hero #st-ai,body.hero #st-emby{transition:opacity var(--nb-bar,1.6s) ease}',
+    'body.hero.nb-travel .nbp,body.hero.nb-travel #h-aud{opacity:.25!important;transition:opacity .3s ease,top .45s ease}',
+    'body.hero.nb-travel #st-ai,body.hero.nb-travel #st-emby{opacity:.25!important;transition:opacity .3s ease}',
+    /* a content swap fades out, swaps, fades back in (fadeSwap) */
+    'body.hero .nbp.fs-out{opacity:0!important;transition:opacity .28s ease,top .45s ease}',
+    'body.hero .fw>.fs-out{opacity:0}',
+    /* a panel body folds: .fw is as tall as its content (NB_HUD.fold measures it into --h, so a
+       content change glides instead of jumping); at the hero stops (body.nb-min) the left column
+       folds to its title and one key row (.hudm). Height and opacity only, never a jump. */
+    '.fw{overflow:hidden;height:var(--h,auto);transition:height .42s ease,opacity .3s ease}',
+    '.fw>*,.hudm>.in{display:flow-root} .fw>*{transition:opacity .28s ease}',
+    '.hudm{display:none}',
+    'body.hero .hudm{display:block;height:0;opacity:0;overflow:hidden;transition:height .42s ease,opacity .3s ease}',
+    'body.hero .hudm .r{display:flex;justify-content:space-between;gap:12px;font-size:12px;line-height:20px}',
+    'body.hero .hudm .r span{color:var(--t2);white-space:nowrap} body.hero .hudm .r b{font-weight:400;color:var(--t1);white-space:nowrap}',
+    'body.hero .hudm .r b u{text-decoration:none;color:var(--t2)} body.hero .hudm .r b.bad{color:var(--crit)} body.hero .hudm .r b.warn{color:var(--warn)}',
+    'body.hero.nb-min #vzcomp .fw,body.hero.nb-min #nbops .fw,body.hero.nb-min #st-emby .fw{height:0;opacity:0}',
+    'body.hero.nb-min .hudm{height:var(--h,20px);opacity:1}',
     'body.hero.nb-travel #nbkey:not(.on){opacity:0!important}',
     'body[data-doom]:not([data-doom^="phase=off"]) #h-aud,body[data-doom]:not([data-doom^="phase=off"]) .nbp{opacity:0!important}',
     '#h-aud .sp{margin:2px 0 4px}',
@@ -287,6 +305,9 @@
     brandMark();
     audMount();
     OPS.el = document.createElement('div'); OPS.el.id = 'nbops'; OPS.el.className = 'nbp'; document.body.appendChild(OPS.el);
+    OPS.el.innerHTML = '<div class="fw"><div class="in"></div></div><div class="hudm"><div class="in"></div></div>';
+    OPS.full = OPS.el.querySelector('.fw .in'); OPS.mini = OPS.el.querySelector('.hudm .in');
+    fold(OPS.el.firstChild); fold(OPS.el.lastChild);
     ALR.el = document.createElement('div'); ALR.el.id = 'nbalerts'; ALR.el.className = 'nbp'; document.body.appendChild(ALR.el);
     KEY.el = document.createElement('div'); KEY.el.id = 'nbkey'; KEY.el.className = 'nbp'; document.body.appendChild(KEY.el);
     keyRender();
@@ -393,7 +414,7 @@
      a page, a page every 10 s. A source that errored reads "unknown", never a
      red zero (the backups block reports 0 archives / 96 missing while PBS has
      102 guests: that is a broken feed, not a disaster). */
-  var OPS = { el: null, d: null, page: 0, at: 0, gpu: null, html: '' };
+  var OPS = { el: null, full: null, mini: null, d: null, page: 0, at: 0, gpu: null, html: '', mhtml: '' };
   function opsData(d) { OPS.d = d; opsRender(); }
   function fetchGpu() {
     fetch('/api/gpu', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; })
@@ -441,7 +462,8 @@
       var nm = String(g.name || 'GPU').replace(/^NVIDIA GeForce /, '').replace(/^NVIDIA /, '');
       c.push(row(esc(nm), n3(g.util) + ' <u>%</u> · ' + n3(g.temp) + ' <u>°C</u>', g.temp >= 83 ? 'bad' : g.temp >= 75 ? 'warn' : ''));
     });
-    if (c.length) P.push({ t: 'Compute', rows: c.slice(0, 5) });
+    /* hero_viz.js (v12) draws compute as its own visual panel: no text duplicate here */
+    if (c.length && !window.HERO_VIZ) P.push({ t: 'Compute', rows: c.slice(0, 5) });
     /* storage + backups */
     var s = [];
     (d.zfs || []).slice(0, 3).forEach(function (p) {
@@ -496,13 +518,35 @@
     if (!OPS.el || !OPS.d) return;
     var P = opsPages(OPS.d); if (!P.length) { OPS.el.style.display = 'none'; return; }
     OPS.el.style.display = '';
-    var now = Date.now();
-    if (now - OPS.at > 10000) { OPS.at = now; OPS.page = (OPS.page + 1) % P.length; }
+    /* the page turns every 10 s, but while the tour runs only as a leg starts: the panel is
+       dimmed and moving then, so nothing changes inside a hold */
+    var now = Date.now(), NS = window.NETSCENE, TR = NS && NS.tour, touring = !!(TR && TR.stops && TR.stops.length && !TR.manual);
+    if (now - OPS.at > 10000 && (!touring || TR.phase === 'travel')) { OPS.at = now; OPS.page = (OPS.page + 1) % P.length; }
     var p = P[OPS.page % P.length], dots = '';
     for (var i = 0; i < P.length; i++) dots += '<i' + (i === OPS.page % P.length ? ' class="on"' : '') + '></i>';
     var h = '<div class="pt">' + p.t + '<span>Operations</span></div>' + p.rows.join('') + '<div class="pg">' + dots + '</div>';
-    if (h !== OPS.html) { OPS.html = h; fadeSwap(OPS.el, h, p.t + '#' + p.rows.length); }
+    if (h !== OPS.html) { OPS.html = h; fadeSwap(OPS.full, h, p.t + '#' + p.rows.length); }
+    /* the folded panel: its title and the one row that matters, service checks ok / total */
+    var hl = OPS.d.health || [], lat = (OPS.d.latency || []).filter(function (x) { return x; }), m;
+    if (hl.length) { var up = hl.filter(function (x) { return x.up; }).length; m = row('Service checks', up + ' <u>/ ' + hl.length + ' up</u>', up < hl.length ? 'bad' : ''); }
+    else if (lat.length) { var lu = lat.filter(function (x) { return x.up; }).length; m = row('Synthetic checks', lu + ' <u>/ ' + lat.length + ' up</u>', lu < lat.length ? 'bad' : ''); }
+    else m = row('Service checks', '\u2013');
+    m = '<div class="pt">Services<span>Operations</span></div>' + m;
+    if (m !== OPS.mhtml) { OPS.mhtml = m; OPS.mini.innerHTML = m; }
   }
+
+  /* NB_HUD.fold(wrapper): measure a wrapper's one child into the wrapper's --h (px), so its
+     height can transition: on a content change, and to and from 0 at body.nb-min. The write
+     waits a frame: a ResizeObserver callback that resizes a shallower box raises a loop error. */
+  function fold(w) {
+    var inner = w && w.firstElementChild;
+    if (!inner || w._fold || !window.ResizeObserver) return;
+    w._fold = new ResizeObserver(function () {
+      requestAnimationFrame(function () { var h = inner.offsetHeight; if (h && w._h !== h) { w._h = h; w.style.setProperty('--h', h + 'px'); } });
+    });
+    w._fold.observe(inner);
+  }
+  window.NB_HUD = { fold: fold, min: false };
 
   /* the panels of a column sit one under the other with a 12 px gap,
      measured (their heights follow their content) */
@@ -641,9 +685,8 @@
        running picks the new html up when it swaps */
     if (first || (same && !node._fsT)) { node.innerHTML = html; return; }
     if (node._fsT) return;
-    node.style.transition = 'opacity .26s ease,top .45s ease';
-    node.style.opacity = '0';
-    node._fsT = setTimeout(function () { node._fsT = 0; node.innerHTML = node._fs; node.style.opacity = ''; }, 270);
+    node.classList.add('fs-out');
+    node._fsT = setTimeout(function () { node._fsT = 0; node.innerHTML = node._fs; node.classList.remove('fs-out'); }, 290);
   }
 
   /* ---------------- alerts: never rotates; quiet when clear ---------------- */
@@ -692,7 +735,7 @@
     var NS = window.NETSCENE, TR = NS && NS.tour, on = false;
     if (TR && TR.stops && TR.stops.length && !TR.manual) {
       var st = TR.stops[TR.idx];
-      on = TR.phase === 'hold' && st && !st.list && (NS.t - TR.tHold) > 0.8;
+      on = TR.phase === 'hold' && st && String(st.key).indexOf('over') === 0 && (NS.t - TR.tHold) > 0.8;   // the legend belongs to the overviews only
     }
     if (on !== KEY.on) { KEY.on = on; KEY.el.classList.toggle('on', on); if (on) keyRender(); }
   }
@@ -856,18 +899,39 @@
       var dot = document.querySelector('#st-alert b'); if (dot) dot.style.background = R.length && R[0].sev === 'crit' ? '' : 'var(--warn)';
     } catch (e) {}
   }, 1000);
-  /* travel dimming: on for the first 75 % of a leg, so the panels are fully
-     back by the time the camera lands and nothing changes at the arrival */
-  var TRV = { on: false };
+  /* HUD rhythm. nb-travel: on for the whole leg (panels at 25 %), off at the
+     arrival (they return over one bar, --nb-bar). nb-min: the left column is folded to
+     titles + one key row wherever the stop is a subject (host, category, aspect, site,
+     stream) and open only at the two overviews and the WAN stop; it switches as the leg
+     to that stop STARTS, so the layout has settled before the camera lands. */
+  var TRV = { on: false, min: false, bpm: 0 };
   setInterval(function () {
     try {
-      var NS = window.NETSCENE, TR = NS && NS.tour, on = false;
-      if (TR && TR.stops && TR.stops.length && !TR.manual && TR.phase === 'travel' && TR.travelT)
-        on = (NS.t - TR.t0) / TR.travelT < 0.75;
+      var NS = window.NETSCENE, TR = NS && NS.tour, on = false, min = false;
+      if (TR && TR.stops && TR.stops.length && !TR.manual) {
+        on = TR.phase === 'travel';
+        var st = TR.stops[on ? TR.next : TR.idx], k = st ? String(st.key) : '';
+        min = !!k && k !== 'wan' && k.indexOf('over') !== 0;
+        if (NS.bpm && NS.bpm !== TRV.bpm) { TRV.bpm = NS.bpm; document.documentElement.style.setProperty('--nb-bar', (240 / NS.bpm).toFixed(2) + 's'); }
+      }
       if (on !== TRV.on) { TRV.on = on; document.body.classList.toggle('nb-travel', on); }
+      if (min !== TRV.min) { TRV.min = window.NB_HUD.min = min; document.body.classList.toggle('nb-min', min); }
     } catch (e) {}
   }, 50);
   fetchGpu(); setInterval(fetchGpu, 15000);
+  /* the story line is its own file, loaded from here so index.html stays as it is */
+  (function story() {
+    if (window.NB_STORY || document.getElementById('story-js')) return;
+    var s = document.createElement('script');
+    s.id = 'story-js'; s.async = true; s.src = '/static/story.js?v=2';
+    document.head.appendChild(s);
+  })();
+  /* the wall's grade belongs to cinema.js: lock it once, when that build has the switch */
+  (function lock(n) {
+    var C = window.CINEMA;
+    if (C) { if (typeof C.lockGrade === 'function') { try { C.lockGrade(true); } catch (e) {} } return; }
+    if ((n || 0) < 40) setTimeout(function () { lock((n || 0) + 1); }, 500);
+  })(0);
   /* showtime.js's AI panel (markup shared with the TV page): product title */
   (function aiTitle(n) {
     var h = document.querySelector('#st-ai .h');
@@ -876,7 +940,7 @@
   })(0);
   (function mediaTitle(n) {
     var h = document.querySelector('#st-emby .h');
-    if (h) { h.innerHTML = 'Media<span style="font-size:11px;font-weight:400;color:var(--t3)">Emby</span>'; return; }
+    if (h) { h.innerHTML = 'Media<span style="font-size:11px;font-weight:400;color:var(--t3)">Emby</span>'; fold(document.querySelector('#st-emby .fw')); fold(document.querySelector('#st-emby .hudm')); return; }
     if ((n || 0) < 40) setTimeout(function () { mediaTitle((n || 0) + 1); }, 500);
   })(0);
 

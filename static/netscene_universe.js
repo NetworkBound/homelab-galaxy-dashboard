@@ -174,6 +174,9 @@
       else if (s.kind === 'clients') s._k *= 0.62;
       var rmax = 0; Object.keys(g).forEach(function (k) { rmax = Math.max(rmax, g[k].r1); });
       s.R = (rmax + 0.35) * s._k;
+      /* a remote site with a handful of members (two peers over a tunnel) still reads as
+         a galaxy from the overview: the same floor a larger site has by size */
+      if (s.kind === 'site') s.R = Math.max(s.R, 96);
       s._extras = [];
       sigParts.push(s.id + '@' + s.anchor + ':' + Object.keys(qc).sort().map(function (k) { return k + '=' + qc[k]; }).join(','));
     });
@@ -512,6 +515,10 @@
         ? LAY.colourRGB({ 'class': b['class'], seed: b.seed, status: 'up' }, { tint: GUEST_CAT[b.cat] || GUEST_CAT.infra })
         : LAY.colourRGB({ 'class': b['class'], seed: b.seed, status: 'up' }, mc)) : rgb;
       var sw = down ? 0 : M.spinOmega(SPIN3D[it.cls] != null ? SPIN3D[it.cls] : 0.06, Math.max(0, u)) * ((b.seed & 1) ? 1 : -1);
+      /* photo look: a planet turns 0.3-0.6 rad/s (steady per body, a little faster when
+         busy), so its day side visibly moves across a 2-bar hold; stars keep the slow class spin */
+      if (!down && G.b3d && G.b3d.photo && !(G.b3d.celInfo && (G.b3d.celInfo(it.cls) || {}).star))
+        sw = (0.30 + 0.20 * (((b.seed >>> 7) % 997) / 997) + 0.10 * Math.max(0, Math.min(1, u))) * ((b.seed & 1) ? 1 : -1);
       if (sw !== st.sw) { st.sph = (st.sph + (st.sw - sw) * tNow) % TAU; st.sw = sw; }   // continuous spin angle
       var d3 = { tint: [hue[0], hue[1], hue[2]], orbitW: omega, orbitPh: st.ph % TAU, spinW: sw, spinPh: st.sph,
                  bright: G.aB[i * 4 + 3], desat: down ? 0.78 : (b.status === 'unknown' ? 0.35 : 0), pulse: G.aB[i * 4 + 2] };
@@ -745,7 +752,8 @@
      tint, straight alpha (rgb * a = the light), additive, spin counter-clockwise as the
      image is viewed, galaxy radius 0.94 of the half-width; the golden plate's edge-on
      variant cross-fades in when its disc is within ~20 deg of edge-on. */
-  var G2 = { base: '/static/assets/galaxy2/', man: null, tex: {}, ok: {}, done: false, pending: 0 };
+  var G2 = { base: '/static/assets/galaxy2/', man: null, tex: {}, ok: {}, bad: {}, done: false, pending: 0 };
+  var G2_WIDE = /[?&]widek=off/.test(location.search) ? 0 : 0.35;
   var G2_SPIN = 0.0035;                 // rad/s: one turn in ~30 min, alive but calm
   var G2_FS = [
     'uniform sampler2D map; uniform float uK; uniform vec2 uNear;',
@@ -771,22 +779,35 @@
       if (G.discInfo && NS && NS.graph && U.active && !G2.swapQ) {
         G2.swapQ = setTimeout(function () { G2.swapQ = null; try { buildGalaxies(G.discInfo); buildStarfields(G.discInfo); updateRings(true); } catch (e) { console.warn("galaxy swap failed", e); } }, 50);
       }
-    }, undefined, function () { G2.pending--; G2.failed = (G2.failed || 0) + 1; });
+    }, undefined, function () { G2.pending--; G2.failed = (G2.failed || 0) + 1; G2.bad[file] = true; });
     t.encoding = THREE.LinearEncoding;                        // raw: the plates are display-referred for this pipeline
     t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter;
     t.anisotropy = NS.rndr.capabilities.getMaxAnisotropy ? Math.min(4, NS.rndr.capabilities.getMaxAnisotropy()) : 1;
     G2.tex[file] = t;
     return t;
   }
-  function g2File(sys) {
+  /* the manifest's disc entry for a system: the system id itself (an operator can pin a
+     plate), then by role: node:<index in CONFIG.nodes> / site:<index in CONFIG.sites> */
+  function g2Entry(sys) {
     var d = G2.man && G2.man.discs;
-    if (!d || Q.g2 === 'off') return null;
-    if (d[sys.id] && d[sys.id].file) return d[sys.id].file;
-    /* then by role: node:<index in CONFIG.nodes> / site:<index in CONFIG.sites> */
+    if (!d) return null;
+    if (d[sys.id] && (d[sys.id].file || d[sys.id].v2)) return d[sys.id];
     var Cf = window.CONFIG || {}, k = null;
     if (sys.kind === 'pvehost' && Cf.nodeFromSys && Cf.nodeIndex) { var nid = Cf.nodeFromSys(sys.id); if (nid) k = 'node:' + Cf.nodeIndex(nid); }
     else if (sys.kind === 'site' && Cf.siteIndex && Cf.siteIndex(sys.id) >= 0) k = 'site:' + Cf.siteIndex(sys.id);
-    if (k && d[k] && d[k].file) return d[k].file;
+    return k && d[k] && (d[k].file || d[k].v2) ? d[k] : null;
+  }
+  function g2File(sys) {
+    var d = G2.man && G2.man.discs;
+    if (!d || Q.g2 === 'off') return null;
+    var e = g2Entry(sys);
+    /* v2 hero plates: discs[<key>].v2, a path or { file }; used once it has loaded, the v1
+       plate stands until then and for good if it never does */
+    if (e && e.v2) {
+      var f2 = typeof e.v2 === 'string' ? e.v2 : e.v2.file;
+      if (f2 && !G2.bad[f2]) { if (G2.ok[f2] || !e.file) return f2; g2Tex(f2); }
+    }
+    if (e && e.file) return e.file;
     if ((sys.kind === 'pvehost' || sys.kind === 'k8s') && d.pve_pool && d.pve_pool.length) return d.pve_pool[((sys.seed >>> 0) || 0) % d.pve_pool.length];
     return null;
   }
@@ -809,8 +830,9 @@
       var file = g2File(D.sys), tex, m, Rh, edge = null;
       if (file && !G2.ok[file]) { g2Tex(file); file = null; }      // still loading: the bake stands in
       if (file) {
-        var rad = (G2.man.galaxies && Object.keys(G2.man.galaxies).map(function (k) { return G2.man.galaxies[k]; })
-                   .filter(function (g) { return g.file === file; })[0] || {}).radius || 0.94;
+        var dE = g2Entry(D.sys), f1 = dE && dE.file ? dE.file : file;        // the v1 name keys the plate's metadata
+        var rad = (dE && dE.v2 && dE.v2.radius) || (G2.man.galaxies && Object.keys(G2.man.galaxies).map(function (k) { return G2.man.galaxies[k]; })
+                   .filter(function (g) { return g.file === f1; })[0] || {}).radius || 0.94;
         tex = g2Tex(file); Rh = D.R * G2_REACH / rad;
         m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), g2Material(tex));
         /* the edge-on variant of the same galaxy (whichever system wears that plate) */
@@ -818,9 +840,12 @@
         Object.keys(V).forEach(function (k) {
           var v = V[k]; if (!v || !v.file) return;
           var of = G2.man.galaxies && G2.man.galaxies[v.of];
-          if (of ? of.file !== file : v.file.replace('_edgeon', '') !== file) return;
-          if (!G2.ok[v.file]) { g2Tex(v.file); return; }            // joins on its own load
-          var em = new THREE.Mesh(new THREE.PlaneGeometry(1, 1 / (v.aspect || 4)), g2Material(g2Tex(v.file)));
+          if (of ? of.file !== f1 : v.file.replace('_edgeon', '') !== f1) return;
+          /* its v2 (variants.<name>.v2, a path or { file, aspect }): 2048x1024 */
+          var vf = v.file, va = v.aspect || 4, v2 = v.v2 && (typeof v.v2 === 'string' ? v.v2 : v.v2.file);
+          if (v2 && !G2.bad[v2]) { if (G2.ok[v2]) { vf = v2; va = (v.v2 && v.v2.aspect) || 2; } else g2Tex(v2); }
+          if (!G2.ok[vf]) { g2Tex(vf); return; }            // joins on its own load
+          var em = new THREE.Mesh(new THREE.PlaneGeometry(1, 1 / va), g2Material(g2Tex(vf)));
           em.renderOrder = -4; em.frustumCulled = false; em.userData.universe = true; em.userData.bg = true; em.visible = false;
           em.scale.set(2 * Rh, 2 * Rh, 1);
           NS.scene.add(em); edge = em;
@@ -862,6 +887,10 @@
     for (var i = 0; i < GL.length; i++) {
       var g = GL[i]; if (!g.asset) continue;
       g.mesh.rotation.z = g.ph + G2_SPIN * t;
+      /* at the wide shots the plates stand x1.35 so the estate fills the frame
+         (NS.wideK eases over ~0.6 s with the camera's own move; bodies stay put) */
+      var ws = 2 * g.Rh * (1 + G2_WIDE * (NS.wideK || 0));
+      if (g.mesh.scale.x !== ws) { g.mesh.scale.set(ws, ws, 1); if (g.edge) g.edge.scale.set(ws, ws, 1); }
       g.ewPrev = g.edgeW || 0; g.edgeW = 0;
       if (g.edge) {
         _gv.set(cam.x - g.mesh.position.x, cam.y - g.mesh.position.y, cam.z - g.mesh.position.z);
@@ -1485,6 +1514,7 @@
     }
     var fading = galFade(dt);
     galSpin(t);
+    if (HL.mesh) HL.mesh.material.opacity = NS.wireK == null ? 1 : NS.wireK;    // no thin roads in a wide shot
     /* while a plate hands over to (or back from) its edge-on view, its brightness
        follows every frame - and once more after, so it settles exactly */
     var edgeOn = false;

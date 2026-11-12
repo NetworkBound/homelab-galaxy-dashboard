@@ -93,7 +93,15 @@
      create({ photo: true | { lod: [3.2, 7], starPx: 6, starGain: 1.6, sun: 1.3,
               amb: [r,g,b], haze: [r,g,b], hazeK: 0.55, hubStarGain: 3.2,
               bodyStarGain: 2.4, coronaGain: 2.4, spikes: 0.55, lodFocus: 0,
-              starLodK: 99 } })
+              starLodK: 99, tintSat: 1, starSat: 1, rimAll: 0, downK: 0.45,
+              focFloor: 0.25, albLift: 0, noProc: false } })
+                            v2 additions, each opt-in, defaults = before:
+                            tintSat/starSat mute the class colour on surfaces / far
+                            stars (0.35 / 0.25 on the wall), rimAll adds a thin limb
+                            all round, downK is the dim of a stopped body, focFloor
+                            the dim of an off-focus resolved planet, albLift lifts a
+                            dark albedo's luma to a smooth floor (hue kept), noProc keeps a
+                            body whose surface is missing a star (no matte ball)
                             lodFocus > 0: an off-focus body (B.focus < 1) needs
                             (1 + lodFocus * (1 - focus)) x the px to resolve (the
                             wall: 1.6, context stays starlight)
@@ -584,6 +592,8 @@
     'uniform float uHasRingTex; uniform sampler2D uRingTex; uniform float uRingIn;',
     'uniform float uAtmosK; uniform vec3 uAtmosRGB; uniform float uAtmosUse; uniform float uDark; uniform float uTime; uniform float fogDensity;',
     'uniform float uExpo; uniform float uTintable; uniform float uSun; uniform vec3 uAmb; uniform vec3 uHaze; uniform float uHazeK;',
+    'uniform float uTintSat; uniform float uRimAll; uniform float uDownK; uniform vec3 uLimb; uniform float uAlbLift;',
+    'uniform sampler2D uRimLut; uniform float uHasRim;',
     'varying vec3 vN; varying vec3 vV; varying vec3 vBase; varying vec3 vTint; varying float vGlow;',
     'varying float vAct; varying float vLvl; varying float vDesat; varying float vFog; varying float vPulse;',
     'varying vec3 vObj; varying float vSeed; varying vec3 vT; varying vec3 vLv; varying vec3 vLc;',
@@ -605,7 +615,11 @@
     '  vec3 n = normalize(vN); if (!gl_FrontFacing) n = -n;',
     '  vec3 v = normalize(vV);',
     '  vec3 L = dot(vLv, vLv) > 1e-8 ? normalize(vLv) : vec3(0.0, 0.0, 1.0);',
-    '  vec3 tint = vTint; float tl = max(0.25, dot(tint, vec3(0.2126, 0.7152, 0.0722)));',
+    '  vec3 tint = vTint;',
+    /* photo.tintSat (opt-in, 1 = unchanged): the class colour is muted toward its own value
+       before it multiplies a surface - a tinted planet, never a full-value gumball */
+    '  float tmx = max(tint.r, max(tint.g, tint.b)); tint = mix(vec3(tmx), tint, uTintSat);',
+    '  float tl = max(0.25, dot(tint, vec3(0.2126, 0.7152, 0.0722)));',
     '  vec3 col;',
     '  if (vGlow < -0.5) {',                                               // ring: lit from either face
     '    float r = length(vObj.xz), t = clamp((r - uRingIn) / max(0.05, 1.0 - uRingIn), 0.0, 1.0);',
@@ -630,8 +644,11 @@
     '    }',
     '    float mu = max(dot(normalize(vN), v), 0.0);',
     '    if (uKind > 6.5) {',                                               // a star: limb-darkened photosphere, emissive
-    '      float limb = 0.30 + 0.70 * pow(mu, 0.55);',
+    /* uLimb (opt-in per hub, hubMesh {limb:[floor, power, warm]}; default 0.30 / 0.55 / 0 = as before):
+       a deeper, warmer limb for a star that is resolved as a disc and exposed under clipping */
+    '      float limb = uLimb.x + (1.0 - uLimb.x) * pow(mu, uLimb.y);',
     '      vec3 ph = uHasTex > 0.5 ? texture2D(uSurf, uv).rgb * 1.15 : uTemp * (0.84 + 0.16 * fbm(q * 5.0 + uTime * 0.04));',
+    '      ph *= mix(vec3(1.0), vec3(1.0, 0.74, 0.46), uLimb.z * (1.0 - mu));',
     '      col = ph * limb * uStarGain;',
     '    } else {',
     '      vec3 alb;',
@@ -643,9 +660,20 @@
     '        alb = procSurf(d, q) * mix(vec3(1.0), tint / max(0.3, tl) * 0.62, uTintMix);',
     '      }',
     '      alb *= uDark;',
+    /* photo.albLift (opt-in, 0 = off): a smooth floor under the albedo's luma (hue kept; a 4-norm, so
+       an albedo well above the floor is left alone), so an ocean or basalt world seen from its night
+       side against a bright core is a dim planet, not a hole */
+    '      if (uAlbLift > 0.0) { float al = dot(alb, vec3(0.2126, 0.7152, 0.0722)), a2 = al * al, f2 = uAlbLift * uAlbLift; alb *= sqrt(sqrt(a2 * a2 + f2 * f2)) / max(al, 0.02); }',
     '      float ndl = dot(n, L), ndl0 = dot(normalize(vN), L);',
     /* soft terminator: Lambert carried a few degrees past 90, then a narrow penumbra */
     '      float diff = max(0.0, (ndl + 0.06) / 1.06) * smoothstep(-0.14, 0.10, ndl0);',
+    /* celExtra({ rimLut }) (opt-in): the baked terminator ramp (row 1: soft twilight, 3 % night floor)
+       instead of the analytic one; the surface normal still shapes it, the sphere's own gates it */
+    '      float rimU = (sqrt(max(0.0, 1.0 - mu * mu)) - 0.80) / 0.40;',
+    '      if (uHasRim > 0.5) {',
+    '        float nf = texture2D(uRimLut, vec2(0.0, 0.625)).r;',
+    '        diff = mix(nf, texture2D(uRimLut, vec2(0.5 + 0.5 * ndl, 0.625)).r, smoothstep(-0.30, 0.05, ndl0));',
+    '      }',
     '      col = alb * (vLc * uSun * diff + uAmb) * uBodyGain;',
     '      if (uHasEmis > 0.5) col += texture2D(uEmis, uv).rgb * (0.30 + 0.70 * (1.0 - smoothstep(-0.1, 0.3, ndl0)));',
     '      else if (uKind > 3.5 && uKind < 4.5 && uHasTex < 0.5) col += vec3(1.0, 0.42, 0.12) * smoothstep(0.56, 0.60, fbm(q * 2.3)) * (1.0 - smoothstep(0.60, 0.66, fbm(q * 2.3))) * 0.9;',
@@ -655,13 +683,26 @@
        a forward-scatter crescent when the star is behind the planet; nothing on the night limb */
     '      float limbK = pow(1.0 - mu, 3.0);',
     '      float litLimb = smoothstep(-0.25, 0.45, ndl0);',
-    '      float fwd = pow(max(dot(-v, L), 0.0), 6.0) * pow(1.0 - mu, 5.0);',
+    '      float back = max(dot(-v, L), 0.0);',
+    '      float fwd = pow(back, 6.0) * pow(1.0 - mu, 5.0);',
+    '      float rimP = pow(1.0 - mu, 2.2);',
+    /* baked limb profiles (rows 0, 2, 3; the half inside the disc, u <= 0.5): lit-side rim, the thinner
+       forward-scatter rim, interior haze toward the limb */
+    '      if (uHasRim > 0.5) {',
+    '        limbK = texture2D(uRimLut, vec2(rimU, 0.875)).r;',
+    '        fwd = pow(back, 6.0) * texture2D(uRimLut, vec2(rimU, 0.375)).r * 2.2;',
+    '        rimP = texture2D(uRimLut, vec2(rimU, 0.125)).r;',
+    '      }',
     '      vec3 atm = mix(mix(vec3(0.55, 0.70, 1.0), tint, 0.45), uAtmosRGB, uAtmosUse);',
     '      col += atm * vLc * uSun * uAtmosK * (limbK * litLimb * 1.15 + fwd * 1.6);',
+    /* photo.rimAll (opt-in, 0 = off): a thin limb of scattered light all the way round, so a
+       night side in front of a bright disc keeps an edge instead of reading as a black ball */
+    /* seen against its star (back -> 1) the limb is forward-scattered light: a thin bright ring */
+    '      col += mix(atm, vec3(1.0), 0.35) * uRimAll * rimP * (0.45 + 0.55 * litLimb + 2.6 * back * back * vLc);',
     '    }',
     '  }',
     /* a planet is lit by its star whatever its traffic: activity only nudges it; down dims */
-    '  col *= uKind > 6.5 ? 0.42 + 0.58 * vAct : mix(0.45, 1.0, smoothstep(0.25, 0.62, vAct));',
+    '  col *= uKind > 6.5 ? 0.42 + 0.58 * vAct : mix(uDownK, 1.0, smoothstep(0.25, 0.62, vAct));',
     '  float l = dot(col, vec3(0.2126, 0.7152, 0.0722));',
     '  col = mix(col, vec3(l) * 0.8, vDesat);',
     '  col *= vLvl;',
@@ -676,7 +717,7 @@
      no px floor */
   function photoVS(vs) {
     return celVS(vs)
-      .replace('attribute vec2 iLife;', 'attribute vec2 iLife; attribute vec4 iLit; uniform vec3 uLitCol[8]; uniform vec2 uLod; uniform float uLodK; uniform float uLodFoc; uniform vec3 uFallL;')
+      .replace('attribute vec2 iLife;', 'attribute vec2 iLife; attribute vec4 iLit; uniform vec3 uLitCol[8]; uniform vec2 uLod; uniform float uLodK; uniform float uLodFoc; uniform vec3 uFallL; uniform float uFocFloor;')
       .replace('varying float vAct;', 'varying vec3 vLv; varying vec3 vLc;\nvarying float vAct;')
       .replace('  float rpx = r * uPx / depth, minR = 0.5 * uMinPx * (0.5 + 0.5 * foc);\n  if (rpx < minR) r *= minR / max(rpx, 1e-4);',
                '  float rpx = r * uPx / depth;\n' +
@@ -684,6 +725,8 @@
                   focus) stays starlight until it is much closer - no dark rocks across a frame */
                '  float lodK = uLodK * (1.0 + uLodFoc * (1.0 - foc));\n' +
                '  r *= smoothstep(uLod.x * 0.55 * lodK, uLod.y * lodK, rpx);')
+      /* photo.focFloor (opt-in, 0.25 = unchanged): how dark an off-subject RESOLVED planet gets */
+      .replace('  vLvl = (0.25 + 0.75 * foc) * (0.35 + 0.65 * app);', '  vLvl = (uFocFloor + (1.0 - uFocFloor) * foc) * (0.35 + 0.65 * app);')
       .replace('  vN = normalize(normalMatrix * nn);',
                '  vN = normalize(normalMatrix * nn);\n' +
                '  int lc = int(iLit.w + 0.5);\n' +
@@ -705,7 +748,8 @@
   var STAR_VS = [
     'attribute vec4 iPos; attribute vec4 iTint; attribute vec4 iMot; attribute vec4 iSt; attribute vec2 iLife; attribute vec3 iStr;',
     'uniform float uTime; uniform float uClock; uniform float uOrbitR; uniform float uPx; uniform vec2 uLod; uniform float uStarPx;',
-    'uniform float uStarGain; uniform vec2 uNear; uniform float fogDensity; uniform float uHazeK; uniform float uLodFoc;',
+    'uniform float uStarGain; uniform vec2 uNear; uniform float fogDensity; uniform float uHazeK; uniform float uLodFoc; uniform float uStarSat;',
+    'uniform vec3 uPsf;',
     'varying vec2 vQ; varying vec3 vCol; varying float vSpk; varying float vCore; varying float vPx;',
     'void main(){',
     '  float phi = iMot.y + iMot.x * uTime;',
@@ -725,6 +769,8 @@
     '  float lvl = (0.25 + 0.75 * foc);',
     '  float act = iSt.x;',
     '  vec3 tint = iTint.rgb;',
+    /* photo.starSat (opt-in, 1 = unchanged): a far body is starlight with a hint of its colour */
+    '  float tmx = max(tint.r, max(tint.g, tint.b)); tint = mix(vec3(tmx), tint, uStarSat);',
     '  float lu = dot(tint, vec3(0.2126, 0.7152, 0.0722));',
     '  tint = mix(vec3(lu), tint, 1.0 - iSt.y);',                          // down: grey
     /* brightness: activity and focus; colour kept saturated in the halo, the core whitens */
@@ -738,6 +784,7 @@
     '  float nearPx = always * max(0.0, rpx * 1.6 - uStarPx);',
     '  float px = (uStarPx * (0.70 + 0.30 * min(1.6, mag)) + nearPx) * (iStr.x > 0.01 ? 2.6 : 1.0);',
     '  vCol *= 1.0 + always * min(0.6, 0.5 * nearPx / max(1.0, uStarPx));',
+    '  if (uPsf.x > 0.5) px *= uPsf.z;',                                   // starPsf(): room for the plate's halo
     '  vQ = position.xy; vPx = px;',
     /* in front of its own (shrinking) sphere so the depth test never hides it */
     '  vec3 toCam = -mc.xyz / max(1e-3, length(mc.xyz));',
@@ -747,6 +794,7 @@
     '}'].join('\n');
   var STAR_FS = [
     'varying vec2 vQ; varying vec3 vCol; varying float vSpk; varying float vCore; varying float vPx;',
+    'uniform sampler2D uPsfF; uniform sampler2D uPsfM; uniform sampler2D uPsfB; uniform vec3 uPsf;',
     'void main(){',
     '  float s = vSpk > 0.01 ? 2.6 : 1.0;',                                  // the quad is wider when it carries spikes
     '  float R = vPx / s;',                                                  // PSF radius in px
@@ -768,6 +816,16 @@
     '  vec3 col = vCol * e;',
     /* the very centre runs toward white as a bright star saturates the sensor */
     '  col += vec3(dot(vCol, vec3(0.33))) * core * 0.55 * min(1.0, vCore);',
+    /* starPsf() (opt-in): baked point spreads instead of the analytic one - faint (core + halo),
+       mid (short spikes) for a spiked star, bright for the strongest; straight alpha, light = rgb * a.
+       uPsf.y = screen px per plate px at the smallest star; the plate widens as the analytic core did */
+    '  if (uPsf.x > 0.5) {',
+    '    float sc = uPsf.y * (0.95 + 0.045 * R / uPsf.z) / 1.2;',
+    '    vec2 puv = 0.5 + vQ * vPx / (256.0 * sc);',
+    '    vec4 tf = texture2D(uPsfF, puv), tm = texture2D(uPsfM, puv), tb = texture2D(uPsfB, puv);',
+    '    vec4 tp = vSpk > 0.5 ? tb : (vSpk > 0.01 ? tm : tf);',
+    '    col = vCol * tp.rgb * tp.a + vec3(dot(vCol, vec3(0.33))) * tp.a * tp.a * 0.55 * min(1.0, vCore);',
+    '  }',
     '  col *= 1.0 - smoothstep(0.90, 1.0, length(vQ));',
     '  if (col.r + col.g + col.b < 0.0015) discard;',
     '  gl_FragColor = vec4(max(col, vec3(0.0)), 1.0);',
@@ -832,7 +890,7 @@
     /* look: 'celestial' (default, 2026-10-07) or 'models' (the old class models) */
     var CELESTIAL = (opts.look || 'celestial') === 'celestial';
     var celBase = opts.celestialBase || '/static/assets/celestial/';
-    var CT = { surf: {}, ring: {}, glow: {}, classes: {}, atmos: {}, sig: '' };   // celestial textures by class
+    var CT = { surf: {}, ring: {}, glow: {}, classes: {}, classX: {}, atmos: {}, sig: '' };   // celestial textures by class
 
     /* photo look (2026-10-08): star-lit bodies + star LOD, see PHOTO_FS. Opt-in;
        { photo: true } or { photo: { lod: [3, 6.5], starPx: 6, sun: 1.25, ... } } */
@@ -871,7 +929,12 @@
       uSun: { value: pv('sun', 1.3) }, uAmb: { value: new THREE.Vector3().fromArray(pv('amb', [0.045, 0.050, 0.066])) },
       uHaze: { value: new THREE.Vector3().fromArray(pv('haze', [0.010, 0.013, 0.022])) }, uHazeK: { value: pv('hazeK', 0.55) },
       uLitCol: { value: LITCOL.map(function (c) { return new THREE.Vector3().fromArray(c); }) },
-      uFallL: { value: new THREE.Vector3(-0.45, 0.50, 0.74).normalize().multiplyScalar(1000) }
+      uFallL: { value: new THREE.Vector3(-0.45, 0.50, 0.74).normalize().multiplyScalar(1000) },
+      /* opt-in photo refinements; the defaults reproduce the 2026-10 look */
+      uTintSat: { value: pv('tintSat', 1) }, uStarSat: { value: pv('starSat', 1) }, uRimAll: { value: pv('rimAll', 0) },
+      uDownK: { value: pv('downK', 0.45) }, uFocFloor: { value: pv('focFloor', 0.25) }, uAlbLift: { value: pv('albLift', 0) },
+      uRimLut: { value: null }, uHasRim: { value: 0 },
+      uPsf: { value: new THREE.Vector3(0, 0.5, 2.0) }, uPsfF: { value: null }, uPsfM: { value: null }, uPsfB: { value: null }
     };
     B.uniforms = U;
 
@@ -932,7 +995,16 @@
        CT.classes (the Blender manifest) picks surface / ring / glow / atmos;
        CEL holds the procedural fallback for every field. */
     function celSpec(cls) {
-      var key = String(cls).replace(/_hub$/, ''), c = celOf(key), ct = CT.classes[key] || {};
+      var key = String(cls).replace(/_hub$/, ''), c = celOf(key), ct = CT.classes[key] || {}, cx = CT.classX[key];
+      if (cx) {            // celExtra({ classes }): a pick replaces the manifest's only once its texture is in
+        var m = {}; Object.keys(ct).forEach(function (k) { m[k] = ct[k]; });
+        Object.keys(cx).forEach(function (k) {
+          if (k === 'surface') { if (CT.surf[cx.surface] && CT.surf[cx.surface].tex) m.surface = cx.surface; }
+          else if (k === 'ring') { if (cx.ring === null || (CT.ring[cx.ring] && CT.ring[cx.ring].tex)) m.ring = cx.ring; }
+          else m[k] = cx[k];
+        });
+        ct = m;
+      }
       var surf = ct.surface && CT.surf[ct.surface], ring = ct.ring && CT.ring[ct.ring], at = ct.atmos && CT.atmos[ct.atmos];
       var kind = surf && KIND_IDX[surf.kind] != null ? KIND_IDX[surf.kind] : KIND_IDX[c.kind];
       if (key === 'guest_lxc' && kind === KIND_IDX.rocky) kind = KIND_IDX.moon;
@@ -962,6 +1034,13 @@
         uTime: hub ? { value: 0 } : U.uTime, fogDensity: U.fogDensity
       };
     }
+    /* a star-class body never resolves into a coin; with photo.noProc (opt-in) neither does a
+       planet whose surface texture is missing: it stays a point of light, never a matte ball */
+    function lodKOf(cls) {
+      var sp = celSpec(cls);
+      if (sp.kind === KIND_IDX.star) return STAR_LODK;
+      return pv('noProc', false) && !(sp.surf && sp.surf.tex) ? STAR_LODK : 1;
+    }
     function celMaterial(cls, hub) {
       var un = celUniforms(cls, hub);
       if (!hub) {
@@ -970,8 +1049,10 @@
       }
       if (PHOTO) {
         un.uSun = U.uSun; un.uAmb = U.uAmb; un.uHaze = U.uHaze; un.uHazeK = U.uHazeK; un.uLitCol = U.uLitCol; un.uFallL = U.uFallL;
+        un.uTintSat = U.uTintSat; un.uRimAll = U.uRimAll; un.uDownK = U.uDownK; un.uAlbLift = U.uAlbLift; un.uRimLut = U.uRimLut; un.uHasRim = U.uHasRim;
+        un.uLimb = { value: new THREE.Vector3(0.30, 0.55, 0) };
         if (hub) un.uHubLit = { value: new THREE.Vector4(0, 0, 0, 0) };
-        else { un.uLod = U.uLod; un.uLodFoc = U.uLodFoc; un.uLodK = { value: celSpec(cls).kind === KIND_IDX.star ? STAR_LODK : 1 }; }
+        else { un.uLod = U.uLod; un.uLodFoc = U.uLodFoc; un.uFocFloor = U.uFocFloor; un.uLodK = { value: lodKOf(cls) }; }
         /* photospheres are the bright things of the scene now (HDR): they, and not
            the lit planets, cross the bloom threshold */
         un.uStarGain.value *= pv(hub ? 'hubStarGain' : 'bodyStarGain', hub ? 3.2 : 2.4);
@@ -993,7 +1074,8 @@
       Object.keys(S.buckets).forEach(function (c) { var m = S.buckets[c].mesh.material; if (m.userData.cel) celApply(m, c, false); });
       S.hubMats.forEach(function (m) { if (m.userData.cel) celApply(m, m.userData.cel, true); });
       S.glows.forEach(function (g) {
-        var t = celGlowTex(g.userData.glowKind); if (g.material.map !== t) { g.material.map = t; g.material.needsUpdate = true; }
+        var t = g.userData.keepMap ? g.material.map : celGlowTex(g.userData.glowKind);      // keepMap: the caller gave this glow its own plate
+        if (g.material.map !== t) { g.material.map = t; g.material.needsUpdate = true; }
         if (g.userData.sizeFor) { var z = g.userData.sizeFor(); g.scale.set(z, z, 1); }
       });
     }
@@ -1001,7 +1083,9 @@
       var nu = celUniforms(cls, hub), u = m.uniforms;
       ['uKind', 'uHasTex', 'uSurf', 'uHasNrm', 'uNrm', 'uHasEmis', 'uEmis', 'uHasRingTex', 'uRingTex', 'uRingIn', 'uAtmosK', 'uAtmosUse', 'uDark', 'uTilt', 'uTintable', 'uExpo']
         .forEach(function (k) { u[k].value = nu[k].value; });
+      if (hub && m.userData.b3dOwnTemp) u.uHasTex.value = 0;      // hubMesh {temp}: this star keeps its own photosphere
       if (!hub) u.uTintMix.value = nu.uTintMix.value;
+      if (!hub && u.uLodK) u.uLodK.value = lodKOf(cls);
       u.uAtmosRGB.value.copy(nu.uAtmosRGB.value);
     }
     function celGlowTex(kind) { var g = CT.glow[kind]; return (g && g.tex) || glowTexProc(kind); }
@@ -1055,7 +1139,8 @@
       STAR = { cls: '*star', geo: g, cap: 0, n: 0, idx: [], isStar: true };
       var mat = new THREE.ShaderMaterial({
         uniforms: { uTime: U.uTime, uClock: U.uClock, uOrbitR: U.uOrbitR, uPx: U.uPx, uLod: U.uLod, uStarPx: U.uStarPx,
-                    uStarGain: U.uStarGain, uNear: U.uNear, fogDensity: U.fogDensity, uHazeK: U.uHazeK, uLodFoc: U.uLodFoc },
+                    uStarGain: U.uStarGain, uNear: U.uNear, fogDensity: U.fogDensity, uHazeK: U.uHazeK, uLodFoc: U.uLodFoc, uStarSat: U.uStarSat,
+                    uPsf: U.uPsf, uPsfF: U.uPsfF, uPsfM: U.uPsfM, uPsfB: U.uPsfB },
         vertexShader: STAR_VS, fragmentShader: STAR_FS, transparent: true, depthWrite: false, depthTest: true,
         blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
         blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor
@@ -1073,7 +1158,7 @@
       var sp = celSpec(it.cls), isStar = sp.kind === KIND_IDX.star;
       var spikes = it.spikes != null ? it.spikes : (isStar ? 0.35 : 0);
       var mag = it.mag != null ? it.mag : (isStar ? 1.3 : 1.0);
-      return [spikes, mag, isStar ? STAR_LODK : 1];
+      return [spikes, mag, lodKOf(it.cls)];
     }
 
     /* rebuild bucket membership from the caller's list (+ ghosts) */
@@ -1304,6 +1389,10 @@
       u.uTint = { value: new THREE.Vector3().fromArray(hexRGB(o.tint || '#9fc7e6')) };
       u.uTintMix.value = info.star ? 0.0 : 0.06;
       u.uBright = { value: o.bright != null ? o.bright : 1 }; u.uDesat = { value: 0 }; u.uPulse = { value: o.pulse || 0 }; u.uLvl = { value: 1 };
+      /* opt-in (hubMesh {limb, temp}): this star's own limb profile and procedural photosphere
+         colour (temp also drops the class surface plate, which carries its own colour) */
+      if (PHOTO && info.star && u.uLimb && o.limb) u.uLimb.value.fromArray(o.limb);
+      if (PHOTO && info.star && o.temp) { u.uTemp.value.fromArray(o.temp); u.uHasTex.value = 0; mat.userData.b3dOwnTemp = true; }
       mat.userData.b3dClass = cls;
       S.hubMats.push(mat);
       mat.addEventListener('dispose', function () { var k = S.hubMats.indexOf(mat); if (k >= 0) S.hubMats.splice(k, 1); });
@@ -1471,23 +1560,66 @@
         t.wrapS = THREE.RepeatWrapping; cb(t);
       }, undefined, function () { cb(null); });
     }
+    function celWant(jobs, table, dst, mip, bx, ver) {
+      Object.keys(table || {}).forEach(function (k) {
+        var e = table[k]; if (!e || !e.file) return;
+        var old = dst[k] && dst[k].file === e.file ? dst[k] : null;
+        dst[k] = { kind: e.kind, inner: e.inner, outer: e.outer, luma: e.luma, limb: e.limb, size: e.size, file: e.file, tex: old ? old.tex : null, ntex: old ? old.ntex : null, etex: old ? old.etex : null };
+        var D0 = dst[k];
+        if (!D0.tex) jobs.push(new Promise(function (res) { texLoad(bx + e.file + '?v=' + ver, function (t) { D0.tex = t; res(); }, mip); }));
+        if (e.normal && !D0.ntex) jobs.push(new Promise(function (res) { texLoad(bx + e.normal + '?v=' + ver, function (t) { if (t) t.encoding = THREE.LinearEncoding; D0.ntex = t; res(); }, mip); }));
+        if (e.emissive && !D0.etex) jobs.push(new Promise(function (res) { texLoad(bx + e.emissive + '?v=' + ver, function (t) { D0.etex = t; res(); }, mip); }));
+      });
+    }
+    /* opt-in: a page adds its own surfaces / rings on top of the celestial manifest and
+       says which classes wear them; nothing changes for a page that never calls it.
+         celExtra({ base: '/static/assets/galaxy2/', ver: 2,
+                    surfaces: { name: { file, normal, kind, luma } }, rings: { name: { file, inner, outer } },
+                    classes: { guest_vm: { surface: 'name' }, storage: { surface: 'x', ring: 'y' } },
+                    rimLut: 'celestial/atmos/rim_lut.png' })          // photo look only
+       A class keeps the manifest's surface / ring until the replacement texture has loaded (and for
+       good if it never does). rimLut: 256 x 4 L, rows = lit rim / terminator / forward rim / haze. */
+    B.celExtra = function (o) {
+      if (!CELESTIAL || !o) return Promise.resolve(false);
+      var jobs = [], bx = o.base || celBase, ver = o.ver || 1;
+      celWant(jobs, o.surfaces, CT.surf, true, bx, ver); celWant(jobs, o.rings, CT.ring, false, bx, ver);
+      if (o.classes) CT.classX = o.classes;
+      if (o.rimLut && PHOTO && !U.uRimLut.value) jobs.push(new Promise(function (res) {
+        texLoad(bx + o.rimLut + '?v=' + ver, function (t) {
+          if (t) { t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.magFilter = THREE.LinearFilter; U.uRimLut.value = t; U.uHasRim.value = 1; }
+          res();
+        }, false);
+      }));
+      return Promise.all(jobs).then(function () { celRefresh(); emit(); return true; });
+    };
+    /* opt-in, photo look only: baked point spreads for the far-LOD stars.
+         starPsf({ base, faint: 'psf/a.png', mid: 'psf/b.png', bright: 'psf/c.png', scale: 0.5, quad: 2 })
+       256 px plates, straight alpha, neutral white. faint is required; mid / bright fall back to it.
+       scale = screen px per plate px, quad = how much wider the star's quad gets (the halo's room).
+       Never called: the analytic PSF, unchanged. starPsf(null) switches back. */
+    B.starPsf = function (o) {
+      if (!PHOTO) return Promise.resolve(false);
+      if (!o || !o.faint) { U.uPsf.value.x = 0; return Promise.resolve(false); }
+      var bx = o.base || '', got = {};
+      return Promise.all(['faint', 'mid', 'bright'].map(function (k) {
+        return new Promise(function (res) {
+          if (!o[k]) return res();
+          texLoad(bx + o[k], function (t) { if (t) { t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; got[k] = t; } res(); }, true);
+        });
+      })).then(function () {
+        if (!got.faint) return false;
+        U.uPsfF.value = got.faint; U.uPsfM.value = got.mid || got.faint; U.uPsfB.value = got.bright || got.mid || got.faint;
+        U.uPsf.value.set(1, o.scale || 0.5, o.quad || 2.0);
+        return true;
+      });
+    };
     function readCelestial() {
       loadJSON(celBase + 'manifest.json').then(function (man) {
         var sig = JSON.stringify(man || {});
         if (sig === CT.sig) { S.loaded = true; return; }
         CT.sig = sig;
         var jobs = [];
-        function want(table, dst, mip) {
-          Object.keys(table || {}).forEach(function (k) {
-            var e = table[k]; if (!e || !e.file) return;
-            var old = dst[k] && dst[k].file === e.file ? dst[k] : null;
-            dst[k] = { kind: e.kind, inner: e.inner, outer: e.outer, luma: e.luma, limb: e.limb, size: e.size, file: e.file, tex: old ? old.tex : null, ntex: old ? old.ntex : null, etex: old ? old.etex : null };
-            var D0 = dst[k];
-            if (!D0.tex) jobs.push(new Promise(function (res) { texLoad(celBase + e.file + '?v=' + sig.length, function (t) { D0.tex = t; res(); }, mip); }));
-            if (e.normal && !D0.ntex) jobs.push(new Promise(function (res) { texLoad(celBase + e.normal + '?v=' + sig.length, function (t) { if (t) t.encoding = THREE.LinearEncoding; D0.ntex = t; res(); }, mip); }));
-            if (e.emissive && !D0.etex) jobs.push(new Promise(function (res) { texLoad(celBase + e.emissive + '?v=' + sig.length, function (t) { D0.etex = t; res(); }, mip); }));
-          });
-        }
+        function want(table, dst, mip) { celWant(jobs, table, dst, mip, celBase, sig.length); }
         want(man.surfaces, CT.surf, true); want(man.rings, CT.ring, false); want(man.glows, CT.glow, false);
         CT.atmos = man.atmos || {}; CT.classes = man.classes || {};
         Promise.all(jobs).then(function () {
@@ -1516,6 +1648,7 @@
       if (o.hazeK != null) U.uHazeK.value = +o.hazeK;
       if (o.lod) U.uLod.value.set(+o.lod[0], +o.lod[1]);
       if (o.amb) U.uAmb.value.fromArray(o.amb);
+      ['tintSat', 'starSat', 'rimAll', 'downK', 'focFloor', 'albLift'].forEach(function (k) { var un = U['u' + k.charAt(0).toUpperCase() + k.slice(1)]; if (o[k] != null && un) un.value = +o[k]; });
       return { sun: U.uSun.value, starPx: U.uStarPx.value, starGain: U.uStarGain.value, hazeK: U.uHazeK.value, lod: U.uLod.value.toArray() };
     };
     B.stats = function () {

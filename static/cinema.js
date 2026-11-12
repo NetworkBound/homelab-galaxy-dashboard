@@ -52,10 +52,14 @@
   if (!THREE) return;
 
   /* ---------------- tunables ---------------- */
+  /* CA only in flight and only at the corners
+     (<= 0.6 px), a lighter vignette, visible fine grain (0.036 triangular ~ 3.5-4 levels RMS in dark sky
+     at 1080p; the old 0.014 x GRAIN_K 0.5 was invisible on video), a highlight shoulder so cores
+     keep colour instead of clipping, and a 2-step dither before the 8-bit swapchain */
   var GRADE = {
-    ca:     0.0016,   // ~2 px of fringing at the corners, 0 at centre
-    vig:    0.42,     // vignette depth at the corners
-    grain:  0.014,    // film grain amplitude
+    ca:     0.0005,   // ~0.6 px of fringing at the corners DURING LEGS, 0 at centre and at holds
+    vig:    0.22,     // vignette depth at the corners
+    grain:  0.036,    // film grain amplitude (triangular, luma-weighted)
     sat:    1.02,     // saturation (was 1.12: the clean pass wants a restrained palette, 2026-10-07)
     con:    1.05,     // contrast about mid grey
     lift:   0.55,     // cool-shadow / warm-highlight split tone
@@ -82,6 +86,19 @@
   /* hue-preserving highlight blend (0 = plain per-channel ACES); ?hue=<k> for A/B */
   var HUE_K = (function () { var m = location.search.match(/[?&]hue=([\d.]+)/); return m ? parseFloat(m[1]) : 0.5; })();
   if (HDR) BLOOM = { strength: 0.62, radius: 0.5, threshold: 1.25 };
+  /* the grade and bloom this file ships: lockGrade(true) restores them, so a preset applied by
+     an older caller BEFORE the lock (showtime's cinemaSet(GRADES.wall) at boot) cannot stick */
+  var GRADE0 = JSON.parse(JSON.stringify(GRADE)), BLOOM0 = JSON.parse(JSON.stringify(BLOOM));
+  /* showtime's night and alert looks, as ratios on whatever grade is current (they
+     must keep working while the grade is locked). The old absolute presets in showtime.js were
+     tuned for the 8-bit pipeline and carry no exposure, so a locked cinemaSet() dropped them
+     whole; these are the same intent (night: dimmer, less colour, deeper corners, less glow;
+     alert: a touch more colour and glow, deeper corners) and never touch the tone curve */
+  var MODE_K = {
+    night: { expo: 0.84, sat: 0.82, vig: 0.12, lift: 0.55, grain: 0.75, bloom: 0.86, ca: 1.0 },
+    alert: { expo: 1.00, sat: 1.04, vig: 0.08, lift: 1.00, grain: 1.00, bloom: 1.10, ca: 1.4 }
+  };
+  var MODE_1 = { expo: 1, sat: 1, vig: 0, lift: 1, grain: 1, bloom: 1, ca: 1 };
 
   var BANK_MAX   = 0.075;   // rad of roll at full lateral speed (~4.3 deg)
   var BANK_GAIN  = 0.00042; // rad per world-unit/s of lateral camera velocity
@@ -117,7 +134,13 @@
   var RS_UP_MS = 7.0;        // predicted p75 at the next rung below this: step up
   /* grain was hashed per 4K pixel and averaged 2x2 by the compositor, which
      halves its amplitude; at native resolution the same look needs half */
-  var GRAIN_K = Math.min(1, ((window.NB_RS && NB_RS.cpr) || 1) / 2);
+  /* grain is specified in display terms at the native canvas now (the 2x2
+     compositor average it compensated for is long gone: the canvas is native) */
+  var GRAIN_K = 1;
+  /* highlight shoulder: display values roll off from KNEE2 toward WHITE2 (never 1.0), so a
+     galaxy core or the Internet sun keeps its colour and a phone never sees a clipped disc */
+  var KNEE2 = 0.76, WHITE2 = 0.905;
+  var ARRIVE_EV = 0.25, ARRIVE_S = 0.4;      // the arrival payoff: +0.25 EV easing out over one beat
 
   var C = {
     on: Q !== 'off', cinema: false, hud: true, force: Q === 'force',
@@ -157,7 +180,13 @@
       uHue:     { value: HUE_K },
       uTexel:   { value: new THREE.Vector2(0, 0) },
       uFxaa:    { value: 0 },
-      uPx:      { value: new THREE.Vector2(0, 0) }
+      uPx:      { value: new THREE.Vector2(0, 0) },
+      uKnee2:   { value: KNEE2 },
+      uWhite2:  { value: WHITE2 },
+      uDither:  { value: 1.0 },
+      tGrain:   { value: null },
+      uGrainTex: { value: 0 },
+      uGrainOff: { value: new THREE.Vector2(0, 0) }
     },
     vertexShader: [
       'varying vec2 vUv;',
@@ -170,6 +199,8 @@
       'uniform float uTime, uCA, uVig, uGrain, uSat, uCon, uLift, uSpeed, uBar, uGlitch, uKnee, uExpo;',
       'uniform float uHdr, uPre, uGam, uBlack, uHue;',
       'uniform vec2  uTexel; uniform float uFxaa; uniform vec2 uPx;',
+      'uniform float uKnee2, uWhite2, uDither;',
+      'uniform sampler2D tGrain; uniform float uGrainTex; uniform vec2 uGrainOff;',
       /* ACES filmic (Hill's RRT+ODT fit, the same curve three applied per material
          before 2026-10-08), now applied ONCE to the whole HDR frame */
       'vec3 rrtOdt(vec3 v){ vec3 a = v * (v + 0.0245786) - 0.000090537; vec3 b = v * (0.983729 * v + 0.4329510) + 0.238081; return a / b; }',
@@ -327,10 +358,22 @@
       '  float vig = smoothstep(1.15, 0.30, r2 * 2.0);',
       '  col *= mix(1.0, vig, uVig);',
 
-      /* grain rides mostly in the shadows, where film grain actually lives —
-         keeps it off the bright HUD-adjacent areas and off the bitrate */
-      '  float g = hash(uv * uRes + fract(uTime) * 91.7);',
-      '  col += (g - 0.5) * uGrain * (1.0 - l * 0.7);',
+      /* highlight shoulder: hue-preserving roll-off of the peak channel above the knee,
+         asymptotic to uWhite2 - nothing in the scene reaches 255 */
+      '  float pk2 = max(col.r, max(col.g, col.b));',
+      '  if (pk2 > uKnee2) { float w2 = uWhite2 - uKnee2; float pc2 = uKnee2 + w2 * (1.0 - exp(-(pk2 - uKnee2) / w2)); col *= pc2 / pk2; }',
+      /* film grain: temporal, triangular (two hashes), luma-weighted toward the
+         shadows and midtones where grain lives, off the brightest highlights */
+      '  float l2 = dot(col, vec3(0.2126, 0.7152, 0.0722));',
+      '  float g = hash(uv * uRes + fract(uTime) * 91.7) + hash(uv * uRes * 1.37 + 7.1 + fract(uTime * 0.731) * 53.3) - 1.0;',
+      /* baked film grain (galaxy2 manifest fx.grain: three tileable 256 px plates, mean 128, RMS 4/255),
+         one texel per canvas pixel, a new plate and offset every frame; x26 brings the plate to the
+         amplitude of the two-hash grain it replaces, so uGrain means the same either way */
+      '  if (uGrainTex > 0.5) g = (texture2D(tGrain, (floor(uv * uRes) + 0.5 + uGrainOff) / 256.0).r - 0.50196) * 26.0;',
+      '  col += g * uGrain * (1.0 - l2 * 0.6);',
+      /* 2-step dither before the 8-bit swapchain: +-1 LSB, decorrelated from the grain, so a
+         dark sky gradient never posterises */
+      '  col += (hash(uv * uRes * 2.113 + 3.7 + fract(uTime * 1.31) * 17.9) - 0.5) * (2.0 / 255.0) * uDither;',
 
       '  col += tear * vec3(0.55, 0.72, 0.95);',
       '  if (uBar > 0.0 && (uv.y < uBar || uv.y > 1.0 - uBar)) col = vec3(0.0);',
@@ -345,9 +388,26 @@
     C.u = C.pass.uniforms;
     window.composer.addPass(C.pass);
     window.CINEMA_PASS = C.pass;
+    if (HDR) grainV2(0);
     if (RS_PIN) { var pi = 0; for (var i = 0; i < RS_LADDER.length; i++) if (Math.abs(RS_LADDER[i] - RS_PIN) < Math.abs(RS_LADDER[pi] - RS_PIN)) pi = i; C.rsIdx = pi; }
     rsApply(RS_PIN || RS_LADDER[C.rsIdx], true);
     window.addEventListener('resize', function () { setTimeout(function () { rsApply(C.ss, true); }, 60); });
+  }
+  /* fx.grain of the galaxy2 manifest (HDR wall only); without the key, or with ?grain=proc, the
+     procedural grain stays. All plates must load before the first is used. */
+  function grainV2(tries) {
+    var M = window.NB_G2MAN;
+    if (M === undefined) { if (tries < 120) setTimeout(function () { grainV2(tries + 1); }, 500); return; }
+    var g = M && M.fx && M.fx.grain, files = g && g.files;
+    if (!files || !files.length || !C.u || /[?&]grain=proc/.test(location.search)) return;
+    var out = [], left = files.length, bad = false;
+    files.forEach(function (f, i) {
+      new THREE.TextureLoader().load('/static/assets/galaxy2/' + f, function (t) {
+        t.encoding = THREE.LinearEncoding; t.generateMipmaps = false; t.minFilter = t.magFilter = THREE.NearestFilter;
+        t.wrapS = t.wrapT = THREE.RepeatWrapping; out[i] = t;
+        if (!--left && !bad) { C.grainTex = out; C.u.tGrain.value = out[0]; C.u.uGrainTex.value = 1; }
+      }, undefined, function () { bad = true; --left; });
+    });
   }
   function sizePass() {
     if (!C.u || !window.rndr) return;
@@ -427,7 +487,11 @@
        units, status colour only where something is wrong, and a hairline
        progress track. No "now showing", no flavour copy, no tracking. */
     '#cin{position:fixed;z-index:6;bottom:calc(212px + var(--sy));',
-    '  left:calc(var(--cL) + var(--sx));right:calc(var(--cR) + var(--sx));',
+    /* the box is the 9:16 centre crop a phone takes of the wall (56.25vh wide =
+       x 656-1264 at 1080p), centred on the screen (the centre column is 20 px off-centre),
+       and never wider than the column; renderCaption drops facts until the row fits it */
+    '  left:max(calc(max(var(--cL),var(--cR)) + var(--sx)),calc(50vw - 28.125vh));',
+    '  right:max(calc(max(var(--cL),var(--cR)) + var(--sx)),calc(50vw - 28.125vh));',
     '  pointer-events:none;opacity:0;transition:opacity .45s ease;',
     '  display:flex;flex-direction:column;align-items:center;gap:4px;',
     '  font-family:var(--ui-font,Inter,system-ui,sans-serif);letter-spacing:0;font-variant-numeric:tabular-nums}',
@@ -578,8 +642,11 @@
       if (any) f.push('<b>' + fmtBits(rx) + '</b> in · <b>' + fmtBits(tx) + '</b> out');
     }
     if (st.stream) {
-      var s = st.stream, T = NS.T;
-      f.push('<b>' + (s.lb ? '≥ ' : s.sampled ? '≈ ' : '') + fmtBits(s.bps) + '</b>');
+      var s = st.stream, T = NS.T, SL = window.NB_STORY;
+      /* the story line at the stream stop IS this link's rate (story.js, from /api/tour); the
+         scene's own reading of it, taken at another instant, would be a second, different number
+         on the same screen. It stays whenever the story layer has no line for the link. */
+      if (!(SL && SL.has && SL.has(st, NS))) f.push('<b>' + (s.lb ? '≥ ' : s.sampled ? '≈ ' : '') + fmtBits(s.bps) + '</b>');
       f.push(T && T.kindName ? T.kindName(s.kind) : s.kind);
       if (s.lb) f.push('lower bound, from flows');
       else f.push(s.dir ? 'both directions measured' : 'direction not measured');
@@ -620,13 +687,35 @@
   function escH(x) { return String(x == null ? '' : x).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function aspectFacts(st, NS) {
     var a = NS.aspectOf ? NS.aspectOf(st.aspect) : null;
-    if (!a) return '';
+    if (!a) return [];
     var F = (Array.isArray(a.facts) ? a.facts : []).filter(function (f) { return f && f.k != null && f.v != null; }).slice(0, 4);
-    if (!F.length) return escH(a.line || '');
+    if (!F.length) return [escH(a.line || '')];
     return F.map(function (f) {
       var c = f.s === 'crit' ? ' class="bad"' : f.s === 'warn' ? ' class="warn"' : '';
       return '<span class="af"><em>' + escH(f.k) + '</em><b' + c + '>' + escH(f.v) + '</b>' + (f.u ? '<u>' + escH(f.u) + '</u>' : '') + '</span>';
-    }).join('');
+    });
+  }
+  /* at most four facts, and never a row wider than the caption's box (the 9:16 crop): what
+     is wrong stays (red, then amber), then the stop's own numbers in their order; the grey
+     asides ("12 stopped", "30 not seen") and the row's plain kind ("Proxmox host") go first */
+  var FACT_MAX = 4;
+  function factRank(h, i) {
+    return /class="bad"/.test(h) ? -2 : /class="warn"/.test(h) ? -1 : /class="mute"/.test(h) ? 100 + i : /^[A-Za-z][^<]*$/.test(h) ? 50 + i : i;
+  }
+  function fitFacts(f, sep) {
+    var key = sep + '|' + f.join('\u0001');
+    if (C.fitKey === key) return C.fitHtml;
+    var it = f.map(function (h, i) { return { h: h, i: i, r: factRank(h, i) }; });
+    function html() { return it.map(function (x) { return x.h; }).join(sep); }
+    function dropLast() {
+      var w = 0; for (var j = 1; j < it.length; j++) if (it[j].r > it[w].r) w = j;
+      it.splice(w, 1);
+    }
+    while (it.length > FACT_MAX) dropLast();
+    C.facts.innerHTML = html();
+    while (it.length > 1 && C.facts.scrollWidth > C.facts.clientWidth + 1) { dropLast(); C.facts.innerHTML = html(); }
+    C.fitKey = key; C.fitHtml = html();
+    return C.fitHtml;
   }
 
   function renderCaption() {
@@ -681,8 +770,8 @@
     }
     /* facts refresh at 4 Hz at most (the data behind them moves every 5-12 s) */
     if (!C.lastStats || C.t - (C.statsAt || 0) >= 0.25) C.statsAt = C.t; else { if (!C.onSet) { C.el.classList.add('on'); C.onSet = true; } return; }
-    var html = st.aspect ? aspectFacts(st, NS) : factsFor(st, NS).join('<i>·</i>');
-    if (html !== C.lastStats) { C.lastStats = html; C.facts.innerHTML = html; }
+    var html = st.aspect ? fitFacts(aspectFacts(st, NS), '') : fitFacts(factsFor(st, NS), '<i>·</i>');
+    if (html !== C.lastStats || C.facts.innerHTML === '') { C.lastStats = html; C.facts.innerHTML = html; }
     if (!C.onSet) { C.el.classList.add('on'); C.onSet = true; }
   }
 
@@ -994,17 +1083,18 @@
 
   function applyMode() {
     if (!C.u) return;
-    var G = C.cinema ? CINEMA : GRADE;
-    C.u.uCA.value    = C.on ? G.ca    : 0;
-    C.u.uVig.value   = C.on ? G.vig   : 0;
-    C.u.uGrain.value = C.on ? G.grain * GRAIN_K : 0;
-    C.u.uSat.value   = C.on ? G.sat   : 1;
+    var G = C.cinema ? CINEMA : GRADE, M = MODE_K[C.mode] || MODE_1;
+    C.mk = M;
+    C.u.uCA.value    = C.on ? G.ca * M.ca * (C.legK || 0) : 0;    // CA only in flight (tick keeps it current)
+    C.u.uVig.value   = C.on ? G.vig + M.vig : 0;
+    C.u.uGrain.value = C.on ? G.grain * M.grain * GRAIN_K : 0;
+    C.u.uSat.value   = C.on ? G.sat * M.sat : 1;
     C.u.uCon.value   = C.on ? G.con   : 1;
-    C.u.uLift.value  = C.on ? G.lift  : 0;
+    C.u.uLift.value  = C.on ? G.lift * M.lift : 0;
     /* the tone stage is the pipeline, not an effect: it stays on with the grade bypassed */
     C.u.uHdr.value   = HDR ? 1 : 0;
     C.u.uPre.value   = G.pre;
-    C.u.uExpo.value  = HDR ? G.expo : 0.94;
+    C.u.uExpo.value  = HDR ? G.expo * M.expo : 0.94;
     C.u.uGam.value   = G.gam;
     C.u.uBlack.value = G.black;
     C.u.uBar.value   = 0;                    // bars are DOM, so they cover the HUD too
@@ -1070,7 +1160,7 @@
       /* the beat breathes the bloom, it does not flash it: a smooth bump (no
          step on the attack) at a third of the old depth (was 0.45 / 0.75) */
       var bv = C.beatV * C.beatV * (3 - 2 * C.beatV);
-      window.bloom.strength = (BLOOM.strength * bk + bv * (C.beatSev >= 3 ? 0.24 : 0.14) * bk) / (window.NB_BLOOM_PRE || 1);
+      window.bloom.strength = (BLOOM.strength * (C.mk ? C.mk.bloom : 1) * bk + bv * (C.beatSev >= 3 ? 0.24 : 0.14) * bk) / (window.NB_BLOOM_PRE || 1);
       window.bloom.radius = BLOOM.radius;
       window.bloom.threshold = BLOOM.threshold + (1 - bk) * 0.35;
     }
@@ -1082,9 +1172,23 @@
     bankTick(dt);
 
     C.u.uTime.value = t;
+    if (C.grainTex) {
+      C.grainN = ((C.grainN || 0) + 1) % C.grainTex.length;
+      C.u.tGrain.value = C.grainTex[C.grainN];
+      C.u.uGrainOff.value.set((Math.random() * 256) | 0, (Math.random() * 256) | 0);
+    }
     C.u.uGlitch.value = C.glitchV || 0;
     C.u.uSpeed.value = C.on && !C.degraded
       ? clamp(C.speed * BLUR_GAIN, 0, BLUR_MAX) : 0;
+    /* chromatic aberration only while a leg is flying (eased in / out over ~0.3 s) */
+    var TRc = window.NETSCENE && NETSCENE.tour, flying = !!(TRc && !TRc.manual && TRc.phase === 'travel');
+    C.legK = (C.legK || 0) + ((flying ? 1 : 0) - (C.legK || 0)) * (1 - Math.exp(-dt / 0.3));
+    C.u.uCA.value = C.on ? (C.cinema ? CINEMA : GRADE).ca * C.legK : 0;
+    /* the arrival payoff - a one-beat exposure bump (+ARRIVE_EV, ease-out) on the downbeat
+       the camera lands on, on top of whatever the mode's exposure is */
+    var G2 = C.cinema ? CINEMA : GRADE, ae = C.arriveAt == null ? 9 : t - C.arriveAt, bump = 0;
+    if (ae >= 0 && ae < ARRIVE_S) { var q = 1 - ae / ARRIVE_S; bump = q * q; }
+    C.u.uExpo.value = (HDR ? G2.expo * (C.mk ? C.mk.expo : 1) : 0.94) * Math.pow(2, ARRIVE_EV * bump);
 
     renderCaption();
 
@@ -1131,6 +1235,7 @@
         ' cinematics=' + (cinematicsOn() ? 'on' : 'off') +
         ' laps=' + MV.laps +
         ' move=' + (MV.on ? MV.name + ':' + MV.u.toFixed(2) : 'none') +
+        ' lock=' + (C.locked ? 1 : 0) + ' look=' + (C.mode || '-') + ' bloomT=' + (window.bloom ? (+window.bloom.threshold).toFixed(2) : 'na') +
         (C.force ? ' forced' : '') + (C.degraded ? ' degraded' : '');
     }
   }
@@ -1147,11 +1252,53 @@
   C.play = function (name) { return name ? startMove(name) : playNext(); };
   C.stopMove = function () { if (MV.on) endMove(false); };
   C.move = MV;
+  /* netscene calls this on the arrival frame (the light beat): the exposure payoff */
+  C.arrive = function () { C.arriveAt = C.t; };
+  /* CINEMA.lockGrade(true) - the wall's grade and bloom belong to this file; a locked
+     cinemaSet() honours exposure only. Showtime's night / alert looks come through setMode()
+     below (its presets carry no exposure key, so that lever alone would leave them dead) */
+  C.locked = false;
+  C.lockGrade = function (v) {
+    C.locked = !!v;
+    if (C.locked) {                       // back to the shipped look; exposure stays the caller's lever
+      var ex = GRADE.expo, k;
+      for (k in GRADE0) GRADE[k] = GRADE0[k];
+      for (k in BLOOM0) BLOOM[k] = BLOOM0[k];
+      GRADE.expo = ex;
+    }
+    applyMode(); if (C.locked) bodyMode(); else C.setMode(null);
+    return C.locked;
+  };
+  /* CINEMA.setMode('night' | 'alert' | null): the two showtime looks that survive the lock.
+     showtime.js toggles body.st-<mode> in the same call that sends its preset, so the class is
+     followed too: an older showtime (which sends nothing when it leaves night under the lock)
+     still gets the look on and, as important, off again */
+  C.mode = null;
+  C.setMode = function (m) {
+    m = MODE_K[m] ? m : null;
+    if (m !== C.mode) { C.mode = m; applyMode(); }
+    return C.mode;
+  };
+  function bodyMode() {
+    var cl = document.body && document.body.classList;
+    if (!C.locked) return;                 // unlocked, the caller's own preset is the look: never both
+    if (cl) C.setMode(cl.contains('st-night') ? 'night' : cl.contains('st-alert') ? 'alert' : null);
+  }
+  (function watch() {
+    if (!document.body) { setTimeout(watch, 200); return; }
+    bodyMode();
+    try { new MutationObserver(bodyMode).observe(document.body, { attributes: true, attributeFilter: ['class'] }); } catch (e) { }
+  })();
   window.CINEMA = C;
   window.cinemaSet = function (o) {
-    Object.keys(o || {}).forEach(function (k) {
+    o = o || {};
+    Object.keys(o).forEach(function (k) {
+      if (k === 'exposure' || k === 'expo') { GRADE.expo = +o[k] || GRADE.expo; return; }
+      if (C.locked) return;
       if (k in GRADE) GRADE[k] = o[k];
-      if (k in BLOOM) BLOOM[k] = o[k];
+      /* an 8-bit-era bloom threshold (< 1) is meaningless on the HDR pipeline, whose
+         threshold is linear radiance above diffuse white: never let a preset lower it */
+      if (k in BLOOM) { if (HDR && k === 'threshold' && +o[k] < 1) return; BLOOM[k] = o[k]; }
     });
     applyMode();
   };

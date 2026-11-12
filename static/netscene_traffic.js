@@ -51,6 +51,9 @@
   };
   var KIND_NAME = { lan: 'LAN', storage: 'storage', backup: 'backup', wan: 'internet', vpn: 'VPN', media: 'media', mixed: 'mixed' };
   var LBL_TOP = 3;
+  /* more visual, less text: only the busiest stream keeps its
+     rate caption at the overview; width, brightness and pace already carry the rest */
+  var LBL_TXT = 1;
 
   var NS = null, M = null;
   var S = {
@@ -84,8 +87,8 @@
   var RIB_VS = [
     'attribute vec3 aP0; attribute vec3 aP1; attribute vec3 aP2;',
     'attribute vec4 aLane; attribute vec3 aCol; attribute vec4 aAnim;',
-    'uniform float uTime; uniform float uPx; uniform float uCap;',
-    'varying vec3 vCol; varying float vT; varying float vS; varying float vA; varying float vFog; varying float vDir; varying float vPh;',
+    'uniform float uTime; uniform float uPx; uniform float uCap; uniform float uMin; uniform float uSoft;',
+    'varying vec3 vCol; varying float vT; varying float vS; varying float vA; varying float vFog; varying float vDir; varying float vPh; varying float vLen;',
     'void main(){',
     '  float t = position.x, u = 1.0 - t;',
     '  vec3 p = u * u * aP0 + 2.0 * u * t * aP1 + t * t * aP2;',
@@ -99,25 +102,43 @@
     /* the width is in world units, so a close-up blew a lane up into a wide white
        beam across the frame (2026-10-09): cap its half-width on screen at ~9 px,
        the overview (where lanes are ~5-11 px) is untouched */
+    /* a stream, not a thread. The lane is drawn 1.9x wider and never under
+       uMin px of half-width on screen (a far lane used to be a 2 px bright wire
+       that aliased on video); what it gains in width it gives back in peak, so a
+       lane carries about the same light as before, spread into a soft band. */
     '  float hw = aLane.y * 2.2 * (0.35 + 0.65 * taper), hpx = hw * uPx / max(1.0, -mv.z);',
-    '  mv.xyz += side * position.y * hw * min(1.0, uCap / max(hpx, 1e-3));',
-    '  vCol = aCol; vT = t; vS = position.y; vA = aAnim.x * aAnim.y * aLane.z * taper; vDir = aLane.w;',
+    '  float tpx = clamp(hpx * 1.9, uMin * (0.45 + 0.55 * taper), uCap);',
+    '  mv.xyz += side * position.y * hw * (tpx / max(hpx, 1e-3));',
+    '  float thin = clamp(hpx / max(tpx, 1e-3), 0.0, 1.0);',
+    '  vCol = aCol; vT = t; vS = position.y; vA = aAnim.x * aAnim.y * aLane.z * taper * mix(1.0, 0.35 + 0.65 * sqrt(thin), uSoft); vDir = aLane.w;',
+    '  vLen = length(aP2 - aP0) / max(1.0, tpx * max(1.0, -mv.z) / uPx);',
     '  vPh = aAnim.z + aAnim.w * uTime;',
     '  vFog = -mv.z;',
     '  gl_Position = projectionMatrix * mv;',
     '}'].join('\n');
   var RIB_FS = [
-    'varying vec3 vCol; varying float vT; varying float vS; varying float vA; varying float vFog; varying float vDir; varying float vPh;',
-    'uniform float uFog;',
+    'varying vec3 vCol; varying float vT; varying float vS; varying float vA; varying float vFog; varying float vDir; varying float vPh; varying float vLen;',
+    'uniform float uFog; uniform float uSoft; uniform sampler2D uStream; uniform float uStreamK;',
+    'float h21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }',
+    'float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);',
+    '  return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y); }',
     'void main(){',
-    /* profile across the lane: a bright core (inner 40 %) over a soft halo
-       that fades to nothing at the ribbon edge - a beam, not a flat strip */
+    /* profile across the lane. Before (uSoft 0): a bright core (inner 40 %) over a
+       halo - a beam. Soft (uSoft 1): two gaussians and no core, so there is no hard
+       edge anywhere and nothing 1 px wide; dust drifts along the stream (two octaves
+       of value noise in lane space, moving with the flow), or the baked streak
+       texture (fx/stream_v2.png, tileable along U) when the asset set has it. */
     '  float a = abs(vS), core = 1.0 - smoothstep(0.0, 0.38, a), halo = pow(1.0 - a, 2.2);',
-    '  float edge = core + 0.32 * halo;',
+    '  float beam = core + 0.32 * halo;',
+    '  float g = (0.50 * exp(-a * a * 5.5) + 0.42 * exp(-a * a * 16.0)) * (1.0 - a * a);',
+    '  vec2 q = vec2(vT * vLen * 0.55 - vDir * vPh * 2.0, vS * 1.7 + vPh * 0.13);',
+    '  float dust = uStreamK > 0.5 ? dot(texture2D(uStream, vec2(vT * vLen * 0.125 - vDir * vPh * 0.5, 0.5 + 0.5 * vS)).rgb, vec3(0.3333)) * 2.0',
+    '                              : 0.45 + 0.75 * vn(q) + 0.35 * vn(q * vec2(2.7, 2.1) + 7.3);',
+    '  float edge = mix(beam, g * dust, uSoft);',
     /* energy pattern: soft crests travelling along the lane; a neutral lane
        (vDir 0) only breathes, it never pretends to have a direction */
     '  float k = vDir == 0.0 ? 0.5 + 0.5 * sin(vPh * 6.2832) : fract(vT * 6.0 - vDir * vPh);',
-    '  float crest = vDir == 0.0 ? 0.55 + 0.25 * k : 0.45 + 0.75 * pow(k, 6.0);',
+    '  float crest = vDir == 0.0 ? 0.55 + 0.25 * k : mix(0.45 + 0.75 * pow(k, 6.0), 0.60 + 0.55 * pow(k, 3.0), uSoft);',
     '  float f = 1.0 - exp(-uFog * uFog * vFog * vFog);',
     '  vec3 c = vCol * vA * edge * crest * (1.0 - clamp(f, 0.0, 0.85)) * smoothstep(120.0, 420.0, vFog);',
     '  if (c.r + c.g + c.b < 0.003) discard;',
@@ -171,11 +192,31 @@
     return new THREE.CanvasTexture(cv);
   }
 
+  /* soft streams are the wall's look in HDR; ?streams=beam brings the old beam back.
+     The baked streak (manifest key fx.stream_v2 of the galaxy2 set) replaces the
+     procedural dust when it exists; without it nothing changes. */
+  var SOFT = !!window.NB_HDR && !/[?&]streams=beam/.test(location.search);
+  var _stx = 0;
+  function streamTex() {
+    if (_stx || !SOFT || !S.U) return;
+    var G2 = window.NB_G2MAN;
+    if (G2 === undefined) return;                       // manifest not read yet
+    _stx = 1;
+    var f = G2 && G2.fx && G2.fx.stream_v2; f = f && (f.file || f);
+    if (typeof f !== 'string') return;
+    new THREE.TextureLoader().load('/static/assets/galaxy2/' + f, function (t) {
+      t.encoding = THREE.LinearEncoding; t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.ClampToEdgeWrapping;
+      t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.needsUpdate = true;
+      S.U.uStream.value = t; S.U.uStreamK.value = 1;
+    });
+  }
+
   /* ---------------- build ---------------- */
   function ensure() {
     if (S.mesh) return;
     var fog = NS.scene.fog, fd = fog && fog.density !== undefined ? fog.density : 0.0006;
-    var U = { uTime: { value: 0 }, uFog: { value: fd * 0.6 }, uPx: { value: 500 }, uCap: { value: 9 }, uTex: { value: dotTex() } };
+    var U = { uTime: { value: 0 }, uFog: { value: fd * 0.6 }, uPx: { value: 500 }, uCap: { value: 9 }, uTex: { value: dotTex() },
+              uMin: { value: 0 }, uSoft: { value: SOFT ? 1 : 0 }, uStream: { value: null }, uStreamK: { value: 0 } };
     S.U = U;
     /* ribbon: an instanced strip */
     var base = new THREE.BufferGeometry(), P = [], I = [];
@@ -427,7 +468,7 @@
     ia.aAnim.needsUpdate = true; ia.aLane.needsUpdate = true; pa.aPar.needsUpdate = true;
   }
 
-  /* ---------------- labels: "4.6 Mb/s · storage" ---------------- */
+  /* ---------------- labels: "Storage · 4.6 Mb/s" ---------------- */
   /* labels are kept per pair across data polls (a poll only updates the text):
      rebuilding them every 12 s made them fade back in from nothing each time */
   S.lblByKey = {};
@@ -436,7 +477,8 @@
     var keep = {}, list = [];
     (S.pairList || []).slice(0, 8).forEach(function (e, i) {
       var p = e.pair, kind = p && KIND[p.kind] ? p.kind : 'mixed';
-      var txt = (lowerBound(p) ? '\u2265 ' : p && sampled(p) ? '\u2248 ' : '') + fmtBps(e.bps) + ' \u00b7 ' + KIND_NAME[kind];
+      /* the kind leads ("LAN · 61 Mb/s"), so a label never opens with a bare decimal */
+      var kn = KIND_NAME[kind], txt = kn.charAt(0).toUpperCase() + kn.slice(1) + ' \u00b7 ' + (lowerBound(p) ? '\u2265 ' : p && sampled(p) ? '\u2248 ' : '') + fmtBps(e.bps);
       var l = S.lblByKey[e.key];
       if (!l) {
         l = NS.textLabel(txt, 'stream', { dot: KIND[kind] });
@@ -532,7 +574,10 @@
     S.U.uTime.value = S.clock;
     var h = window.NB_RS ? NB_RS.ptH : NS.rndr.getContext().drawingBufferHeight;
     S.U.uPx.value = h / (2 * Math.tan(NS.cam.fov * Math.PI / 360));
-    S.U.uCap.value = 9 * h / Math.max(1, innerHeight);     // 9 CSS px in buffer px
+    var cssPx = h / Math.max(1, innerHeight);
+    S.U.uCap.value = (SOFT ? 20 : 9) * cssPx;              // half-width cap on screen: 9 CSS px for the beam, 20 for the soft stream
+    S.U.uMin.value = (SOFT ? 6.5 : 0) * cssPx;
+    streamTex();
     writeGeometry(false);
     var oK = NS.overK === undefined ? 1 : NS.overK, subj = subject(), ch = false, keep = [];
     var aIn = 1 - Math.exp(-dt * 2.0), aOut = 1 - Math.exp(-dt * 1.2), af = 1 - Math.exp(-dt * 5.0);
@@ -560,7 +605,7 @@
       for (var q = 0; q < e.lanes.length; q++) lf = Math.max(lf, (e.lanes[q].fade || 0) * (e.lanes[q].foc === undefined ? 1 : e.lanes[q].foc));
       var want = 0;
       if (subj.stream) want = e.pair && e.pair.a === subj.stream.a && e.pair.b === subj.stream.b ? 1 : 0;
-      else if (oK > 0.5) want = l.userData.rk < LBL_TOP ? 1 : 0;
+      else if (oK > 0.5) want = l.userData.rk < LBL_TXT ? 1 : 0;
       else if (subj.sys && e.pair && (subj.sys[e.pair.a] || subj.sys[e.pair.b])) want = firstOfSubject(e, subj) ? 1 : 0;
       var tgt = want * Math.min(1, lf * 1.4);
       var o0 = l.userData.op || 0, o1 = o0 + (tgt - o0) * af; if (Math.abs(o1 - tgt) < 0.01) o1 = tgt;

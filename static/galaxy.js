@@ -707,8 +707,18 @@
   (function () {
     if (!window.NB_HDR || /[?&]g2=off/.test(location.search)) { GA.done = true; return; }
     fetch(GA.base + 'manifest.json', { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('no galaxy2'); return r.json(); })
-      .then(function (m) { GA.man = m; GA.done = true; })['catch'](function () { GA.done = true; });
+      .then(function (m) { GA.man = m; GA.done = true; window.NB_G2MAN = m; })['catch'](function () { GA.done = true; window.NB_G2MAN = null; });
   })();
+  /* v2 assets: every consumer reads its file through the
+     manifest and falls back to the v1 entry when the key is missing. A value is a path
+     string or { file }. Keys read here: sky.v2, bg.v2[], nebulae.v2.{em_r,ref_b,cirrus}. */
+  function v2File(x) { return typeof x === 'string' ? x : (x && typeof x.file === 'string' ? x.file : null); }
+  function v2List(x) {
+    var o = [];
+    if (Array.isArray(x)) x.forEach(function (e) { var f = v2File(e); if (f) o.push(f); });
+    else if (x && typeof x === 'object') Object.keys(x).forEach(function (k) { var f = v2File(x[k]); if (f) o.push(f); });
+    return o;
+  }
   function gaTex(file, mip) {
     if (GA.tex[file]) return GA.tex[file];
     GA.pending++;
@@ -718,6 +728,11 @@
     GA.tex[file] = t;
     return t;
   }
+  /* The sky keeps its own black: empty sky lands at 0-5/255 on the wall, as the baked plate has it.
+     (A procedural nebulosity floor was added here for the 6x4 void count and taken out again: it
+     lifted p5 from ~2 to 12-20/255 at every stop, a grey-blue veil over the frame that cost the hero
+     galaxies their separation. What fills a wide shot is content - the plates, the backdrop galaxies,
+     the nebula plates - never a lift.) */
   var SKY_VS = 'varying vec3 vDir; void main(){ vDir = position; vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }';
   var SKY_FS = [
     'uniform sampler2D map; uniform float uTint; uniform float uU0; varying vec3 vDir;',
@@ -732,8 +747,13 @@
     GA.applied = true;
     var m = GA.man;
     if (m.sky && m.sky.file) {
+      var skyFile = v2File(m.sky.v2) || m.sky.file;
+      /* the v2 sky is exposed like the v1 one: its tint scales by the two measured means
+         (manifest sky.luma.mean / sky.v2.luma.mean, g2manifest's own advice), within 0.5-2 */
+      var l1 = m.sky.luma && +m.sky.luma.mean, l2 = m.sky.v2 && m.sky.v2.luma && +m.sky.v2.luma.mean;
+      GA.skyK = (skyFile !== m.sky.file && l1 > 0 && l2 > 0) ? Math.max(0.5, Math.min(2, l1 / l2)) : 1;
       var mesh = new THREE.Mesh(new THREE.SphereGeometry(1000, 64, 32), new THREE.ShaderMaterial({
-        uniforms: { map: { value: gaTex(m.sky.file, false) }, uTint: { value: 0.32 }, uU0: { value: 0.64 } },
+        uniforms: { map: { value: gaTex(skyFile, false) }, uTint: { value: 0.32 * GA.skyK }, uU0: { value: 0.64 } },
         vertexShader: SKY_VS, fragmentShader: SKY_FS, side: THREE.BackSide, depthWrite: false, depthTest: false
       }));
       mesh.renderOrder = -100; mesh.frustumCulled = false; mesh.userData.bg = true;
@@ -755,12 +775,19 @@
   function assetField(frames, rnd) {
     var ds = GA.man.deep_sky || {}, gal = ds.galaxies || {}, clu = ds.clusters || {}, neb = ds.nebulae || {};
     var gfiles = Object.keys(gal).map(function (k) { return gal[k].file; }).filter(Boolean);
+    /* v2: the 16 distinct background galaxies replace the 5 that repeat; the four
+       nebula plates (the dark dust lane is not additive light, it stays out) replace the veils */
+    var bg2 = v2List(GA.man.bg && GA.man.bg.v2);
+    if (bg2.length) gfiles = bg2;
     var cfiles = Object.keys(clu).map(function (k) { return clu[k].file; }).filter(Boolean);
     var nfiles = Object.keys(neb).filter(function (k) { return !neb[k].tileable; }).map(function (k) { return neb[k].file; }).filter(Boolean);
+    var nb2 = GA.man.nebulae && GA.man.nebulae.v2, nf2 = nb2 ? ['em_r', 'ref_b', 'cirrus'].map(function (k) { return v2File(nb2[k]); }).filter(Boolean) : [];
+    if (nf2.length) nfiles = nf2;
+    var NEB_V2 = 0.5;
     var by = {};                                     // file -> instances
     function put(file, P, q, size, b) { (by[file] = by[file] || []).push({ p: P, q: q, size: size, cell: 0, b: b }); }
     var gi = 0, ci = 0, ni = 0;
-    frames.forEach(function (fr) {
+    function place(fr) {
       var F = fr.F;
       fr.gal.forEach(function (sp, k) {
         var dir = rayOf(F, sp[0] + (rnd() - 0.5) * 0.10, sp[1] + (rnd() - 0.5) * 0.08);
@@ -783,10 +810,13 @@
         q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rnd() * 6.28));
         /* subordinate: the Halpha veil at the bottom of the owner's range (a crimson
            cloud competes with the galaxies and red is a status colour in the UI) */
-        var nf = nfiles[ni++ % nfiles.length], hb = /_ha\b|neb_ha/.test(nf);
-        put(nf, P, q, sp[2] * 1.15 * D / F.pxU * 0.5, (hb ? 0.40 + 0.10 * rnd() : 0.65 + 0.30 * rnd()) * (fr.nk || 1));
+        var nf = fr.late ? nfiles[sp[3] % nfiles.length] : nfiles[ni++ % nfiles.length], hb = /_ha\b|neb_ha|neb_em_r/.test(nf);
+        /* the v2 plates are depth behind the subject: about half the level of a galaxy's arms (NEB_V2),
+           and the wide Internet-edge frame gets no extra (its nk was for the faint v1 veils) */
+        put(nf, P, q, sp[2] * 1.15 * D / F.pxU * 0.5, (hb ? 0.40 + 0.10 * rnd() : 0.65 + 0.30 * rnd()) * (nf2.length ? NEB_V2 : (fr.nk || 1)));
       });
-    });
+    }
+    frames.forEach(function (fr) { if (!fr.late) place(fr); });
     /* a sprinkle of small galaxies elsewhere below the horizon, for every other camera */
     for (var j = 0; j < 20 && gfiles.length; j++) {
       var ph = -0.12 - rnd() * 1.3, yw = rnd() * 6.283, dir2 = new THREE.Vector3(Math.cos(ph) * Math.sin(yw), Math.sin(ph), Math.cos(ph) * Math.cos(yw));
@@ -795,6 +825,8 @@
       q2.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rnd() * 6.28));
       put(gfiles[j % gfiles.length], dir2.clone().multiplyScalar(D2), q2, (50 + rnd() * 90) * D2 / (innerHeight / (2 * Math.tan(29 * Math.PI / 180))) * 0.5, 0.28 + 0.25 * rnd());
     }
+    /* the late frames draw after everything above, so adding one never moves what an earlier frame placed */
+    frames.forEach(function (fr) { if (fr.late) place(fr); });
     DF.assetMeshes = [];
     Object.keys(by).forEach(function (file) {
       var isNeb = nfiles.indexOf(file) >= 0;
@@ -915,9 +947,27 @@
             [-0.30, -0.92, 120], [0.35, 0.80, 110], [-0.50, -0.80, 150], [-0.12, -0.94, 120], [0.30, 0.93, 140], [-0.95, 0.62, 160],
             [0.66, 0.93, 120], [-0.20, 0.62, 90], [-0.10, 0.55, 150], [0.18, 0.70, 170], [-0.62, 0.92, 140]],
       neb: [[-0.62, 0.58, 520, 2], [-0.12, 0.84, 460, 0], [-0.74, -0.62, 420, 3], [-0.40, -0.80, 420, 1]] });
+    /* the Internet and Security holds: with the sky back at black their corners were
+       bare star field (12 and 15 of 24 grid cells under 12/255). Distant galaxies fill them: compact
+       light that leaves the sky between them black, clear of the HUD panels, the beam and the star,
+       plus one faint plate low in the frame for depth (blue or cirrus, never the crimson one here).
+       Every 5th entry from the 4th draws a cluster plate, some of them red: those sit low, away from
+       the status bar. The 6x4 cell means do not move (compact light), the frames gain depth */
+    var LATE = {
+      'asp:internet': { gal: [[-0.40, -0.24, 120], [-0.76, -0.44, 130], [-0.30, -0.70, 140], [-0.56, -0.86, 120], [-0.04, -0.48, 90],
+                              [0.24, -0.24, 100], [0.80, -0.24, 130], [-0.34, 0.80, 110], [0.86, -0.86, 130], [0.24, -0.84, 110]],
+                        neb: [[-0.42, -0.55, 380, 1]] },
+      'asp:security': { gal: [[-0.76, 0.72, 130], [-0.40, 0.84, 110], [-0.06, 0.66, 120], [-0.40, -0.24, 110], [0.68, 0.64, 110],
+                              [0.90, 0.88, 120], [0.32, 0.80, 140], [0.44, -0.24, 120], [0.76, -0.40, 140], [0.56, -0.80, 130],
+                              [-0.44, -0.60, 120], [-0.76, -0.50, 110], [0.86, -0.86, 110], [0.24, -0.02, 80]],
+                        neb: [[0.62, -0.55, 380, 2]] } };
+    (NS.tour && NS.tour.stops || []).forEach(function (st) {
+      var lf = LATE[st.key];
+      if (lf && st.c && st.dist) frames.push({ F: shotFrame(st.c, st.el || 0.46, st.az || 0, st.dist * 1.02), late: 1, gal: lf.gal, neb: lf.neb });
+    });
     if (assets) { assetField(frames, rnd); return; }      // the asset set carries its own clusters
     var ginst = [], ninst = [];
-    frames.forEach(function (fr) {
+    function placeP(fr) {
       var F = fr.F;
       fr.gal.forEach(function (sp, k) {
         var dir = rayOf(F, sp[0] + (rnd() - 0.5) * 0.10, sp[1] + (rnd() - 0.5) * 0.08);
@@ -936,7 +986,8 @@
         q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rnd() * 6.28));
         ninst.push({ p: P, q: q, size: sp[2] * D / F.pxU * 0.5, cell: sp[3], b: (0.40 + 0.18 * rnd()) * (fr.nk || 1) });
       });
-    });
+    }
+    frames.forEach(function (fr) { if (!fr.late) placeP(fr); });
     /* a sprinkle elsewhere below the horizon, for every other camera of the tour */
     for (var j = 0; j < 22; j++) {
       var ph = -0.12 - rnd() * 1.3, yw = rnd() * 6.283, dir2 = new THREE.Vector3(Math.cos(ph) * Math.sin(yw), Math.sin(ph), Math.cos(ph) * Math.cos(yw));
@@ -946,6 +997,7 @@
       q2.premultiply(new THREE.Quaternion().setFromAxisAngle(ax2, Math.acos(0.15 + 0.85 * rnd())));
       ginst.push({ p: P2, q: q2, size: (60 + rnd() * 120) * D2 / (innerHeight / (2 * Math.tan(29 * Math.PI / 180))) * 0.5, cell: (rnd() * 16) | 0, b: 0.22 + 0.4 * rnd() });
     }
+    frames.forEach(function (fr) { if (fr.late) placeP(fr); });
     var gm = atlasBatch(gtex, 4, ginst, -19), nm = atlasBatch(ntex, 2, ninst, -20);
     G.sky.add(nm); G.sky.add(gm);
     DF.mesh = gm; DF.nebulae = nm; G.deepField = gm;
@@ -1024,7 +1076,7 @@
          (the overviews and the Internet edge); eased with the camera's moves */
       var wide = /^(over|wan)/.test(FOC.key || 'over') ? 1 : 0;
       GA.tintW = (GA.tintW == null ? wide : GA.tintW) + (wide - (GA.tintW == null ? wide : GA.tintW)) * (1 - Math.exp(-dt / 0.8));
-      GA.sky.material.uniforms.uTint.value = 0.31 + 0.10 * GA.tintW;
+      GA.sky.material.uniforms.uTint.value = (0.31 + 0.10 * GA.tintW) * (GA.skyK || 1);
     } else if (G.skyTex && window.scene.background !== G.skyTex) window.scene.background = G.skyTex;
     focusTargets();
     var ease = 1 - Math.exp(-dt / 0.5);              // ~1.5 s to settle (3 tau)
@@ -1067,7 +1119,7 @@
   G.ready = function () { return !!G.sky && PENDING === 0 && GA.done && GA.pending === 0 && (DF.built || !window.NB_GALAXY || !window.NB_HDR); };
   G.ga = GA;
   G.df = DF;                    // QA: the deep field's parts (galaxies, nebulae, clusters)
-  window.GALAXY = G;
+  window.GALAXY = G; G.assets = GA;       // GA.sky.material.uniforms.uTint: QA tuning
   window.galaxyTick = tick;
 
   /* zero-touch: wrap netscene's tick so index.html needs no edit */

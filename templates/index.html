@@ -889,27 +889,43 @@ const NB_PERF=window.NB_PERF=(function(){
    frame into a 128x72 renderbuffer, readPixels into a PBO, fence, and hand the
    bytes over a few frames later once the fence has passed. Same pixels, same
    RGBA layout (rows bottom-up, which a histogram does not care about). */
+/* ONE PBO PER READBACK, never re-used. Chrome keeps a shadow copy of
+   a READ-usage buffer once it is fenced and warns ("written, then fenced, but written again
+   before being read back", 256x per page) on the next write into that buffer - measured: it
+   still warned with three rotating PBOs each harvested before its rewrite, so the only pattern
+   that cannot trip it is a buffer that is written exactly once. A sample is 128x72 RGBA at
+   2 Hz, so a buffer per sample costs nothing. At most three readbacks are in flight; ready()
+   tells lightsync whether a slot is free at all (it skips the request otherwise). */
 const NB_PIXELS=window.NB_PIXELS=(function(){
   const gl=rndr.getContext();if(typeof WebGL2RenderingContext==='undefined'||!(gl instanceof WebGL2RenderingContext))return null;
-  let fbo=null,rb=null,pbo=null,w=0,h=0,want=0,fence=null,buf=null,ready=null;
+  const NB=3,S=[];        // in-flight readbacks: {pbo, fence, W, H}
+  let fbo=null,rb=null,w=0,h=0,want=0,buf=null,ready=null;
   function ensure(W,H){if(W===w&&H===h)return;w=W;h=H;
-    if(!fbo){fbo=gl.createFramebuffer();rb=gl.createRenderbuffer();pbo=gl.createBuffer();}
+    if(!fbo){fbo=gl.createFramebuffer();rb=gl.createRenderbuffer();}
     gl.bindRenderbuffer(gl.RENDERBUFFER,rb);gl.renderbufferStorage(gl.RENDERBUFFER,gl.RGBA8,W,H);gl.bindRenderbuffer(gl.RENDERBUFFER,null);
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER,fbo);gl.framebufferRenderbuffer(gl.DRAW_FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.RENDERBUFFER,rb);
-    gl.bindBuffer(gl.PIXEL_PACK_BUFFER,pbo);gl.bufferData(gl.PIXEL_PACK_BUFFER,W*H*4,gl.STREAM_READ);gl.bindBuffer(gl.PIXEL_PACK_BUFFER,null);
     buf=new Uint8Array(W*H*4);}
   return {
+    /* true when a readback slot is free: lightsync only asks then */
+    ready:function(){return S.length<NB;},
     /* returns the newest finished sample (or null) and asks for a fresh one */
     request:function(W,H){want=[W,H];const r=ready;ready=null;return r;},
+    slots:function(){return S.length;},   // QA: readbacks in flight
     afterFrame:function(){
       try{
-        if(fence){const st=gl.clientWaitSync(fence,0,0);if(st===gl.TIMEOUT_EXPIRED)return;
-          gl.deleteSync(fence);fence=null;if(st!==gl.WAIT_FAILED){gl.bindBuffer(gl.PIXEL_PACK_BUFFER,pbo);gl.getBufferSubData(gl.PIXEL_PACK_BUFFER,0,buf);gl.bindBuffer(gl.PIXEL_PACK_BUFFER,null);ready=buf;}}
-        if(!want)return;const W=want[0],H=want[1];want=0;ensure(W,H);
+        /* harvest every finished readback, oldest first, and retire its buffer */
+        for(let i=0;i<S.length;){const s=S[i],st=gl.clientWaitSync(s.fence,0,0);if(st===gl.TIMEOUT_EXPIRED){i++;continue;}
+          gl.deleteSync(s.fence);
+          if(st!==gl.WAIT_FAILED&&s.W===w&&s.H===h){gl.bindBuffer(gl.PIXEL_PACK_BUFFER,s.pbo);gl.getBufferSubData(gl.PIXEL_PACK_BUFFER,0,buf);gl.bindBuffer(gl.PIXEL_PACK_BUFFER,null);ready=buf;}
+          gl.deleteBuffer(s.pbo);S.splice(i,1);}
+        if(!want||S.length>=NB)return;          // every slot in flight: the request waits for a later frame
+        const W=want[0],H=want[1];want=0;ensure(W,H);
         const cv=gl.canvas;gl.bindFramebuffer(gl.READ_FRAMEBUFFER,null);gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER,fbo);
         gl.blitFramebuffer(0,0,cv.width,cv.height,0,0,W,H,gl.COLOR_BUFFER_BIT,gl.LINEAR);
-        gl.bindFramebuffer(gl.READ_FRAMEBUFFER,fbo);gl.bindBuffer(gl.PIXEL_PACK_BUFFER,pbo);gl.readPixels(0,0,W,H,gl.RGBA,gl.UNSIGNED_BYTE,0);gl.bindBuffer(gl.PIXEL_PACK_BUFFER,null);
-        fence=gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE,0);
+        const pbo=gl.createBuffer();
+        gl.bindFramebuffer(gl.READ_FRAMEBUFFER,fbo);gl.bindBuffer(gl.PIXEL_PACK_BUFFER,pbo);gl.bufferData(gl.PIXEL_PACK_BUFFER,W*H*4,gl.STREAM_READ);
+        gl.readPixels(0,0,W,H,gl.RGBA,gl.UNSIGNED_BYTE,0);gl.bindBuffer(gl.PIXEL_PACK_BUFFER,null);
+        S.push({pbo:pbo,fence:gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE,0),W:W,H:H});
       }catch(e){}
       finally{gl.bindFramebuffer(gl.FRAMEBUFFER,null);}   // what three's state cache believes is bound after the overlay
     }};})();
@@ -984,20 +1000,21 @@ window.loadConfig().then(function(C){
   bootScene();
   window.loadScripts([
     '/static/motion.js?v=3',
-    '/static/universe_layout.js?v=3',
-    '/static/bodies3d.js?v=3',
-    '/static/netscene.js?v=3',
+    '/static/universe_layout.js?v=4',
+    '/static/bodies3d.js?v=6',
+    '/static/netscene.js?v=5',
     '/static/netscene_flows.js?v=3',
-    '/static/netscene_exo.js?v=3',
+    '/static/netscene_exo.js?v=4',
     '/static/galaxy_bake.js?v=3',
-    '/static/netscene_universe.js?v=4',
-    '/static/netscene_traffic.js?v=3',
-    '/static/galaxy.js?v=3',
-    '/static/lightsync.js?v=3',
-    '/static/cinema.js?v=3',
+    '/static/netscene_universe.js?v=5',
+    '/static/netscene_traffic.js?v=4',
+    '/static/galaxy.js?v=4',
+    '/static/lightsync.js?v=17',
+    '/static/cinema.js?v=5',
     '/static/doom.js?v=3',
-    '/static/hero.js?v=3',
-    '/static/showtime.js?v=3'
+    '/static/hero.js?v=5',
+    '/static/hero_viz.js?v=1',
+    '/static/showtime.js?v=9'
   ]);
 });
 </script>

@@ -170,8 +170,21 @@
   /* 2026-10-13 (faster tour, tuned for room lights that follow the wall):
      dwells 3.3/4.8 -> 2.4/3.4 s and legs 2.2-3.2 -> 1.5-2.3 s; a lap ~2m38s -> ~1m50s. The room lights now predict
      each arrival from travel_s/prog, so a shorter beat still lands exactly on the camera's touchdown. */
-  var T_HOLD = 2.4;                     // s dwell at a focused stop
-  var T_HOLD_OVER = 3.4;                // s dwell at the overview
+  /* beat grid: a fast tour that cuts well in a phone video set to music. Every leg is exactly 1 bar and every dwell a whole number of bars at T_BPM, and the
+     schedule is t0 + duration (never "when a frame noticed"), so each arrival lands on a downbeat for the
+     whole lap: drop the clip on a 150 BPM track, line up one arrival, and every cut is on the beat.
+     Motion stays clean: no camera roll, no slingshot dip, half the swoop swing.
+     BPM: ?bpm=NNN on the wall URL, or localStorage.tourBpm; default 150.
+     The lights read NS.bpm / NS.beatAnchor through lightsync (lightstate bpm, beat_t0) for the kick pulse. */
+  var T_BPM = (function () {
+    var m = /[?&]bpm=(\d+)/.exec(location.search || ''), v = m ? +m[1] : +((window.localStorage && localStorage.getItem('tourBpm')) || 150);
+    return Math.max(70, Math.min(200, v || 150));
+  })();
+  var T_BEAT = 60 / T_BPM, T_BAR = 4 * T_BEAT;
+  function onGrid(sec) { return Math.max(1, Math.round(sec / T_BAR)) * T_BAR; }   // whole bars
+  var T_HOLD = 2 * T_BAR;               // s dwell at a focused stop (3.2 s at 150)
+  var T_HOLD_OVER = 3 * T_BAR;          // s dwell at the overview (4.8 s at 150)
+  var T_TRAVEL = T_BAR;                 // every leg is one bar (1.6 s at 150)
   var T_SWAY = 0.045;                   // rad azimuth sway while holding a stop
   var T_SWAY_PERIOD = 29;               // s period of that sway (1.6x)
   var ECO_WIDE = 1.22;                  // pull every focused stop back: show the
@@ -330,6 +343,8 @@
       if (NS.nodes && NS.nodes.length) buildTour();
     };
     window.NETSCENE = NS;
+    NS.bpm = T_BPM;      // the beat grid, published by lightsync for the lights' kick pulse
+    NS.holdFor = function (st) { return onGrid((st && st.hold) || ((st && st.list) ? T_HOLD : T_HOLD_OVER)); };
     /* netscene_universe.js calls this when the universe layout changes (a new
        device, a shell growing a size step). Re-lays out from the last topology;
        existing nodes tween from where they are, nothing is re-sorted. */
@@ -572,8 +587,30 @@
     'homeassistant': 'Home Assistant', 'proxmox-backup-server': 'PBS', 'homelab-dashboard': 'Dashboard'
   };
   var IP_RE = /^\d{1,3}(\.\d{1,3}){3}$/, MAC_RE = /^([0-9a-f]{2}[:-]){5}[0-9a-f]{2}$/i;
+  /* what a scene label may say. No "#984" qualifiers, no addresses or versions
+     ("10.9 ..."), no dotted hostnames; a raw lower-case hostname ("zabbix-proxy",
+     "snmpsim") is shown in sentence case with the usual acronyms upper case, and
+     isRawName() lets the leaf ranking prefer names somebody actually wrote. */
+  var RAW_RE = /^[a-z0-9]+([-_ ][a-z0-9]+)*$/;
+  function isRawName(s) { return RAW_RE.test(String(s == null ? '' : s).trim().replace(/\s*#\d+$/, '')); }
+  function cleanName(s) {
+    s = String(s == null ? '' : s).trim().replace(/\s*#\d+$/, '');
+    if (!s || IP_RE.test(s) || MAC_RE.test(s) || /^\d+\.\d+/.test(s)) return '';
+    if (s.indexOf(' ') < 0 && /\.\w+$/.test(s)) s = s.replace(/\..*$/, '');      // an FQDN keeps its first label
+    if (!s || /\.\w+$/.test(s)) return '';
+    if (RAW_RE.test(s)) {
+      var w = s.split(/[-_ ]+/);
+      for (var i = 0; i < w.length; i++) w[i] = ACRO[w[i]] || (i === 0 ? w[i].charAt(0).toUpperCase() + w[i].slice(1) : w[i]);
+      s = w.join(' ');
+    }
+    return s;
+  }
+  function className(b) {
+    var c = b && String(b['class'] || '');
+    return c ? (CLASS_NAME[c] || (c.charAt(0).toUpperCase() + c.slice(1).replace(/_/g, ' '))) : '';
+  }
   function shortName(label, body) {
-    if (body && body.short) return String(body.short);
+    if (body && body.short) return cleanName(body.short);
     if (body && body.id && NS && NS.U && NS.U.hasShort) return '';       // the registry names what deserves a name
 
     var s = String(label == null ? '' : label).trim();
@@ -586,12 +623,13 @@
          .replace(/\s+(switch|router|gateway)$/i, '')
          .replace(/\s*\((.*)\)$/, '');
     if (s.length > 16) s = s.slice(0, 15) + '…';
-    return s;
+    return cleanName(s);
   }
   /* a system's display name: the registry's short name, else its label in
      sentence case with the usual acronyms kept upper case */
   var ACRO = { gpu: 'GPU', nas: 'NAS', nvr: 'NVR', udm: 'UDM', usw: 'USW', ai: 'AI', dns: 'DNS', vpn: 'VPN',
-               wan: 'WAN', lan: 'LAN', pve: 'PVE', 'sd-wan': 'SD-WAN', pbs: 'PBS', tv: 'TV', av: 'AV' };
+               wan: 'WAN', lan: 'LAN', pve: 'PVE', 'sd-wan': 'SD-WAN', pbs: 'PBS', tv: 'TV', av: 'AV',
+               ldap: 'LDAP', ha: 'HA', snmp: 'SNMP', bgp: 'BGP', api: 'API', db: 'DB', gw: 'gateway', vm: 'VM', ups: 'UPS', nfs: 'NFS', ssh: 'SSH' };
   function sysName(sy) {
     if (!sy) return '';
     var raw = String(sy.short || sy.label || String(sy.id || '').replace(/^sys:/, ''));
@@ -820,7 +858,7 @@
     if (SC.id !== SJ.id) {
       SC.id = SJ.id;
       var b = NS.U && NS.U.byId ? NS.U.byId[SJ.id] : null;
-      SC.txt = b ? (shortName(b.label || b.id, b) || String(b.label || '')) : '';
+      SC.txt = b ? (shortName(b.label || b.id, b) || className(b)) : '';
     }
     var tw = SC.txt ? txtW(SC.txt, TXT.S.hub) : 0;
     SC.rect = { x0: SC.x - 16, x1: SC.x + 22 + tw + 4, y0: SC.y - 16, y1: SC.y + 16 };
@@ -848,7 +886,8 @@
     }
     x.globalAlpha = 1;
   }
-  var LEAF_BUDGET = 10, LEAF_BUDGET_OVER = 6;   // universe mode: leaf names per frame (was 14 at a close-up)
+  var LEAF_BUDGET = 6, LEAF_BUDGET_OVER = 6;    // universe mode: leaf names per frame (the 6 that matter; was 10, 14 before that)
+  var LBL_TOTAL = 9, LBL_TOTAL_HOST = 12;       // every scene label a hold may show (subject, hubs, captions, rates, leaves)
   var LEAF_MIN_PX = 30;     // sprite height (px) floor for the subject's leaf names (~18-24 px of text)
   /* what earns a leaf a name: down / new first, then measured activity */
   function leafScore(ud) {
@@ -858,11 +897,13 @@
     if (ud.uStub) {                                   // universe-only body label
       var b = ud.inst && ud.inst.b; if (!b) return 0;
       var m = b.m || {};
-      return (b.status === 'down' ? 6 : 0) + (b['new'] ? 900 : 0) + Math.log(1 + (+m.rx_bps || 0) + (+m.tx_bps || 0)) / Math.LN10;
+      return (b.status === 'down' ? 6 : 0) + (b['new'] ? 900 : 0) + Math.log(1 + (+m.rx_bps || 0) + (+m.tx_bps || 0)) / Math.LN10
+           + (b.lab ? -4 : 0) + (isRawName(b.short || b.label) ? -5 : 0);     // curated names first, lab rigs and raw hostnames last
     }
     var mm = n.meta || {};
     return (n.status === 'down' ? 6 : 0) + ((mm['new'] || (n._ub && n._ub['new'])) ? 900 : 0)
-         + Math.log(1 + ((+n.rx || 0) + (+n.tx || 0)) * 8) / Math.LN10 + (mm.cpu != null ? Math.min(3, +mm.cpu / 10) : 0);
+         + Math.log(1 + ((+n.rx || 0) + (+n.tx || 0)) * 8) / Math.LN10 + (mm.cpu != null ? Math.min(3, +mm.cpu / 10) : 0)
+         + (isRawName((n._ub && n._ub.short) || n.label) ? -5 : 0);
   }
   function rectsOverlapPad(a, b) {
     return !(a.x1 + LBL_PAD < b.x0 || b.x1 + LBL_PAD < a.x0 || a.y1 + LBL_PAD < b.y0 || b.y1 + LBL_PAD < a.y0);
@@ -874,7 +915,7 @@
      rects are read from the DOM at most once a second (layout reads are not
      free) and seed the collision pass, so a label that would sit under a panel
      simply loses, like any other collision. */
-  var HUD_SEL = '#herotop,#herobot,#h-aud,#cin,#st-live,#st-ai,#st-emby,.st,.panel,#np,#nbcard,.nbp';
+  var HUD_SEL = '#herotop,#herobot,#h-aud,#cin,#st-live,#st-ai,#st-emby,.st,.panel,#np,#nbcard,.nbp,.vz';   // .vz: hero_viz's Compute / visitors / Problems
   var _hud = { t: -1e9, rects: [] };
   function hudRects() {
     var now = (window.performance && performance.now) ? performance.now() : Date.now();
@@ -1731,8 +1772,48 @@
     var o = { scene: NS.scene, fogDensity: fog && fog.density !== undefined ? fog.density : 0.0006 };
     /* amb: the galaxy's own diffuse light on a night side (a body inside a bright disc is
        never black); the TV uses a little more (it frames its rings from the side) */
-    if (window.NB_HDR) o.photo = { lod: [5.0, 12.0], lodFocus: 1.6, starPx: 5.4, starGain: 1.6, sun: 2.0, amb: [0.085, 0.092, 0.115], hazeK: 0.55 };
-    return window.BODIES3D.create(o);
+    /* a body is a PLANET only once it is big enough to read as one
+       (radius >= ~8 px, full at 13), starlight below that - no field of tiny grey balls; the
+       class colour is muted (tintSat 0.35 on surfaces, starSat 0.25 on far stars); a night side
+       in front of a bright disc keeps a thin limb (rimAll) and more of the disc's light (amb);
+       stopped guests and off-subject planets dim, they do not go black (downK, focFloor); a
+       surface that failed to load stays a star (noProc) */
+    if (window.NB_HDR) o.photo = { lod: [8.0, 13.0], lodFocus: 1.6, starPx: 5.4, starGain: 1.6, sun: 2.0, amb: [0.22, 0.215, 0.23], hazeK: 0.55,
+                                   tintSat: 0.35, starSat: 0.25, rimAll: 0.20, downK: 0.80, focFloor: 0.55, albLift: 0.42, noProc: true };
+    var B = window.BODIES3D.create(o);
+    if (window.NB_HDR) celV2(B, 0);
+    return B;
+  }
+  /* the baked planet set of the galaxy2 manifest (celestial.surfaces.*_v2, celestial.rings.*,
+     celestial.atmos.rim_lut). Each class below wears its v2 surface once that texture has loaded;
+     a missing key or file leaves the class on the celestial manifest's v1 surface. Not taken:
+     lava_dim_v2 (near-black rock, reads as a hole), ring_dust_v2 (alpha <= 0.39: the ring pass is
+     opaque with a 0.30 cut, most of it would vanish); server / tv_av / guest_lxc / printer keep
+     their v1 look so the classes stay distinct. ?cel=v1 keeps the v1 set (QA). */
+  var CEL_V2 = { guest_vm: { surface: 'rock_basalt_v2' }, iot: { surface: 'rock_basalt_v2' }, appliance: { surface: 'rock_ochre_v2' },
+                 phone: { surface: 'ice_rime_v2' }, tablet: { surface: 'ice_fracture_v2' }, camera: { surface: 'metal_v2' },
+                 computer: { surface: 'ocean_v2' }, storage: { surface: 'gas_banded_v2', ring: 'ring_ice_v2' } };
+  function celV2(B, tries) {
+    var M = window.NB_G2MAN;
+    if (M === undefined) { if (tries < 120) setTimeout(function () { celV2(B, tries + 1); }, 500); return; }
+    psfV2(B);
+    var c = M && M.celestial; if (!c || !B.celExtra || /[?&]cel=v1/.test(location.search)) return;
+    var surf = {}, rings = {}, cls = {};
+    Object.keys(CEL_V2).forEach(function (k) {
+      var want = CEL_V2[k], e = c.surfaces && c.surfaces[want.surface], r = want.ring && c.rings && c.rings[want.ring];
+      if (!e || !e.file) return;
+      surf[want.surface] = e; cls[k] = { surface: want.surface };
+      if (r && r.file) { rings[want.ring] = r; cls[k].ring = want.ring; }
+    });
+    var lut = c.atmos && c.atmos.rim_lut && c.atmos.rim_lut.file;
+    B.celExtra({ base: '/static/assets/galaxy2/', ver: 2, surfaces: surf, rings: rings, classes: cls, rimLut: /[?&]rim=proc/.test(location.search) ? null : lut });
+  }
+  /* the far bodies' point spread from the baked plates (psf.v2.m3 / m2 / m1) instead of
+     the analytic one; ?psf=proc keeps the analytic PSF (QA) */
+  function psfV2(B) {
+    var M = window.NB_G2MAN, p = M && M.psf && M.psf.v2;
+    if (!p || !p.m3 || !p.m3.file || !B.starPsf || /[?&]psf=proc/.test(location.search)) return;
+    B.starPsf({ base: '/static/assets/galaxy2/', faint: p.m3.file, mid: p.m2 && p.m2.file, bright: p.m1 && p.m1.file, scale: 0.36, quad: 2.0 });
   }
   /* hubs wear their CLASS tint (universe_layout's palette, same as the
      preview and the nexus); reachability rides on the fresnel rim as before */
@@ -1744,7 +1825,62 @@
   function hubStatus(n) {
     if (!n._b3dHub || !NS.b3d) return;
     var down = n.status === 'down';
-    NS.b3d.setHubStatus(n._b3dHub, { tint: hubTint(n), desat: down ? 0.7 : (n.status === 'unknown' ? 0.4 : 0), bright: down ? 0.45 : 1 });
+    NS.b3d.setHubStatus(n._b3dHub, { tint: hubTint(n), desat: down ? 0.7 : (n.status === 'unknown' ? 0.4 : 0), bright: down ? 0.45 : 1, lvl: n._lvl != null ? n._lvl : null });
+    if (n._sun && !n._sunV2) sunV2(n);
+  }
+  /* the baked corona set (glows.corona_v2 of the galaxy2 manifest: halo + flare,
+     5600 K baked in, one quad 2r / limb wide) replaces the procedural corona and spikes once
+     each sprite has loaded; without the key nothing changes. The core sprite is not used -
+     the star is drawn as a lit sphere here. */
+  function sunV2(n) {
+    var M = window.NB_G2MAN, b = n._b3dHub;
+    if (M === undefined || !b) return;                 // manifest not read yet: the next status pass retries
+    n._sunV2 = 1;
+    var c = M && M.glows && M.glows.corona_v2; if (!c) return;
+    var w = 2 / (+c.limb || 0.25);
+    [['halo', 'corona', SUN.corona * 0.7], ['flare', 'corona2', 1.6]].forEach(function (p) {
+      var f = c[p[0]], sp = b.userData[p[1]]; f = f && (f.file || f);
+      if (typeof f !== 'string' || !sp) return;
+      new THREE.TextureLoader().load('/static/assets/galaxy2/' + f, function (t) {
+        t.encoding = THREE.LinearEncoding;
+        sp.userData.keepMap = true;                    // bodies3d's glow refresh leaves this plate alone
+        sp.material.map = t; sp.userData.c0 = new THREE.Color(p[2], p[2], p[2]); sp.material.needsUpdate = true; n._lvl = null;
+        sp.userData.sizeFor = function () { return w; }; sp.scale.set(w, w, 1);
+      });
+    });
+  }
+  /* the Internet star on the HDR wall (?sunk= scales its exposure for QA) */
+  var SUN = { rgb: [1.0, 0.90, 0.74], glow: [1.0, 0.82, 0.58], r: 9, corona: 3.0, limb: [0.06, 1.1, 1.0] };
+  var HUB_LIMB = [0.20, 0.75, 0.35];      // every hub star on the wall: a limb that still reads once the disc is resolved
+  /* a star is exposed for its size. As a point (under EXPO.far px of radius) it keeps
+     the full HDR gain and blooms like every star in the field; once it resolves into a disc
+     (EXPO.near px) its photosphere is exposed like a photographed sun - centre just under the
+     grade's ceiling, the limb darkening visible, never a flat clipped disc (EXPO.big < 1 would
+     expose a frame-filling disc down further; at 1 it is off: a darker big disc read as a grey ball). bodies3d fades the
+     corona and spikes with the same level, so their colour is scaled back up: the glow around
+     the star stays what it was. Wall + photo look only; ?sunk= scales the level for QA. */
+  var EXPO = { far: 5, near: 14, huge: 60, lvl: 0.55 * (+((/[?&]sunk=([\d.]+)/.exec(location.search) || [])[1]) || 1), big: 1.0 };
+  function hubExpose() {
+    var B = NS.b3d, ns = NS.nodes;
+    if (!B || !B.photo || !window.NB_HDR || !ns || !NS.cam) return;
+    var f = innerHeight / (2 * Math.tan(NS.cam.fov * Math.PI / 360)), cp = NS.cam.position;
+    for (var i = 0; i < ns.length; i++) {
+      var n = ns[i], m = n._b3dHub, ud = m && m.userData;
+      if (!ud || !(n._sun || (ud.corona2 && ud.corona2.userData.glowKind === 'spikes'))) continue;      // star hubs only
+      var e = m.matrixWorld.elements, dx = e[12] - cp.x, dy = e[13] - cp.y, dz = e[14] - cp.z;
+      var rpx = m.matrixWorld.getMaxScaleOnAxis() * f / Math.max(1, Math.sqrt(dx * dx + dy * dy + dz * dz));
+      var k = Math.max(0, Math.min(1, (rpx - EXPO.far) / (EXPO.near - EXPO.far))); k = k * k * (3 - 2 * k);
+      var k2 = Math.max(0, Math.min(1, (rpx - EXPO.near) / (EXPO.huge - EXPO.near))); k2 = k2 * k2 * (3 - 2 * k2);
+      var lvl = (1 + (EXPO.lvl - 1) * k) * (1 + (EXPO.big - 1) * k2);      // a disc filling the frame is exposed down further
+      if (n._lvl != null && Math.abs(lvl - n._lvl) < 0.004) continue;
+      n._lvl = lvl;
+      B.setHubStatus(m, { lvl: lvl });
+      for (var j = 0; j < 2; j++) {
+        var sp = j ? ud.corona2 : ud.corona; if (!sp) continue;
+        if (!sp.userData.c0) sp.userData.c0 = sp.material.color.clone();
+        sp.material.color.copy(sp.userData.c0).multiplyScalar(1 / lvl);
+      }
+    }
   }
   function makeInfraNode(n) {
     var G = geos(), grp = new THREE.Group(), acc = accentFor(n);
@@ -1753,13 +1889,22 @@
       /* the Internet edge: a distant blue-white star seen through haze (the
          celestial manifest's 'edge' class), not a wireframe globe */
       var BW = hubModels(); n._celHub = true;
-      body = BW.hubMesh('edge', { tint: accentFor(n) });
+      body = BW.hubMesh('edge', BW.photo ? { tint: accentFor(n), limb: SUN.limb, temp: SUN.rgb } : { tint: accentFor(n) });
       var eS = BW.photo ? 6 : 13;       // photo look: a distant star with glare, not a white ball
+      if (BW.photo && body.material && body.material.uniforms && body.material.uniforms.uTemp && body.material.uniforms.uTemp.value.set) {
+        /* the Internet is a warm-white photographed star - a disc big enough to show
+           its limb, exposed under clipping (hubExpose), with a warm corona - not a
+           blue-white dot. Wall only: set on this mesh, bodies3d's 'edge' class is untouched. */
+        if (body.userData.corona) body.userData.corona.material.color.setRGB(SUN.glow[0], SUN.glow[1], SUN.glow[2]).multiplyScalar(SUN.corona);
+        if (body.userData.corona2) body.userData.corona2.material.color.setRGB(1.0, 0.96, 0.90).multiplyScalar(1.8);
+        eS = SUN.r; n._sun = true;
+      }
       body.scale.set(eS, eS, eS);
       grp.add(body);
       addRim(n, grp, BW.hubGeometry('edge'));
       n._rim.scale.multiplyScalar(eS);
       n._b3dHub = body;
+      hubStatus(n);
       n._h = 18;
     } else if (n.kind === 'wan') {
       body = new THREE.Mesh(G.wanCore, new THREE.MeshStandardMaterial({ color: 0x0c2030, roughness: 0.4, metalness: 0.3, emissive: 0x0a2436, emissiveIntensity: 0.6 }));
@@ -1770,10 +1915,11 @@
     } else if (hubModels() && HUB_R[n.kind]) {
       /* 3D hub model (bodies3d.js: Blender model when manifest.models has
          one, a clean placeholder until then; the geometry swaps in place) */
-      var R = HUB_R[n.kind], B3 = hubModels();
+      var hk = n.kind;
+      var R = HUB_R[hk], B3 = hubModels();
       n._celHub = !!(window.BODIES3D && B3.look === 'celestial');
-      if (n._celHub) R *= CEL_HUB_K[n.kind] || 0.6;      // a star reads big through its corona; the sphere stays modest
-      body = B3.hubMesh(n.kind, { tint: hubTint(n), tintMix: 0.85 });
+      if (n._celHub) R *= CEL_HUB_K[hk] || 0.6;      // a star reads big through its corona; the sphere stays modest
+      body = B3.hubMesh(hk, { tint: hubTint(n), tintMix: 0.85, limb: HUB_LIMB });
       body.scale.set(R, R, R);
       grp.add(body);
       addRim(n, grp, B3.hubGeometry(n.kind));
@@ -1978,8 +2124,7 @@
       var base = n.label || n.id, sh = shortName(base, n._ub);
       if (!sh || !_dup[base.toLowerCase()]) return sh;
       /* a repeated name keeps a short qualifier, never an address */
-      var q = (n.meta && n.meta.vmid != null) ? '#' + n.meta.vmid
-            : (n.meta && n.meta.wired === false) ? '(Wi-Fi)' : '';
+      var q = (n.meta && n.meta.wired === false) ? '(Wi-Fi)' : '';      // never a "#984" on the wall
       return q ? sh + ' ' + q : sh;
     }
 
@@ -2017,6 +2162,8 @@
       s.userData.focList = cp.list;
       if (cp.grp) s.userData.grp = cp.grp;
       if (cp.sys) s.userData.sysCap = cp.sys;
+      /* when the label budget runs out the smallest system goes unnamed, not the farthest */
+      if (cp.sys && !cp.grp) s.userData.score = (cp.list || []).length;
       NS.graph.add(s);
       cp.spr = s;
     });
@@ -2422,9 +2569,21 @@
     if (NS.lineSet) NS.lineSet.geometry.attributes.color.needsUpdate = true;
     if (NS.arcSet) NS.arcSet.geometry.attributes.color.needsUpdate = true;
     if (NS.dashSet) {
-      if (dashCol) { NS.dashSet.material.opacity = 1; NS.dashSet.geometry.attributes.color.needsUpdate = true; }
-      else NS.dashSet.material.opacity = 0.75 * dashF;
+      if (dashCol) { NS.dashSet.userData.op = 1; NS.dashSet.geometry.attributes.color.needsUpdate = true; }
+      else NS.dashSet.userData.op = 0.75 * dashF;
     }
+    wideWires();
+  }
+  /* the thin topology roads are not part of a wide shot - the soft measured
+     streams carry the traffic story there. NS.wideK fades the merged line sets
+     out (additive lines: opacity 0 = gone) and back in at the close stops. */
+  function wideWires() {
+    var k = uni() ? 1 - (NS.wideK || 0) : 1;
+    if (k < 0.02) k = 0;
+    if (NS.lineSet) NS.lineSet.material.opacity = k;
+    if (NS.arcSet) NS.arcSet.material.opacity = k;
+    if (NS.dashSet) NS.dashSet.material.opacity = (NS.dashSet.userData.op == null ? 1 : NS.dashSet.userData.op) * k;
+    NS.wireK = k;
   }
 
   /* ============================ particles ============================ */
@@ -2713,6 +2872,37 @@
   }
 
   /* frame a stop: bbox of its nodes + label extents -> camera distance */
+  /* slide a stop's look point sideways (along the camera's right) so node n lands inside
+     [x0, x1] of the frame width at the stop's own pose */
+  function stopSafeX(st, n, x0, x1) {
+    var el = st.el || CAM_EL, d = st.dist, c = st.c;
+    if (!c || !(d > 0)) return;
+    var fx = -Math.cos(el) * Math.sin(st.az), fy = -Math.sin(el), fz = -Math.cos(el) * Math.cos(st.az);
+    var rx = -fz, rz = fx, rl = Math.sqrt(rx * rx + rz * rz) || 1; rx /= rl; rz /= rl;
+    var dx = n._x - (c.x - fx * d), dy = n._y - (c.y - fy * d), dz = n._z - (c.z - fz * d);
+    var z = dx * fx + dy * fy + dz * fz; if (z < 1) return;
+    var th = Math.tan(NS.cam.fov * Math.PI / 360) * NS.cam.aspect;
+    var xn = (dx * rx + dz * rz) / (z * th), want = Math.max(x0 * 2 - 1, Math.min(x1 * 2 - 1, xn));
+    if (want === xn) return;
+    var sft = (xn - want) * z * th;
+    st.c = c.clone(); st.c.x += rx * sft; st.c.z += rz * sft;
+  }
+  /* the same along the camera's up: node n lands inside [y0, y1] of the frame height (0 = top) */
+  function stopSafeY(st, n, y0, y1) {
+    var el = st.el || CAM_EL, d = st.dist, c = st.c;
+    if (!c || !(d > 0) || !n || n._x === undefined) return;
+    var fx = -Math.cos(el) * Math.sin(st.az), fy = -Math.sin(el), fz = -Math.cos(el) * Math.cos(st.az);
+    var rx = -fz, rz = fx, rl = Math.sqrt(rx * rx + rz * rz) || 1; rx /= rl; rz /= rl;
+    var ux = -rz * fy, uy = rz * fx - rx * fz, uz = rx * fy;
+    if (uy < 0) { ux = -ux; uy = -uy; uz = -uz; }
+    var dx = n._x - (c.x - fx * d), dy = n._y - (c.y - fy * d), dz = n._z - (c.z - fz * d);
+    var z = dx * fx + dy * fy + dz * fz; if (z < 1) return;
+    var tv = Math.tan(NS.cam.fov * Math.PI / 360);
+    var yn = (dx * ux + dy * uy + dz * uz) / (z * tv), want = Math.max(1 - 2 * y1, Math.min(1 - 2 * y0, yn));
+    if (want === yn) return;
+    var sft = (yn - want) * z * tv;
+    st.c = c.clone(); st.c.x += ux * sft; st.c.y += uy * sft; st.c.z += uz * sft;
+  }
   function mkStop(name, list, az, zoom, spread, el) {
     var st = { name: name, az: az || 0, el: el || CAM_EL, list: list, ids: {}, spread: !!spread };
     var bb = new THREE.Box3();
@@ -2759,7 +2949,13 @@
     /* the WAN stop also frames the exosphere envelope (external beacons, Cloudflare
        station) when netscene_exo.js is present; pseudo-nodes carry only a position */
     var exo = NS.exoStopNodes ? NS.exoStopNodes() : [];
-    if (wan || gw) stops.push(key(mkStop('Internet edge', [wan, gw].filter(Boolean).concat(exo), -0.5, exo.length ? 0.56 : 0.62, false, 0.46), 'wan'));
+    if (wan || gw) {
+      var wst = mkStop('Internet edge', [wan, gw].filter(Boolean).concat(exo), -0.5, exo.length ? 0.56 : 0.62, false, 0.46);
+      /* the Internet star is this shot's subject - it sat under the left HUD rail
+         (x < 0.21 of the frame); slide the look point so it lands inside the safe width */
+      if (uni() && wan) stopSafeX(wst, wan, 0.30, 0.72);
+      stops.push(key(wst, 'wan'));
+    }
     /* switch fabric; small wired groups (<3 clients) ride along */
     var fab = [gw].concat(K.switch || [], K.pvehost || []).filter(Boolean);
     var wired = [];
@@ -2874,23 +3070,41 @@
         cats = cats.filter(function (c) { return keep.indexOf(c) >= 0; });
       }
       cats.forEach(function (c, i) {
-        var az = cats.length > 1 ? -0.35 + 1.4 * i / (cats.length - 1) : 0.3;
-        /* sectored host (presentGroups): look at the category from its own
-           side, so the sector sits in the foreground with the hub behind it */
-        var sec = ((U.groups && U.groups[o.sy.id]) || []).filter(function (q) { return q.kind === 'sector' && q.key === c; })[0];
-        if (sec) az = Math.PI / 2 - ((sec.a0 + sec.a1) / 2 + (sec.twist || 0) * 0.5);
-        /* frame the category's members but keep the hub in shot for context */
-        var bst;
-        if (sec) {
-          /* the arm in context: frame the whole galaxy a little tighter than
-             the host stop, from the arm's side, and light only the arm */
-          bst = mkStop(hn + ' \u00b7 ' + (CAT_TITLE[c] || c), [o.hub].concat(o.mem), az, 0.66, false, 0.80);
-          bst.ids = {}; bst.ids[o.hub.id] = 1; byCat[c].forEach(function (n) { bst.ids[n.id] = 1; });
-          bst.list = [o.hub].concat(byCat[c]);
-        } else bst = mkStop(hn + ' \u00b7 ' + (CAT_TITLE[c] || c), [o.hub].concat(byCat[c]), az, 0.70, false, 0.74);
+        /* one distinct shot per category - the camera orbits to the
+           wedge where the category's bodies live, close enough that they resolve as planets,
+           the core off-centre and the arm as backdrop; consecutive stops on one host
+           alternate elevation and orbit side so three stops look like three places */
+        var bst = catStop(hn + ' \u00b7 ' + (CAT_TITLE[c] || c), o.hub, byCat[c], i);
         stops.push(key(bst, 'blk:' + o.hub.id + ':' + c));
       });
     });
+  }
+  /* a category stop. UNIVERSE_LAYOUT.wedgeOf (pure math, shared with the TV) gives
+     the category's sector and, inside it, the handful of bodies nearest its middle: the camera
+     looks at THAT cluster (so 3-8 planets resolve, >= 24 px wide), from the core's side of it
+     swung ~50 deg off the cluster->core line (litSide: the core lights the planets, the camera
+     sees a gibbous day side), the core off to one side of the frame and the arm behind the
+     cluster as backdrop. Consecutive stops on one host alternate elevation and orbit side. */
+  var CAT_EL = [0.40, 0.60, 0.30, 0.52], CAT_K = 7, CAT_ROT = 0.88;
+  function catStop(name, hub, members, i) {
+    var L = window.UNIVERSE_LAYOUT, pts = members.map(function (n) { return [n._x, n._y, n._z]; });
+    var hxyz = [hub._x, hub._y, hub._z];
+    var W = L && L.wedgeOf ? L.wedgeOf(pts, hxyz, CAT_K) : null;
+    var st = mkStop(name, [hub].concat(members), 0, 1, false, CAT_EL[i % CAT_EL.length]);
+    if (!W || !members.length) return st;
+    var cen = new THREE.Vector3(W.cx, W.cy, W.cz), hp = new THREE.Vector3(hub._x, hub._y, hub._z);
+    var side = (i % 2) ? -1 : 1;                              // orbit side alternates per stop
+    var D = Math.max(1, Math.hypot(hp.x - cen.x, hp.z - cen.z));
+    st.az = Math.atan2(hp.x - cen.x, hp.z - cen.z) + CAT_ROT * side;
+    st.el = CAT_EL[i % CAT_EL.length];
+    /* close enough that a moon (r ~ 4.3 u) is >= 24 px wide at the look point (depth <= 350
+       at fov 58), far enough that the cluster and a stretch of the arm fit */
+    st.dist = Math.max(230, Math.min(340, 2.4 * W.spread + 150));
+    /* the look point slides from the cluster toward the core until the cluster sits ~0.16 of
+       the distance off-axis: inside the 9:16 centre crop, on the far side from the core */
+    st.c = cen.lerp(hp, Math.max(0.04, Math.min(0.30, 0.16 * st.dist / (D * Math.sin(CAT_ROT)))));
+    st.litSide = true; st.wedge = { a: W.theta, spread: W.spread, n: W.n, of: members.length };
+    return st;
   }
 
   /* FOLLOW THE STREAM (2026-10-08): one stop per lap rides the strongest
@@ -2900,7 +3114,7 @@
      key and name; the TV and the lights follow it like any other), placed
      right after the source galaxy's stops so the ride continues the story.
      No measured stream, or a weak one: no stop. */
-  var T_HOLD_STREAM = 3.8, STREAM_MIN_BPS = 50000;
+  var T_HOLD_STREAM = 3 * T_BAR, STREAM_MIN_BPS = 50000;
   function streamStop(stops, key) {
     var T = NS.T, s = T && T.strongest ? T.strongest() : null, U = uni();
     if (!s || !U || !(s.bps >= STREAM_MIN_BPS)) return;
@@ -2932,11 +3146,13 @@
      T_HOLD_ASP; the camera pushes in on the anchor with its galaxy's core in
      frame behind it, and cinema.js turns the caption into the aspect card.
      404 / empty / malformed: no aspect stops, the tour is exactly as before. */
-  var T_HOLD_ASP = 3.2, BLK_KEEP = 3, TOUR_POLL_MS = 30000;
+  var T_HOLD_ASP = 2 * T_BAR, BLK_KEEP = 3, TOUR_POLL_MS = 30000;
   /* aspect framing: camera on the star's side of the subject, swung `rot` off
      the subject->core line (planets star-lit, ~2/3 phase), look point pulled
      `lerp` toward the core so the core rides in at the frame's side */
-  var ASP_TUNE = { rot: 1.25, el: 0.45, k: 1.35, base: 80, min: 150, max: 460, lerp: 0.22 };
+  /* rot 1.25 -> 1.0 (litSide): the camera sits within 60 deg of the subject's lit
+     hemisphere, so the planet shows a gibbous day side, never its night side */
+  var ASP_TUNE = { rot: 1.0, el: 0.45, k: 1.35, base: 80, min: 150, max: 460, lerp: 0.22 };
   function tourAspects() {
     var d = NS && NS.tourData, a = d && Array.isArray(d.aspects) ? d.aspects : [];
     return a.filter(function (x) { return x && typeof x.key === 'string' && x.key.indexOf('asp:') === 0 && x.name; });
@@ -3036,8 +3252,15 @@
       st = { list: wanSt.list, ids: wanSt.ids, spread: false };
       st.c = AP.p.clone();
       if (!AP.n) {
-        /* the Cloudflare station: close, from the estate's side, low */
-        st.az = (wanSt.az || -0.5) + 1.05; st.el = 0.26; st.dist = 170;
+        /* the Cloudflare planet: the camera stands OUTSIDE the edge and looks past the
+           planet toward the estate, low, so the galaxies fill the background instead of black
+           sky; the look point leans toward the core galaxy to bring it into frame */
+        var gwN = null; for (var gi2 = 0; gi2 < NS.nodes.length && !gwN; gi2++) if (NS.nodes[gi2].kind === 'gateway') gwN = NS.nodes[gi2];
+        if (gwN) st.c.lerp(new THREE.Vector3(gwN._x, gwN._y, gwN._z), 0.10);
+        st.az = -1.45; st.el = 0.20; st.dist = 230;
+        /* the Internet star stands in the lower third, not cut by the frame edge, and with its glow
+           clear above the story line (at 0.78 the line ran across the star's lower edge) */
+        stopSafeY(st, NS.byId && NS.byId.wan, 0.10, 0.64);
       } else {
         /* the Internet star with its exosphere of beacons around it */
         st.az = (wanSt.az || -0.5) - 0.4; st.el = 0.42;
@@ -3062,7 +3285,7 @@
         st.az = Math.atan2(-dx, -dz) + AT.rot * side * (v3 ? 0.55 : 1);
         st.el = v3 ? AT.el + 0.25 : AT.el;
         st.dist = Math.max(AT.min, Math.min(AT.max, AT.k * d + AT.base)) * (v3 ? 1.15 : 1);
-        st.dbg = { d: Math.round(d), R: Math.round(R) };
+        st.dbg = { d: Math.round(d), R: Math.round(R) }; st.litSide = true;
       }
     } else return null;
     st.key = a.key; st.name = String(a.name);
@@ -3163,6 +3386,16 @@
     tgt.y -= 0.10 * len;
     return true;
   }
+  /* the dwell breathes ON the beat grid the lights pulse to - every 2nd beat a 0.4 %
+     push-in, every bar a 0.8 % settle-out, each a soft kick (fast attack, ~0.25 s decay),
+     keyed to the arrival downbeat (e = 0). Travel samples e = 0, where this is exactly 1. */
+  function beatDolly(e) {
+    if (!(e > 0)) return 1;
+    var k = Math.floor(e / T_BEAT), ph = (e - k * T_BEAT) / T_BEAT;
+    var amp = (k % 4 === 0) ? 0.012 : (k % 2 === 1 ? -0.006 : 0);
+    if (!amp) return 1;
+    return 1 + amp * (1 - Math.exp(-ph / 0.05)) * Math.exp(-ph / 0.28);
+  }
   function tourPose(st, e, pos, tgt) {
     if (st.stream && streamPose(st, e, pos, tgt)) return;
     var az, dist, c, el;
@@ -3179,10 +3412,10 @@
       dist = st.dist * (1 + 0.015 * Math.sin(e * 6.2832 / 23));
       c = st.c;
     }
-    /* arrive ~5% wide, push in over the first ~3 s of the hold: the shot
-       settles instead of snapping (travel's endpoint uses e=0, so the two
-       phases meet at exactly the same pose) */
-    dist *= 1 + 0.05 * Math.exp(-e * 0.8);
+    /* arrive ~2% wide and settle over the first ~2 s of the hold (the leg's own push-in
+       lands the shot now; travel's endpoint uses e=0, so the two phases meet at
+       exactly the same pose), then the beat-locked micro-dolly breathes with the lights */
+    dist *= (1 + 0.02 * Math.exp(-e * 1.2)) * beatDolly(e);
     tgt.copy(c);
     pos.set(c.x + dist * Math.cos(el) * Math.sin(az),
             c.y + dist * Math.sin(el),
@@ -3228,7 +3461,9 @@
      bar (0.093) and the caption (0.843), less a margin - the estate's bounding
      volume fills ~85-90 % of it (contracts 8a: "when it zooms out i want the
      screen filled"); was x 0.205-0.745, y 0.13-0.735 */
-  var OV_BOX = { x0: 0.215, x1: 0.775, y0: 0.115, y1: 0.80 };
+  /* the box runs under the side panels' inner edges and the estate
+     fills ~85 % of it, with the plates scaled up at the wide shots (netscene_universe) */
+  var OV_BOX = { x0: 0.14, x1: 0.86, y0: 0.09, y1: 0.84 };
   /* the overview pose actually flown: eased toward OV / fitDist (~1.6 s time
      constant) so a re-fit after growth is a glide; snaps on the first fit */
   var OVE = { c: null, az: 0, el: CAM_EL, d: 0 };
@@ -3312,7 +3547,7 @@
        FILLS the box (area), not merely the closest: the estate is wider than the
        safe area, so every elevation was width-limited, the first (flattest) one
        always won and the frame was a band with black above and below */
-    [0.8, 0.92, 1.04, 1.16].forEach(function (el) {
+    [0.8, 0.92, 1.04, 1.16, 1.28].forEach(function (el) {
       [-0.1, 0, 0.1].forEach(function (az0) {
         var cc = c.clone();
         /* two re-centring passes: shift the look-at so the content's screen
@@ -3329,6 +3564,9 @@
         }
         bbox(az0, el, d, cc, tmp);
         var cov = Math.max(0, tmp[1] - tmp[0]) * Math.max(0, tmp[3] - tmp[2]) / ((bx1 - bx0) * (by1 - by0));
+        /* prefer the pose that shows the most LIT area - a face-on disc lights sin(el) of its
+           plate, an oblique one a sliver - so a steeper view wins unless it costs real coverage */
+        cov *= 0.55 + 0.45 * Math.sin(el);
         if (!best || cov > best.cov + 0.01 || (Math.abs(cov - best.cov) <= 0.01 && d < best.d)) best = { d: d, el: el, az: az0, c: cc, cov: cov };
       });
     });
@@ -3414,7 +3652,7 @@
     else if (!b.list) mv = 'reveal';
     else if (!a.list) mv = 'dive';
     else if (ha && ha === hb) {
-      var cin = ['slingshot', 'orbit', 'slingshot', 'dolly'], ci = LEG.n % cin.length;
+      var cin = ['orbit', 'dolly', 'orbit', 'glide'], ci = LEG.n % cin.length;
       mv = cin[ci]; if (mv === LEG.last) mv = cin[(ci + 1) % cin.length];
     } else {
       var cyc = ['swoop', 'dolly', 'swoop', 'glide'], i = LEG.n % cyc.length;
@@ -3425,13 +3663,41 @@
     TR.move = mv;
     TR.moveDir = (LEG.n + Math.floor(LEG.n / Math.max(1, TR.stops.length))) % 2 ? 1 : -1;
     /* geometry the path needs, captured once */
-    var L = TR.leg || (TR.leg = { c: new THREE.Vector3(), q: new THREE.Vector3(), q2: new THREE.Vector3(), side: new THREE.Vector3() });
+    var L = TR.leg || (TR.leg = { c: new THREE.Vector3(), q: new THREE.Vector3(), q2: new THREE.Vector3(), side: new THREE.Vector3(),
+                                  c1: new THREE.Vector3(), c2: new THREE.Vector3() });
     var len = D.distanceTo(TR.P0);
     L.len = len;
     /* lateral unit vector of the chord (horizontal), signed by moveDir */
     L.side.subVectors(D, TR.P0); L.side.set(-L.side.z, 0, L.side.x);
     if (L.side.lengthSq() < 1e-6) L.side.set(1, 0, 0);
     L.side.normalize().multiplyScalar(TR.moveDir);
+    /* ONE leg shape for every move but the stream ride - a cubic whose
+       first tangent points BACK along the current view axis (a pull-back, the subject stays
+       in frame) and whose last tangent lies along the destination's view axis (a push-in
+       that settles exactly at t0 + travelT). A small lateral bow (the published move_dir)
+       keeps consecutive legs from mirroring each other. The move names stay for the lights. */
+    if (mv !== 'stream') {
+      var back = _lp.subVectors(TR.P0, TR.T0); back.y = Math.max(0, back.y * 0.5);
+      if (back.lengthSq() < 1e-6) back.set(0, 0.3, 1); back.normalize();
+      var k1 = Math.max(40, Math.min(300, 0.22 * len)), k2 = Math.max(60, Math.min(500, 0.35 * len));
+      L.c1.copy(TR.P0).addScaledVector(back, k1).addScaledVector(L.side, (mv === 'swoop' || mv === 'orbit' ? 0.08 : 0.03) * len);
+      var out = new THREE.Vector3().subVectors(D, Dt); if (out.lengthSq() < 1e-6) out.set(0, 0.5, 1); out.normalize();
+      L.c2.copy(D).addScaledVector(out, k2).addScaledVector(L.side, 0.02 * len);
+      /* no hub detour unless the straight path threads a galaxy core: sample the curve and
+         lift it clear of any core sphere it enters (never a route through the bulge) */
+      var lift = 0;
+      for (var si = 1; si < 8; si++) {
+        var u = si / 8, iu = 1 - u;
+        _lp.copy(TR.P0).multiplyScalar(iu * iu * iu).addScaledVector(L.c1, 3 * iu * iu * u).addScaledVector(L.c2, 3 * iu * u * u).addScaledVector(D, u * u * u);
+        for (var ni = 0; ni < NS.nodes.length; ni++) {
+          var hn = NS.nodes[ni], R = hn._uSys && hn._uSys.R ? hn._uSys.R * 0.45 : 0; if (!R) continue;
+          var dd = Math.hypot(_lp.x - hn._cx, _lp.y - hn._cy, _lp.z - hn._cz);
+          if (dd < R) lift = Math.max(lift, R - dd + 40);
+        }
+      }
+      if (lift > 0) { L.c1.y += lift; L.c2.y += lift * 0.6; }
+      L.lift = lift;
+    }
     if (mv === 'slingshot' || mv === 'orbit' || mv === 'swoop') {
       /* polar about the destination's centre (slingshot / orbit: the hub's system) */
       var hubN = hb ? NS.byId[hb] : null;
@@ -3461,14 +3727,21 @@
     var e = legRamp(s), mv = TR.move || 'glide', L = TR.leg || {}, bump = Math.sin(Math.PI * e);
     var eT = legRamp(Math.min(1, s / 0.82));
     var roll = 0;
-    if (mv === 'slingshot' || mv === 'orbit' || mv === 'swoop') {
+    if (mv !== 'stream' && L.c1) {
+      /* pull-back, cross, push-in (see legPlan); the gaze is a true look-at on the
+         destination by 50 % of the leg, so the next subject is inside the frame from ~30 % */
+      var u = e, iu = 1 - u;
+      _lp.copy(TR.P0).multiplyScalar(iu * iu * iu).addScaledVector(L.c1, 3 * iu * iu * u).addScaledVector(L.c2, 3 * iu * u * u).addScaledVector(D, u * u * u);
+      D.copy(_lp);
+      eT = legRamp(Math.min(1, s / 0.5));
+    } else if (mv === 'slingshot' || mv === 'orbit' || mv === 'swoop') {
       var a = L.a0 + L.da * e;
       var r = L.r0 + (L.r1 - L.r0) * e, h = L.h0 + (L.h1 - L.h0) * e;
       if (mv === 'slingshot') { r *= 1 - 0.22 * bump; h *= 1 - 0.18 * bump; }        // dip close past the core
       else if (mv === 'orbit') { r *= 1 + 0.16 * bump; h += 0.45 * Math.max(r, 1) * 0.35 * bump; }   // a high crane orbit over the disc
       else { r *= 1 + 0.10 * bump; h += 0.25 * (TR.arcH || 0) * bump; }
       _lp.set(L.c.x + r * Math.sin(a), L.c.y + h, L.c.z + r * Math.cos(a));
-      if (mv === 'swoop') _lp.addScaledVector(L.side, 0.30 * L.len * bump * (1 - 0.35 * e));   // swing out, curl in
+      if (mv === 'swoop') _lp.addScaledVector(L.side, 0.15 * L.len * bump * (1 - 0.35 * e));   // swing out, curl in
       D.copy(_lp);
       roll = (mv === 'swoop' ? 0.03 : 0.02) * TR.moveDir * bump;
     } else if (mv === 'dive' || mv === 'reveal' || mv === 'stream') {
@@ -3486,7 +3759,7 @@
     }
     (L.dt || (L.dt = new THREE.Vector3())).copy(Dt);      // the destination's look point (the trail's goal)
     Dt.lerpVectors(TR.T0, Dt, eT);
-    NS.legRoll = roll;
+    NS.legRoll = 0 * roll;              // no roll - the tilt read as the wall twitching
     NS.legS = s;
   }
 
@@ -3497,6 +3770,7 @@
     if (t - NS.manualAt <= MANUAL_HOLD) {          // user holds the camera
       if (!TR.manual) { TR.manual = true; setFocus(null); setTourText('Manual camera'); closeCard(); }
       if (TP.vp) { TP.vp.set(0, 0, 0); TP.vt.set(0, 0, 0); TP.gp = null; }   // the user owns the camera now
+      if (NS.wideK) { NS.wideK *= Math.exp(-dt / 0.6); wideWires(); }       // a hand-held camera sees every road
       return;
     }
     /* a cinematic move (cinema.js) owns the camera: the tour's clocks are
@@ -3519,6 +3793,13 @@
       setTourText('Tour: Overview');
     }
     var st = TR.stops[TR.idx], e = t - TR.t0;
+    /* NS.wideK (0..1, eased ~0.6 s) = "this is a wide shot" - the overviews, the
+       Internet edge and the Internet / Security stops - for the galaxy plates' x1.35 scale
+       and the sky's exposure (netscene_universe, galaxy.js read it) */
+    var stW = TR.stops[(TR.phase === 'travel' && TR.switched) ? TR.next : TR.idx], kW = stW && stW.key || '';
+    var wantW = (!stW || !stW.list || /^(over|wan)/.test(kW) || /^asp:(internet|security)$/.test(kW)) ? 1 : 0;
+    NS.wideK = (NS.wideK === undefined ? wantW : NS.wideK) + (wantW - (NS.wideK === undefined ? wantW : NS.wideK)) * (1 - Math.exp(-dt / 0.6));
+    wideWires();
     /* /api/tour changed its aspect list: re-plan at a hold (refreshTour refuses
        mid-flight and around the stream ride, so this just retries) */
     if (NS.tourDirty && TR.phase === 'hold' && (t - (NS.tourDirtyTry || 0)) > 1) {
@@ -3528,7 +3809,7 @@
     if (TR.phase === 'hold') {
       tourPose(st, t - TR.tHold, TP.pos, TP.tgt);
       glide(dt);
-      var holdDur = st.hold || (st.list ? T_HOLD : T_HOLD_OVER);
+      var holdDur = onGrid(st.hold || (st.list ? T_HOLD : T_HOLD_OVER));
       if (e > holdDur && !NS.tourPark) {          // tourPark: QA only, parks the tour
         /* depart IMMEDIATELY with the union of both stops materialised: the
            outgoing subject recedes while the incoming one grows, so no frame
@@ -3545,7 +3826,7 @@
         TR.P0.copy(NS.cam.position); TR.T0.copy(NS.ctrl.target);
         tourPose(nx, 0, TP.pos, TP.tgt);
         var dTrav = TP.pos.distanceTo(TR.P0);
-        TR.travelT = Math.min(2.3, Math.max(1.5, 1.1 + dTrav / 850));
+        TR.travelT = T_TRAVEL;                    // one bar, whatever the distance: arrivals stay on the downbeat
         TR.arcH = Math.min(110, 26 + dTrav * 0.14);  // crane-shot rise, scales with leg
         legPlan(TR, st, nx, TP.pos, TP.tgt);
         setTourText('Tour: ' + nx.name);
@@ -3574,6 +3855,7 @@
         NS.qaArrivals = (NS.qaArrivals || 0) + 1;      // QA: lightsync must beat exactly once per arrival
         NS.legRoll = 0;
         if (NS.onArrive) { try { NS.onArrive(TR.stops[TR.next], TR); } catch (e) { } }   // the arrival accent (one per stop, same instant as the light beat)
+        if (window.CINEMA && window.CINEMA.arrive) { try { window.CINEMA.arrive(); } catch (e) { } }   // the exposure payoff on the downbeat
         qaEv('arrive', TR.stops[TR.next].key);
         var cur = TR.stops[TR.idx];
         setFocus(cur.ids || null, stopSpread(cur));
@@ -3669,6 +3951,7 @@
     focusTick(rdt);
     ovEase(rdt);
     tourTick(t, rdt);
+    hubExpose();
     /* universe layer (netscene_universe.js): called directly, not via another
        netSceneTick wrapper - the wrapper chain is how flows ended up ticking
        twice a frame */
@@ -3848,7 +4131,17 @@
         /* a big stop (a whole host, 88 guests) is explained by its group
            captions; it gets a handful of names, a small subject gets them all */
         spokeK();
-        var leafBudget = uni() ? (NS.focusAll === false ? (NS._focN > 24 ? 6 : LEAF_BUDGET) : 0) : 1e9, leafKept = 0;
+        var leafBudget = uni() ? (NS.focusAll === false ? LEAF_BUDGET : 0) : 1e9, leafKept = 0;
+        /* one budget for everything that speaks at a hold. The subject and the
+           busiest stream each have a seat held for them, so nine hub names can
+           never crowd out the one thing the stop is about. */
+        var TRb = NS.tour, stb = TRb && TRb.stops && TRb.stops[(TRb.phase === 'travel' && TRb.switched) ? TRb.next : TRb.idx];
+        var totBudget = uni() ? (stb && !TRb.manual && /^host:/.test(String(stb.key || '')) ? LBL_TOTAL_HOST : LBL_TOTAL) : 1e9, totKept = 0;
+        var seatSubj = 0, seatStream = 0;
+        for (var si = 0; si < cand.length; si++) {
+          if (cand[si].score >= 1e5) seatSubj = 1;
+          else if (cand[si].rank === 2 && cand[si].L.userData.tStream && cand[si].L.userData.rk === 0) seatStream = 1;
+        }
         var TRt = NS.tour, thinNow = !!(uni() && TRt && !TRt.manual && TRt.phase === 'travel' && TRt.travelT && (t - TRt.t0) / TRt.travelT < 0.8);
         var kept = NS._lkept || (NS._lkept = []);
         kept.length = 0;
@@ -3856,6 +4149,23 @@
         for (var hk = 0; hk < hr.length; hk++) kept.push(hr[hk]);
         var scr = subjScreen();
         if (scr) kept.push(scr.rect);
+        /* the story layer's box is a keep-out like any HUD panel */
+        var SB = window.NB_SAFE && window.NB_SAFE.story;
+        if (SB && SB.w > 0 && SB.h > 0) {
+          var sbr = NS._sbRect || (NS._sbRect = { x0: 0, x1: 0, y0: 0, y1: 0, hud: 'story' });
+          sbr.x0 = SB.x - 6; sbr.x1 = SB.x + SB.w + 6; sbr.y0 = SB.y - 6; sbr.y1 = SB.y + SB.h + 6;
+          kept.push(sbr);
+          /* and so is the strip between the line and the caption under it (~60 px): a name parked
+             there reads as a third line of the caption. As wide as the caption's box; with no
+             caption up, the line's own width for the same depth */
+          var gbr = NS._sgRect || (NS._sgRect = { x0: 0, x1: 0, y0: 0, y1: 0, hud: 'story-gap' }), cinR = null;
+          for (var hc = 0; hc < hr.length && !cinR; hc++) if (hr[hc].hud === 'cin') cinR = hr[hc];
+          if (cinR && cinR.y0 > sbr.y1 - 12 && cinR.y0 < sbr.y1 + 120) {
+            gbr.x0 = Math.min(sbr.x0, cinR.x0); gbr.x1 = Math.max(sbr.x1, cinR.x1); gbr.y1 = cinR.y0;
+          } else { gbr.x0 = sbr.x0; gbr.x1 = sbr.x1; gbr.y1 = sbr.y1 + 60; }
+          gbr.y0 = sbr.y1;
+          if (gbr.y1 > gbr.y0) kept.push(gbr);
+        }
         for (var ci = 0; ci < cand.length; ci++) {
           var CL = cand[ci].L, wp = cand[ci].hasWorld ? cand[ci].world : null;
           var r = wp ? spriteRect(CL, wp.x, wp.y, wp.z, fs)
@@ -3874,6 +4184,10 @@
              at the overview; they come back as the camera closes in */
           if (!CL.userData.l2d && uni() && (cand[ci].rank === 5 || CL.userData.setText) && (r.y1 - r.y0) < 22) clash = true;
           if (cand[ci].rank === 3 && !CL.userData.setText && leafKept >= leafBudget) clash = true;
+          var isSeatS = cand[ci].score >= 1e5, isSeatT = cand[ci].rank === 2 && CL.userData.tStream && CL.userData.rk === 0;
+          if (isSeatS) seatSubj = 0; else if (isSeatT) seatStream = 0;
+          if (!isSeatS && !isSeatT && totKept + seatSubj + seatStream >= totBudget) clash = true;
+          else if (totKept >= totBudget) clash = true;
           /* contracts 9.4: in flight the scene's text thins to the subject's few -
              hub and galaxy names and the aspect subject; rates, streams, flow notes
              and leaf names step back until the last fifth of the leg */
@@ -3923,7 +4237,7 @@
               NS.hotLeaders[hx].visible = false;   // no callout, no leader line
             }
           } else {
-            kept.push(r);
+            kept.push(r); totKept++;
             if (cand[ci].rank === 3 && !CL.userData.setText) leafKept++;
           }
           /* opt-in trace (NETSCENE._lpDebug = true): what this pass actually

@@ -58,6 +58,17 @@
  *       lightness +-5% from seed so siblings are distinguishable; status down
  *       -> desaturated + dimmed, unknown -> partly desaturated.
  *   colourRGB(body, manifestClass) -> [r, g, b] floats 0..1 (same colour).
+ *
+ *   wedgeOf(points, hub, k) -> { cx, cy, cz, theta, spread, r, n } | null      (additive)
+ *       Where a GROUP of bodies (a guest category's sector / arm) lives around its hub, for
+ *       framing a shot of it. points = [[x, y, z], ...] and hub = [x, y, z] in any one frame
+ *       (world or system-local); theta = the group's circular-mean angle about the hub (same
+ *       convention as place(): from +x toward +z), r = its mean distance from the hub. With
+ *       k > 0 the result describes the k members nearest the group's middle (the point at
+ *       (theta, r)) - a cluster small enough to resolve as planets; otherwise all of them.
+ *       (cx, cy, cz) = that cluster's centroid, spread = its largest distance from the
+ *       centroid, n = how many members it covers. Pure and deterministic (ties by index).
+ *       Nothing else in this file calls it.
  */
 (function (root) {
   "use strict";
@@ -247,10 +258,36 @@
     return out;
   }
 
+  function wedgeOf(points, hub, k) {
+    var n = (points || []).length, i, p;
+    if (!n) return null;
+    var hx = hub ? +hub[0] || 0 : 0, hz = hub ? +hub[2] || 0 : 0;
+    var sx = 0, sz = 0, sr = 0, dx, dz, r;
+    for (i = 0; i < n; i++) {
+      p = points[i]; dx = p[0] - hx; dz = p[2] - hz; r = Math.sqrt(dx * dx + dz * dz);
+      if (r > 1e-9) { sx += dx / r; sz += dz / r; }
+      sr += r;
+    }
+    var theta = (sx * sx + sz * sz) > 1e-12 ? Math.atan2(sz, sx) : 0, rm = sr / n;
+    var mx = hx + rm * Math.cos(theta), mz = hz + rm * Math.sin(theta);
+    var idx = [];
+    for (i = 0; i < n; i++) { p = points[i]; dx = p[0] - mx; dz = p[2] - mz; idx.push([dx * dx + dz * dz, i]); }
+    idx.sort(function (a, b) { return (a[0] - b[0]) || (a[1] - b[1]); });
+    var m = k > 0 ? Math.min(n, Math.floor(k)) : n, cx = 0, cy = 0, cz = 0;
+    for (i = 0; i < m; i++) { p = points[idx[i][1]]; cx += p[0]; cy += p[1]; cz += p[2]; }
+    cx /= m; cy /= m; cz /= m;
+    var spread = 0, dy;
+    for (i = 0; i < m; i++) {
+      p = points[idx[i][1]]; dx = p[0] - cx; dy = p[1] - cy; dz = p[2] - cz;
+      spread = Math.max(spread, Math.sqrt(dx * dx + dy * dy + dz * dz));
+    }
+    return { cx: cx, cy: cy, cz: cz, theta: frac(theta / TAU) * TAU, spread: spread, r: rm, n: m };
+  }
+
   var api = {
     version: 1,
     hash32: hash32, shellOf: shellOf, capacities: capacities, geometry: geometry, quantizeCaps: quantizeCaps,
-    place: place, systemCenter: systemCenter, colourFor: colourFor, colourRGB: colourRGB,
+    place: place, systemCenter: systemCenter, colourFor: colourFor, colourRGB: colourRGB, wedgeOf: wedgeOf,
     SHELL_OF_CLASS: SHELL_OF_CLASS, CLASS_TINTS: CLASS_TINTS,
     CONST: { CORE_R: CORE_R, SPACING: SPACING, MIN_W: MIN_W, GAP: GAP, JITTER: JITTER,
              EDGE_R: EDGE_R, SYS_SPACING: SYS_SPACING, A1: A1, A2: A2 }

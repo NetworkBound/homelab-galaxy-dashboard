@@ -105,6 +105,74 @@
   var LEVEL_NAME = ['GREEN', 'YELLOW', 'RED', 'BLACK'];
 
   var EX = null, _c = new THREE.Color(), _c2 = new THREE.Color(), _v = new THREE.Vector3();
+  /* on the HDR wall the Internet edge is a photographed scene, not a
+     diagram. Cloudflare is a ringed planet lit by the Internet star (bodies3d's ringed
+     giant, the light set to the star's position) instead of two tori and an orange ball;
+     the AS beacons are faint points on the dim orbit instead of pastel blobs; a blocked
+     source is one calm red point of light sized by its event count (never a ring that
+     grows to 130 units); the wires are quiet and the comets on them carry the motion.
+     ?exo=classic keeps the old look for an A/B. */
+  var PHOTO = !!window.NB_HDR && !/[?&]exo=classic/.test(location.search);
+  var PLANET_R = 10.5;
+  function psfTex() {                       // a star's point-spread: tight core, long faint skirt
+    var s = 128, cv = document.createElement('canvas'); cv.width = cv.height = s;
+    var x = cv.getContext('2d'), g = x.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+    g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.07, 'rgba(255,255,255,.80)'); g.addColorStop(0.18, 'rgba(255,255,255,.26)');
+    g.addColorStop(0.42, 'rgba(255,255,255,.07)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = g; x.fillRect(0, 0, s, s);
+    return new THREE.CanvasTexture(cv);
+  }
+  /* a point of light whose size is capped on screen (px at 1080p), so the near side of the
+     orbit never swells into a blob when the camera sits inside it (the Security stop) */
+  function clampPts(size, px) {
+    var m = new THREE.ShaderMaterial({
+          uniforms: { map: { value: EX.psfTex }, opacity: { value: 1 }, uSize: { value: size }, uScale: { value: 540 }, uMax: { value: px }, uCrop: { value: 1 }, uRgb: { value: 0 } },
+          vertexShader: 'uniform float uSize; uniform float uScale; uniform float uMax; varying vec3 vC;\nvoid main(){ vC = color; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv; gl_PointSize = min(uSize * uScale / max(1.0, -mv.z), uMax); }',
+          fragmentShader: 'uniform sampler2D map; uniform float opacity; uniform float uCrop; uniform float uRgb; varying vec3 vC;\nvoid main(){ vec4 t = texture2D(map, 0.5 + (gl_PointCoord - 0.5) * uCrop); gl_FragColor = vec4(vC * mix(vec3(1.0), t.rgb, uRgb) * t.a * opacity, 1.0); }',
+          vertexColors: true, transparent: true, depthWrite: false, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation,
+          blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor, blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor });
+    m.userData.px = px;
+    return m;
+  }
+  /* the baked point spreads (psf.v2 of the galaxy2 manifest) replace the canvas one once
+     loaded: m3 (core + halo) on the AS beacons and the packets, m2 (four short spikes) on a blocked
+     source. The plates have a much tighter core than the canvas gradient, so only their centre is
+     drawn and the sprite grows to keep the core the size it was. Without the keys, or with
+     ?psf=proc, nothing changes. */
+  var PSF_V2 = { crop: 0.42, grow: 2.0, impCrop: 0.5, impGrow: 2.4 };
+  function psfV2(tries) {
+    var M = window.NB_G2MAN;
+    if (M === undefined) { if (tries < 120) setTimeout(function () { psfV2(tries + 1); }, 500); return; }
+    var p = M && M.psf && M.psf.v2;
+    if (!p || !PHOTO || !EX || /[?&]psf=proc/.test(location.search)) return;
+    function load(e, cb) {
+      var f = e && (e.file || e); if (typeof f !== 'string') return;
+      new THREE.TextureLoader().load('/static/assets/galaxy2/' + f, function (t) { t.encoding = THREE.LinearEncoding; cb(t); });
+    }
+    load(p.m3, function (t) {
+      [EX.bPts, EX.pPts].forEach(function (pt) {
+        var u = pt && pt.material && pt.material.uniforms; if (!u || !u.uCrop) return;
+        EX.ptK = PSF_V2.grow;                  // the frame loop sizes the cap (uMax) with it
+        u.map.value = t; u.uCrop.value = PSF_V2.crop; u.uRgb.value = 1; u.uSize.value *= PSF_V2.grow;
+      });
+    });
+    load(p.m2, function (t) {
+      t.repeat.set(PSF_V2.impCrop, PSF_V2.impCrop); t.offset.set(0.5 - PSF_V2.impCrop / 2, 0.5 - PSF_V2.impCrop / 2);
+      EX.impK = PSF_V2.impGrow;
+      (EX.impR || []).forEach(function (rg) { rg.material.map = t; rg.material.needsUpdate = true; });
+    });
+  }
+  function mkPlanet(NS) {
+    if (!PHOTO || EX.planet || EX.planetNo) return;
+    var B3 = NS.b3d;
+    if (!B3) return;                         // not built yet: try again next frame
+    if (!B3.photo || B3.look !== 'celestial' || !B3.hubMesh || !B3.setHubLight) { EX.planetNo = true; return; }
+    var m = B3.hubMesh('external', { tint: '#e8a76a' });
+    m.scale.setScalar(PLANET_R); m.rotation.set(0.40, 0, 0.14);
+    m.raycast = function () { };
+    EX.st.add(m); EX.planet = m;
+    EX.torus.visible = EX.torus2.visible = EX.core.visible = false;
+  }
   function ns() { return window.NETSCENE || null; }
   function bpsNorm(bps) {                  // bits/s -> 0..1 ; 1 kb/s .. ~30 Mb/s
     var b = Math.max(0, +bps || 0); if (b < 1000) return 0;
@@ -173,7 +241,7 @@
     EX = {
       grp: new THREE.Group(), vis: 0, want: 0, t: 0, dt: 0, k: 1, kT: 1, kBuilt: 1, big: 0,
       beacons: [], slots: {}, sig: '', wan: null, cfNode: null,
-      dotTex: dotTex(), ringTex: ringTex(),
+      dotTex: dotTex(), ringTex: ringTex(), psfTex: PHOTO ? psfTex() : null,
       seen: {}, queue: [], impacts: [], flecks: [],
       cf: null, cfPrev: null, cfAcc: 0, cfCarrier: [],
       talkers: [], flows: [], byCountry: [], edge: null, ext: null,
@@ -196,7 +264,11 @@
     EX.bGeo.setAttribute('position', new THREE.BufferAttribute(EX.bPos, 3).setUsage(THREE.DynamicDrawUsage));
     EX.bGeo.setAttribute('color', new THREE.BufferAttribute(EX.bCol, 3).setUsage(THREE.DynamicDrawUsage));
     EX.bGeo.setDrawRange(0, 0); EX.bGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 6000);
-    EX.bPts = new THREE.Points(EX.bGeo, new THREE.PointsMaterial({ size: 14, map: EX.dotTex, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true }));
+    EX.bPts = new THREE.Points(EX.bGeo, PHOTO
+      /* a beacon is a point of light - its size is capped on screen, so the near side
+         of the orbit never swells into a blob when the camera sits inside it (Security) */
+      ? clampPts(12, 18)
+      : new THREE.PointsMaterial({ size: 14, map: EX.dotTex, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true }));
     EX.bPts.frustumCulled = false; EX.grp.add(EX.bPts);
     /* per-beacon halo sprites (size = rate) + labels */
     EX.halos = []; EX.labels = [];
@@ -269,14 +341,14 @@
     EX.pGeo.setAttribute('position', new THREE.BufferAttribute(EX.pPos, 3).setUsage(THREE.DynamicDrawUsage));
     EX.pGeo.setAttribute('color', new THREE.BufferAttribute(EX.pCol, 3).setUsage(THREE.DynamicDrawUsage));
     EX.pGeo.setDrawRange(0, 0); EX.pGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 6000);
-    EX.pPts = new THREE.Points(EX.pGeo, new THREE.PointsMaterial({ size: 6.5, map: EX.dotTex, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true }));
+    EX.pPts = new THREE.Points(EX.pGeo, PHOTO ? clampPts(6.5, 9) : new THREE.PointsMaterial({ size: 6.5, map: EX.dotTex, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true }));
     EX.pPts.frustumCulled = false; EX.grp.add(EX.pPts);
     EX.P = [];                                   // slot records {kind, b, dir, p, rate, r,g,b}
 
     /* CrowdSec impact pool */
     EX.impR = []; EX.impL = []; EX.flares = [];
     for (var k = 0; k < 6; k++) {
-      var rg = new THREE.Sprite(new THREE.SpriteMaterial({ map: EX.ringTex, color: COL.atk, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 }));
+      var rg = new THREE.Sprite(new THREE.SpriteMaterial({ map: EX.psfTex || EX.ringTex, color: PHOTO ? 0xe0626e : COL.atk, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 }));
       rg.visible = false; EX.grp.add(rg); EX.impR.push(rg);
       /* r2: tag sized like the top-tier beacon labels (was 66 u / 32 px - a few
          pixels at 1080p), rimmed red via pill 2 */
@@ -286,6 +358,7 @@
       fl.visible = false; fl.renderOrder = 2; EX.grp.add(fl); EX.flares.push(fl);
     }
     EX.shieldFlash = 0; EX.impAct = new Float32Array(6 * 3); EX.impN = 0;   // active impact centres (for label priority)
+    if (PHOTO) psfV2(0);
     EX.shield = new THREE.Mesh(new THREE.TorusGeometry(SHIELD_R, 0.25, 6, 96), new THREE.MeshBasicMaterial({ color: 0x5a3a55, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false }));
     EX.shield.rotation.x = Math.PI / 2; EX.grp.add(EX.shield);
 
@@ -482,8 +555,9 @@
       _c2.copy(_c).multiplyScalar(0.55 + 0.45 * u);
       EX.bCol[o] = _c2.r; EX.bCol[o + 1] = _c2.g; EX.bCol[o + 2] = _c2.b;
       var H = EX.halos[b.slot]; H.visible = true; H.position.set(b.x, b.y, b.z);
-      var hs = 8 + 22 * u; H.scale.set(hs, hs, 1); H.material.color.copy(_c); H.material.opacity = 0.14 + 0.26 * u;
-      H.userData.op = 0.14 + 0.26 * u; H.userData.u = u;      // v7: tick breathes from these
+      var hs = PHOTO ? 5 + 9 * u : 8 + 22 * u, hop = PHOTO ? 0.07 + 0.11 * u : 0.14 + 0.26 * u;      // a faint beacon, not a blob
+      H.scale.set(hs, hs, 1); H.material.color.copy(_c); H.material.opacity = hop;
+      H.userData.op = hop; H.userData.u = u; H.userData.hs = hs;      // v7: tick breathes from these
       var L = EX.labels[b.slot]; L.position.set(b.x, b.y - 9 - hs * 0.25, b.z); L.userData.on = true; L.userData.base = L.userData.top ? 1 : 0.66 + 0.2 * u;
       /* arc: quadratic, peaks up and slightly outward */
       var ax = w.x - 4, ay = w.y + 10, az = w.z, mx = (ax + b.x) / 2, my = Math.max(ay, b.y) + 26 + 18 * u, mz = (az + b.z) / 2;
@@ -651,16 +725,28 @@
   }
   /* one impact ring + tag from the pool at a world position; the pool is the
      round-1 CrowdSec one, so old and new impacts look the same */
-  function fireImpact(t, x, y, z, text, sub) {
+  function fireImpact(t, x, y, z, text, sub, count) {
     var free = -1;
+    if (PHOTO) {
+      /* a source that is blocked again while its light is still up keeps the one light
+         (re-armed at full, counts added): stacked additive sprites read as a pink ball */
+      for (var im = 0; im < EX.impR.length; im++) {
+        var Rm = EX.impR[im];
+        if (!Rm.visible || Math.abs(Rm.position.x - x) + Math.abs(Rm.position.y - y) + Math.abs(Rm.position.z - z) > 9) continue;
+        if (t - Rm.userData.t0 > 0.35) Rm.userData.t0 = t - 0.35;
+        Rm.userData.n = (Rm.userData.n || 1) + Math.max(1, +count || 1);
+        return true;
+      }
+    }
     for (var ii = 0; ii < EX.impR.length; ii++) if (!EX.impR[ii].visible) { free = ii; break; }
     if (free < 0) return false;
     var R = EX.impR[free]; R.visible = true; R.position.set(x, y, z); R.userData.t0 = t;
+    R.userData.n = Math.max(1, +count || 1);
     var IL = EX.impL[free]; IL.position.set(x, y + 16, z);
     IL.userData.set(text, '#ff8a95', 36, sub, '#e0a8b0', 2); IL.userData.on = true;
     /* the beat: shield flashes red (decays over 1 s in tick) and the bloom
        kicks once through the heartbeat API - never bloom.strength directly */
-    EX.shieldFlash = 1;
+    EX.shieldFlash = PHOTO ? 0.45 : 1;
     if (window.CINEMA && typeof window.CINEMA.beat === 'function') { try { window.CINEMA.beat(3); } catch (x) { } }
     return true;
   }
@@ -740,8 +826,12 @@
   function threatImpact(t, S) {
     var e = S.e;
     var scen = cleanTitle(e.title);
-    fireImpact(t, S.x1, S.y1, S.z1, (e.kind || 'BLOCKED') + ' · ' + (e.cc || '??') + ' · ' + shortAS(e.as_name, ''),
-      scen + (e.events ? ' · ' + e.events + ' ev' : ''));
+    var kd = String(e.kind || 'BLOCKED');
+    /* the wall says it the way the per-poll impacts do: "Blocked · US", the network name on the second line */
+    if (PHOTO) fireImpact(t, S.x1, S.y1, S.z1, kd.charAt(0).toUpperCase() + kd.slice(1).toLowerCase() + ' \u00b7 ' + (e.cc || '??'),
+      [shortAS(e.as_name, ''), scen].filter(function (v) { return v && v !== '?'; }).join(' \u00b7 '), e.events);
+    else fireImpact(t, S.x1, S.y1, S.z1, kd + ' · ' + (e.cc || '??') + ' · ' + shortAS(e.as_name, ''),
+      scen + (e.events ? ' · ' + e.events + ' ev' : ''), e.events);
   }
   /* 5 s poll of /api/threats (plus the edge.threats mirror on every topology
      poll). The SSE stream is opt-in (window.NB_THREAT_SSE = true) and OFF by
@@ -865,12 +955,18 @@
     var big = EX.big;
 
     var beat = 0.5 + 0.5 * Math.sin(t * 1.4);
-    EX.arcs.material.opacity = (0.55 + 0.15 * beat) * vis;
-    EX.ring.material.opacity = (0.55 + 0.2 * big) * vis;
-    EX.bPts.material.opacity = vis;
+    /* quiet wires on the photographic wall - the comets riding them are the traffic */
+    EX.arcs.material.opacity = (PHOTO ? 0.13 + 0.05 * beat : 0.55 + 0.15 * beat) * vis;
+    EX.ring.material.opacity = (PHOTO ? 0.20 + 0.10 * big : 0.55 + 0.2 * big) * vis;
+    if (EX.bPts.material.uniforms) {
+      var bu = EX.bPts.material.uniforms, cvH = (window.rndr && window.rndr.domElement && window.rndr.domElement.height) || window.innerHeight;
+      bu.opacity.value = vis; bu.uScale.value = cvH * 0.5; bu.uMax.value = 18 * (EX.ptK || 1) * cvH / 1080;
+      var pu = EX.pPts.material.uniforms;
+      if (pu && pu.uMax) { pu.uScale.value = cvH * 0.5; pu.uMax.value = 9 * (EX.ptK || 1) * cvH / 1080; }
+    } else EX.bPts.material.opacity = vis;
     /* r2: the shield itself flashes red on an impact (0.16 -> 0.70, 1 s decay) */
     if (EX.shieldFlash > 0) EX.shieldFlash = Math.max(0, EX.shieldFlash - dt);
-    EX.shield.material.opacity = (0.16 + 0.54 * EX.shieldFlash) * vis;
+    EX.shield.material.opacity = (PHOTO ? 0.12 + 0.30 * EX.shieldFlash : 0.16 + 0.54 * EX.shieldFlash) * vis;
     EX.shield.material.color.setHex(0x5a3a55).lerp(_c2.setHex(COL.atk), EX.shieldFlash);
     /* v7 ring pass: each segment breathes at a rate set by its country's
        measured bps (u = 0 -> still), and a visitor's segment pulses gold for
@@ -905,6 +1001,14 @@
       L.material.opacity = L.visible ? L.userData.base * (top ? 1 : 0.8 + 0.2 * big) * vis : 0;
       /* v7: the halo breathes at a rate set by the AS's measured bps */
       var Hh = EX.halos[i];
+      /* a beacon next to the lens (the Security orbit flies through the ring) stays a point
+         of light: its glow never draws wider than ~26 px, wherever the camera is */
+      if (Hh.visible && PHOTO && NS.cam && Hh.userData.hs) {
+        _v.copy(Hh.position).applyMatrix4(EX.grp.matrixWorld);
+        var hw = 26 * _v.distanceTo(NS.cam.position) * Math.tan(NS.cam.fov * Math.PI / 360) / (window.innerHeight * 0.5);
+        hw = Math.min(Hh.userData.hs, hw);
+        if (Math.abs(hw - Hh.scale.x) > 0.01) Hh.scale.set(hw, hw, 1);
+      }
       if (Hh.visible) { var hu = Hh.userData.u || 0; Hh.material.opacity = (Hh.userData.op || 0.14) * (hu > 0 ? 0.8 + 0.35 * Math.sin(t * (1.1 + 2.4 * hu) + i * 1.7) : 1) * (0.6 + 0.4 * vis); }
     }
     for (var c = 0; c < EX.ccLabels.length; c++) {
@@ -923,10 +1027,22 @@
     /* v7: a visitor reaching the station flashes its halo gold (~0.6 s decay) */
     if (EX.stFlash > 0) EX.stFlash = Math.max(0, EX.stFlash - dt * 1.7);
     EX.halo.material.color.setHex(COL.cf).lerp(_c2.setHex(COL.gold), EX.stFlash);
+    mkPlanet(NS);
+    if (EX.planet) {
+      /* the planet: lit by the Internet star, turning slowly (faster with req/min); a
+         dead tunnel is a dim planet; the orange is a faint air-glow, the gold flash stays */
+      EX.planet.rotation.y += dt * (0.05 + 0.012 * Math.min(10, rpm));
+      NS.b3d.setHubLight(EX.planet, [w.x, w.y, w.z], 7);
+      NS.b3d.setHubStatus(EX.planet, { bright: (up ? 1 : 0.4) * (0.15 + 0.85 * vis), desat: up ? 0 : 0.5 });
+      var hsp = 34 * (1 + 0.55 * EX.stFlash); EX.halo.scale.set(hsp, hsp, 1);
+      EX.halo.material.opacity = ((up ? 0.05 + 0.04 * pulse : 0.02) + 0.35 * EX.stFlash) * vis;
+      EX.strands.material.opacity = (up ? 0.07 + 0.05 * pulse : 0.03) * vis;
+    } else {
     var hsz = 52 * (1 + 0.55 * EX.stFlash); EX.halo.scale.set(hsz, hsz, 1);
     EX.halo.material.opacity = (0.25 + 0.35 * pulse + 0.35 * EX.stFlash) * vis;
     EX.torus.material.opacity = (up ? 0.85 : 0.3) * vis; EX.torus2.material.opacity = (up ? 0.6 : 0.2) * vis; EX.core.material.opacity = vis;
     EX.strands.material.opacity = (up ? 0.40 + 0.22 * pulse : 0.08) * vis;
+    }
     EX.cfLbl.userData.setW(1 + 0.45 * big);
     EX.cfLbl.visible = !!EX.cfLbl.userData.on && big > 0.5 && vis > 0.05 && !lpHid(EX.cfLbl, NS);
     EX.cfLbl.material.opacity = EX.cfLbl.visible ? (0.8 + 0.2 * big) * vis : 0;
@@ -965,7 +1081,7 @@
       var ang2 = (hash32(a.ip) % 628) / 100, ang3 = -ARC_SPAN * 0.9 + (ang2 / 6.28) * ARC_SPAN * 1.8;
       var scen = String(a.scenario || '').replace(/^crowdsecurity\//, '').replace(/-probing$/, '').replace(/_/g, ' ');
       fireImpact(t, w.x - Math.cos(ang3) * SHIELD_R, w.y + 14 + (hash32(a.ip + 'y') % 20), w.z + Math.sin(ang3) * SHIELD_R,
-        'Blocked \u00b7 ' + (a.cn || '?'), scen);
+        'Blocked \u00b7 ' + (a.cn || '?'), scen, a.events || a.count || a.n);
     }
     for (var si = EX.streaks.length - 1; si >= 0; si--) {
       var SK = EX.streaks[si];
@@ -975,8 +1091,15 @@
         var FL = EX.flares[SK.fl], hp = Math.min(1, SK.p), hpe = hp * hp * (3 - 2 * hp);
         FL.position.set(SK.x0 + (SK.x1 - SK.x0) * hpe, SK.y0 + (SK.y1 - SK.y0) * hpe + 6 * Math.sin(hp * Math.PI), SK.z0 + (SK.z1 - SK.z0) * hpe);
         var over = Math.max(0, SK.p - 1) / (0.055 * STREAK_N);        // 0 at the hit, 1 when the tail lands
-        var fs = (18 + 10 * hp) * (1 + 1.6 * over); FL.scale.set(fs, fs, 1);
-        FL.material.opacity = (0.55 + 0.35 * hp) * (1 - over) * vis;
+        var fs = (18 + 10 * hp) * (1 + 1.6 * over);
+        if (PHOTO && NS.cam) {
+          /* the head of a blocked streak is a small light, not a pink cloud: at most ~44 px
+             on screen and it does not swell as the tail lands */
+          _v.copy(FL.position).applyMatrix4(EX.grp.matrixWorld);
+          fs = Math.min(18 + 10 * hp, 44 * _v.distanceTo(NS.cam.position) * Math.tan(NS.cam.fov * Math.PI / 360) / (window.innerHeight * 0.5));
+        }
+        FL.scale.set(fs, fs, 1);
+        FL.material.opacity = (PHOTO ? 0.5 : 0.55 + 0.35 * hp) * (1 - over) * vis;
       }
       if (SK.p >= 1 + 0.055 * STREAK_N) {                              // tail has landed
         if (SK.fl >= 0) { EX.flares[SK.fl].visible = false; EX.flares[SK.fl].material.opacity = 0; }
@@ -998,8 +1121,19 @@
          beat is seen from across the room. Real events only - nothing here is faked. */
       var e = t - RR.userData.t0, life = 5.0;
       if (e > life) { RR.visible = false; RR.material.opacity = 0; EX.impL[ri].visible = false; EX.impL[ri].material.opacity = 0; EX.impL[ri].userData.on = false; continue; }
-      var k = e / life, rs = 12 + 118 * Math.pow(k, 0.6); RR.scale.set(rs, rs, 1);
+      var k = e / life, rs = 12 + 118 * Math.pow(k, 0.6);
+      if (PHOTO) {
+        /* one calm red point of light per blocked source: sized by its event count,
+           never wider than ~54 px on screen, in over 0.35 s and out over the last 40 % */
+        rs = 15 + 6 * Math.min(4, Math.log(RR.userData.n || 1) / Math.LN2);
+        if (NS.cam) { var dC = NS.cam.position.distanceTo(RR.position), upx = (window.innerHeight * 0.5) / (Math.tan(NS.cam.fov * Math.PI / 360) * Math.max(1, dC)); rs = Math.min(rs, 54 / Math.max(1e-3, upx) / 0.45); }
+        rs *= EX.impK || 1;                 // psf.v2.m2: only the plate's centre is drawn, the core keeps its size
+        RR.scale.set(rs, rs, 1);
+        RR.material.opacity = 0.85 * Math.min(1, e / 0.35) * (k < 0.6 ? 1 : 1 - (k - 0.6) / 0.4) * vis;
+      } else {
+      RR.scale.set(rs, rs, 1);
       RR.material.opacity = (1 - k) * (1 - k) * vis;
+      }
       var ILb = EX.impL[ri]; ILb.userData.setW(1 + 0.25 * big); ILb.visible = vis > 0.05 && !lpHid(ILb, NS);
       ILb.material.opacity = ILb.visible ? Math.min(1, e * 4) * (k < 0.6 ? 1 : 1 - (k - 0.6) / 0.4) * vis : 0;
     }
@@ -1018,7 +1152,7 @@
       }
     });
     EX.tGeo.setDrawRange(0, tn * 2); EX.tGeo.attributes.position.needsUpdate = true;
-    EX.tLines.material.opacity = (0.22 + 0.14 * beat) * vis;
+    EX.tLines.material.opacity = (PHOTO ? 0.06 + 0.04 * beat : 0.22 + 0.14 * beat) * vis;
 
     /* particles */
     var P = EX.P, pos = EX.pPos, col = EX.pCol, n = 0;
@@ -1064,7 +1198,15 @@
         }
         if (S.fl >= 0) {                       // head flare rides the head point
           var VF = EX.flares[S.fl]; VF.position.set(x, y, z);
-          var vfs = pv < 1 ? 16 + 8 * pv : 22 - 8 * (pv - 1); VF.scale.set(vfs, vfs, 1);
+          var vfs = pv < 1 ? 16 + 8 * pv : 22 - 8 * (pv - 1);
+          if (PHOTO && NS.cam) {
+            /* a visitor is a small gold light on its way in. The country ring it leaves passes
+               within ~40 units of the camera at the security and internet stops, where the bare
+               16-unit sprite was a flat 250 px gold disc: at most ~56 px on screen */
+            _v.set(x, y, z).applyMatrix4(EX.grp.matrixWorld);
+            vfs = Math.min(vfs, 56 * _v.distanceTo(NS.cam.position) * Math.tan(NS.cam.fov * Math.PI / 360) / (window.innerHeight * 0.5));
+          }
+          VF.scale.set(vfs, vfs, 1);
           VF.material.opacity = (pv < 0 ? 0 : 0.9) * vis;
         }
         _c.setHex(COL.gold); r = _c.r; g = _c.g; b2 = _c.b;

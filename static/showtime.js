@@ -42,6 +42,7 @@
     '.st .h{font-size:10.5px;letter-spacing:1.8px;text-transform:uppercase;color:var(--st-dim);margin-bottom:5px;',
     '  display:flex;align-items:center;gap:8px}',
     '.st .h:after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--st-line),transparent)}',
+    '.hudm{display:none}',                 /* the folded one-row form: only the wall's hero chrome shows it (hero.js) */
     '.st .box{background:var(--st-bg);border:1px solid var(--st-line);border-radius:5px;padding:7px 10px;',
     '  box-shadow:0 8px 28px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.04)}',
 
@@ -201,7 +202,7 @@
     if (LITE) return;
     el.ai = h('div', 'st-ai', 'st', '<div class="h">AI fabric</div><div class="body"></div>');
     el.det = h('div', 'st-det', 'st', '<div class="h">Detections · Frigate</div><div class="cards"></div><div class="cams"></div>');
-    el.emby = h('div', 'st-emby', 'st', '<div class="h">Now playing · Emby</div><div class="body"></div>');
+    el.emby = h('div', 'st-emby', 'st', '<div class="h">Now playing · Emby</div><div class="fw"><div class="body"></div></div><div class="hudm"><div class="in"></div></div>');
     el.alist = h('div', 'st-alist', 'st', '<div class="h">Open problems</div><div class="body"><div class="ok">all clear</div></div>');
     b.appendChild(el.ai); b.appendChild(el.emby); b.appendChild(el.alist);  // el.det (Detections/Frigate) intentionally not shown on the physical screens
   }
@@ -231,7 +232,7 @@
      poll answers; the bars fall back to "used only" rather than inventing a
      card size (nothing here assumes a particular GPU). */
   var VRAM = {};
-  var lastAI = '', lastEmby = '', lastCams = '', lastAlist = '';
+  var lastAI = '', lastEmby = '', lastEmbyMini = '', lastCams = '', lastAlist = '';
 
   function renderAI(d) {
     var out = '';
@@ -309,6 +310,11 @@
       out += '<div class="idle">' + ((e.playing || []).length ? '' : 'nothing playing · ') + '<b>' + idle + '</b> sessions connected</div>';
     }
     if (out !== lastEmby) { lastEmby = out; el.emby.querySelector('.body').innerHTML = out; }
+    /* the wall folds this panel to one row at its hero stops (hero.js) */
+    var np = (e.playing || []).length, ns = (e.sessions || []).filter(function (s) { return s.client !== 'channel-priority-watcher'; }).length;
+    var mini = '<div class="r"><span>Sessions</span><b' + (e.up ? '' : ' class="bad"') + '>' +
+               (e.up ? ns + ' <u>connected</u>' + (np ? ' · ' + np + ' <u>playing</u>' : '') : 'offline') + '</b></div>';
+    if (mini !== lastEmbyMini) { lastEmbyMini = mini; el.emby.querySelector('.hudm .in').innerHTML = mini; }
   }
 
   var SEVC = { 5: '#ff2b2b', 4: '#ff5a6a', 3: '#ffa033', 2: '#ffd24a', 1: '#8fb0d0' };
@@ -357,7 +363,10 @@
       var why = m.reason && m.reason.length ? m.reason.map(function (r) { return String(r).replace(/^zbx:/, '').replace(/^net_down:\d+$/, 'device down'); }).join(' · ') : 'new problem';
       el.alert.querySelector('.why').textContent = why;
     }
-    try { if (window.cinemaSet) window.cinemaSet(GRADES[name]); } catch (e) { }
+    /* once cinema.js can lock its grade the wall look is its own; only the
+       night and alert presets are still sent (a locked cinemaSet takes exposure alone) */
+    var locked = window.CINEMA && typeof window.CINEMA.lockGrade === 'function';
+    try { if (window.cinemaSet && (!locked || name === 'night' || name === 'alert')) window.cinemaSet(GRADES[name]); } catch (e) { }
     try { if (window.CINEMA && name === 'showcase' && !window.CINEMA.cinema) { /* keep letterbox off: bars would cover the feeds */ } } catch (e) { }
   }
   function postMode(name) {

@@ -211,18 +211,106 @@
     "tv": "opacity 1.0 for the subject; 0.55-0.75 for galaxies behind it (keep the core < 1.0 after bloom: the plate core is ~1.0 by design)",
     "wall": "opacity 0.85-1.0 with raw sampling; the wall's knee rolls the core off"
    }
+  },
+  "gold_v2": {
+   "file": "galaxies/galaxy_gold_v2.png",
+   "v": 2,
+   "role": "node:1",
+   "accent": "#ffb347",
+   "supersedes": "gold",
+   "core": [
+    0.5,
+    0.5
+   ],
+   "blend": "additive",
+   "alpha": "straight",
+   "spin": "ccw",
+   "look": "grand-design two-arm spiral (M51 family): white-hot core in a large golden bulge, nuclear dust spiral, golden-cream inner disc, teal-green outer arms (the 10-04 A/C look) with pink HII knots and blue clusters, dark reddened dust lanes on the arms' inner edges and feathers on the outer",
+   "note": "v2: the core no longer clips (premultiplied peak ~0.91, alpha 0.92), bulge structure visible",
+   "px": [
+    2048,
+    2048
+   ],
+   "bytes": 1830865,
+   "luma": {
+    "max": 0.911,
+    "p99": 0.617,
+    "p50_visible": 0.131,
+    "mean": 0.0936
+   },
+   "coverage": {
+    "alpha_max": 0.922,
+    "alpha_mean": 0.1056,
+    "covered": 0.582
+   },
+   "radius": 0.895,
+   "tv_display": {
+    "core": 0.857,
+    "bright_arm_p99": 0.779
+   }
+  },
+  "blue_v2": {
+   "file": "galaxies/galaxy_blue_v2.png",
+   "v": 2,
+   "role": "node:0",
+   "accent": "#5ad7ff",
+   "supersedes": "blue",
+   "core": [
+    0.5,
+    0.5
+   ],
+   "blend": "additive",
+   "alpha": "straight",
+   "spin": "ccw",
+   "look": "SAB(rs)bc (M83 / NGC 3184 family): weak oval bar with leading-edge dust lanes, compact warm bulge, two open branching arms in blue-white young light, many pink HII regions (the 10-05 B look)",
+   "note": "v2: the core no longer clips (premultiplied peak ~0.91, alpha 0.92), bulge structure visible",
+   "px": [
+    2048,
+    2048
+   ],
+   "bytes": 1975001,
+   "luma": {
+    "max": 0.911,
+    "p99": 0.663,
+    "p50_visible": 0.109,
+    "mean": 0.0884
+   },
+   "coverage": {
+    "alpha_max": 0.922,
+    "alpha_mean": 0.1023,
+    "covered": 0.627
+   },
+   "radius": 0.91,
+   "tv_display": {
+    "core": 0.857,
+    "bright_arm_p99": 0.795
+   }
   }
  },
  "discs": {
   "node:1": {
    "file": "galaxies/galaxy_gold.png",
    "size": 2.0,
-   "accent": "#ffb347"
+   "accent": "#ffb347",
+   "v2": {
+    "file": "galaxies/galaxy_gold_v2.png",
+    "size": 2.0,
+    "accent": "#ffb347",
+    "radius": 0.895,
+    "v": 2
+   }
   },
   "node:0": {
    "file": "galaxies/galaxy_blue.png",
    "size": 2.0,
-   "accent": "#5ad7ff"
+   "accent": "#5ad7ff",
+   "v2": {
+    "file": "galaxies/galaxy_blue_v2.png",
+    "size": 2.0,
+    "accent": "#5ad7ff",
+    "radius": 0.91,
+    "v": 2
+   }
   },
   "sys:core": {
    "file": "galaxies/galaxy_edge.png",
@@ -269,7 +357,33 @@
     "alpha_mean": 0.0539,
     "covered": 0.381
    },
-   "use": "the SAME galaxy (model, seed, colours) seen 86 deg from face-on: cross-fade it in as a camera-facing quad (width = plate width) when the face-on plane is within ~20 deg of edge-on, where a flat disc would collapse to a line. Major axis horizontal; the near side is at the bottom."
+   "use": "the SAME galaxy (model, seed, colours) seen 86 deg from face-on: cross-fade it in as a camera-facing quad (width = plate width) when the face-on plane is within ~20 deg of edge-on, where a flat disc would collapse to a line. Major axis horizontal; the near side is at the bottom.",
+   "v2": {
+    "file": "galaxies/galaxy_gold_edgeon_v2.png",
+    "v": 2,
+    "of": "gold_v2",
+    "inclination_deg": 86,
+    "aspect": 2.0,
+    "blend": "additive",
+    "alpha": "straight",
+    "use": "edge-on view of the SAME galaxy as gold_v2 (model, seed, colours), band-limited (no rain). Major axis horizontal; plate width = the face-on plate's width, so scale both quads alike.",
+    "px": [
+     2048,
+     1024
+    ],
+    "bytes": 236802,
+    "luma": {
+     "max": 0.839,
+     "p99": 0.352,
+     "p50_visible": 0.082,
+     "mean": 0.0227
+    },
+    "coverage": {
+     "alpha_max": 0.922,
+     "alpha_mean": 0.0265,
+     "covered": 0.207
+    }
+   }
   }
  },
  "sky": {
@@ -294,6 +408,29 @@
   "exposure": {
    "tv": "sphere colour (tint) 0.35 for close-ups, 0.40-0.45 for wide shots (CONTRACTS 8a), raw sampling (the old plate used 0x333333 = 0.2 because it was brighter where it was busy). Measured on the 3080 Ti through the TV chain at 0.35: sky-only 6x4 cells 0.023-0.09 display luma (vignetted corners lowest). At 0.35 the darkest 5% shows ~0.008, the median ~0.031, the band ~0.362 on the TV: visible everywhere, well under any galaxy arm.",
    "wall": "as scene.background with raw sampling: multiply by ~0.30 (the wall grade does not lift it); skip restrainSky(), the plate is already restrained"
+  },
+  "v2": {
+   "file": "sky/deep_sky_v2.jpg",
+   "v": 2,
+   "projection": "equirect",
+   "wrap": "seamless in u, pole-clean",
+   "bands": 2,
+   "content": "the v1 sky model at 8192x4096 with a second, fainter Milky-Way-like band crossing the first, more and fainter stars and field galaxies, landmark objects from the bg.v2 set; computed in float, dithered to 8 bits (no banding), JPG q88 4:4:4",
+   "exposure": "Start from v1's sky.exposure values and scale the tint by sky.luma.mean / sky.v2.luma.mean (both measured from the shipped bytes), then check the sky floor on your own display",
+   "px": [
+    8192,
+    4096
+   ],
+   "bytes": 1512925,
+   "luma": {
+    "max": 0.993,
+    "p99": 0.475,
+    "p50_visible": 0.099,
+    "mean": 0.1236,
+    "p5": 0.0398,
+    "p95": 0.289,
+    "p999": 0.693
+   }
   }
  },
  "psf": {
@@ -373,6 +510,80 @@
     "alpha_max": 1.0,
     "alpha_mean": 0.0058,
     "covered": 0.139
+   }
+  },
+  "v2": {
+   "m1": {
+    "file": "psf/psf_m1_v2.png",
+    "v": 2,
+    "kind": "bright: 4 + 2 diffraction spikes",
+    "blend": "additive",
+    "alpha": "straight",
+    "tint": "neutral-white sprite (fringe tint <= 0.25): multiply by the body's colour",
+    "px": [
+     256,
+     256
+    ],
+    "bytes": 10566,
+    "luma": {
+     "max": 0.996,
+     "p99": 0.133,
+     "p50_visible": 0.024,
+     "mean": 0.008
+    },
+    "coverage": {
+     "alpha_max": 1.0,
+     "alpha_mean": 0.0081,
+     "covered": 0.198
+    }
+   },
+   "m2": {
+    "file": "psf/psf_m2_v2.png",
+    "v": 2,
+    "kind": "medium: 4 short spikes",
+    "blend": "additive",
+    "alpha": "straight",
+    "tint": "neutral-white sprite (fringe tint <= 0.25): multiply by the body's colour",
+    "px": [
+     256,
+     256
+    ],
+    "bytes": 6906,
+    "luma": {
+     "max": 0.996,
+     "p99": 0.096,
+     "p50_visible": 0.024,
+     "mean": 0.005
+    },
+    "coverage": {
+     "alpha_max": 1.0,
+     "alpha_mean": 0.0051,
+     "covered": 0.115
+    }
+   },
+   "m3": {
+    "file": "psf/psf_m3_v2.png",
+    "v": 2,
+    "kind": "faint: core + halo only",
+    "blend": "additive",
+    "alpha": "straight",
+    "tint": "neutral-white sprite (fringe tint <= 0.25): multiply by the body's colour",
+    "px": [
+     256,
+     256
+    ],
+    "bytes": 2271,
+    "luma": {
+     "max": 1.0,
+     "p99": 0.065,
+     "p50_visible": 0.024,
+     "mean": 0.0033
+    },
+    "coverage": {
+     "alpha_max": 1.0,
+     "alpha_mean": 0.0033,
+     "covered": 0.072
+    }
    }
   }
  },
@@ -690,5 +901,841 @@
     "galaxies/galaxy_pve_b.png"
    ]
   ]
+ },
+ "bg": {
+  "v2": [
+   {
+    "file": "bg/bg_01.png",
+    "v": 2,
+    "kind": "spiral",
+    "blend": "additive",
+    "alpha": "straight",
+    "px": [
+     512,
+     512
+    ],
+    "bytes": 132948,
+    "luma": {
+     "max": 0.73,
+     "p99": 0.359,
+     "p50_visible": 0.099,
+     "mean": 0.0374
+    },
+    "coverage": {
+     "alpha_max": 0.863,
+     "alpha_mean": 0.0429,
+     "covered": 0.306
+    }
+   },
+   {
+    "file": "bg/bg_02.png",
+    "v": 2,
+    "kind": "spiral",
+    "blend": "additive",
+    "alpha": "straight",
+    "px": [
+     512,
+     512
+    ],
+    "bytes": 183724,
+    "luma": {
+     "max": 0.671,
+     "p99": 0.344,
+     "p50_visible": 0.109,
+     "mean": 0.0525
+    },
+    "coverage": {
+     "alpha_max": 0.863,
+     "alpha_mean": 0.0616,
+     "covered": 0.451
+    }
+   },
+   {
+    "file": "bg/bg_03.png",
+    "v": 2,
+    "kind": "spiral",
+    "blend": "additive",
+    "alpha": "straight",
+    "px": [
+     512,
+     512
+    ],
+    "bytes": 63863,
+    "luma": {
+     "max": 0.692,
+     "p99": 0.253,
+     "p50_visible": 0.123,
+     "mean": 0.0166
+    },
+    "coverage": {
+     "alpha_max": 0.859,
+     "alpha_mean": 0.0191,
+     "covered": 0.13
+    }
+   },
+   {
+    "file": "bg/bg_04.png",
+    "v": 2,
+    "kind": "spiral",
+    "blend": "additive",
+    "alpha": "straight",
+    "px": [
+     512,
+     512
+    ],
+    "bytes": 149387,
+    "luma": {
+     "max": 0.689,
+     "p99": 0.288,
+     "p50_visible": 0.084,
+     "mean": 0.0374
+    },
+    "coverage": {
+     "alpha_max": 0.863,
+     "alpha_mean": 0.0499,
+     "covered": 0.381
+    }
+   },
+   {
+    "file": "bg/bg_05.png",
+    "v": 2,
+    "kind": "spiral",
+    "blend": "additive",
+    "alpha": "straight",
+    "px": [
+     512,
+     512
+    ],
+    "bytes": 105223,
+    "luma": {
+     "max": 0.737,
+     "p99": 0.327,
+     "p50_visible": 0.091,
+     "mean": 0.026
+    },
+    "coverage": {
+     "alpha_max": 0.863,
+     "alpha_mean": 0.0352,
+     "covered": 0.223
+    }
+   },
+   {
+    "file": "bg/bg_06.png",
+    "v": 2,
+    "kind": "spiral",
+    "blend": "additive",
+    "alpha": "straight",
+    "px": [
+     512,
+     512
+    ],
+    "bytes": 127399,
+    "luma": {
+     "max": 0.679,
+     "p99": 0.352,
+     "p50_visible": 0.054,
+     "mean": 0.0337
+    },
+    "coverage": {
+     "alpha_max": 0.863,
+     "alpha_mean": 0.0432,
+     "covered": 0.443
+    }
+   },
+   {
+    "file": "bg/bg_07.png",
+    "v": 2,
+    "kind": "spiral",
+    "blend": "additive",
+    "alpha": "straight",
+    "px": [
+     512,
+     512
+    ],
+    "bytes": 114172,
+    "luma": {
+     "max": 0.712,
+     "p99": 0.322,
+     "p50_visible": 0.049,
+     "mean": 0.0231
+    },
+    "coverage": {
+     "alpha_max": 0.859,
+     "alpha_mean": 0.0299,
+     "covered": 0.286
+    }
+   },
+   {
+    "file": "bg/bg_08.png",
+    "v": 2,
+    "kind": "spiral",
+    "blend": "additive",
+    "alpha": "straight",
+    "px": [
+     512,
+     512
+    ],
+    "bytes": 53346,
+    "luma": {
+     "max": 0.688,
+     "p99": 0.351,
+     "p50_visible": 0.076,
+     "mean": 0.0189
+    },
+    "coverage": {
+     "alpha_max": 0.863,
+     "alpha_mean": 0.023,
+     "covered": 0.183
+    }
+   },
+   {
+    "file": "bg/bg_09.png",
+    "v": 2,
+    "kind": "elliptical cD (globular swarm)",
+    "blend": "additive",
+    "alpha": "straight",
+    "px": [
+     512,
+     512
+    ],
+    "bytes": 25971,
+    "luma": {
+     "max": 0.712,
+     "p99": 0.294,
+     "p50_visible": 0.024,
+     "mean": 0.0193
+    },
+    "coverage": {
+     "alpha_max": 0.863,
+     "alpha_mean": 0.0224,
+     "covered": 0.408
+    }
+   },
+   {
+    "file": "bg/bg_10.png",
+    "v": 2,
+    "kind": "elliptical with a dust lane",
+    "blend": "additive",
+    "alpha": "straight",
+    "px": [
+     512,
+     512
+    ],
+    "bytes": 26762,
+    "luma": {
+     "max": 0.662,
+     "p99": 0.266,
+     "p50_visible": 0.022,
+     "mean": 0.0114
+    },
+    "coverage": {
+     "alpha_max": 0.863,
+     "alpha_mean": 0.0133,
+     "covered": 0.234
+    }
+   },
+   {
+    "file": "bg/bg_11.png",
+    "v": 2,
+    "kind": "elliptical E6 with shells",
+    "blend": "additive",
+    "alpha": "straight",
+    "px": [
+     512,
+     512
+    ],
+    "bytes": 16118,
+    "luma": {
+     "max": 0.712,
+     "p99": 0.132,
+     "p50_visible": 0.024,
+     "mean": 0.0056
+    },
+    "coverage": {
+     "alpha_max": 0.863,
+     "alpha_mean": 0.0066,
+     "covered": 0.111
+    }
+   },
+   {
+    "file": "bg/bg_12.png",
+    "v": 2,
+    "kind": "dwarf elliptical (diffuse, bluer)",
+    "blend": "additive",
+    "alpha": "straight",
+    "px": [
+     512,
+     512
+    ],
+    "bytes": 32178,
+    "luma": {
+     "max": 0.523,
+     "p99": 0.233,
+     "p50_visible": 0.025,
+     "mean": 0.012
+    },
+    "coverage": {
+     "alpha_max": 0.533,
+     "alpha_mean": 0.0125,
+     "covered": 0.227
+    }
+   },
+   {
+    "file": "bg/bg_13.png",
+    "v": 2,
+    "kind": "irregular",
+    "blend": "additive",
+    "alpha": "straight",
+    "px": [
+     512,
+     512
+    ],
+    "bytes": 143556,
+    "luma": {
+     "max": 0.738,
+     "p99": 0.343,
+     "p50_visible": 0.083,
+     "mean": 0.0427
+    },
+    "coverage": {
+     "alpha_max": 0.863,
+     "alpha_mean": 0.0483,
+     "covered": 0.411
+    }
+   },
+   {
+    "file": "bg/bg_14.png",
+    "v": 2,
+    "kind": "irregular",
+    "blend": "additive",
+    "alpha": "straight",
+    "px": [
+     512,
+     512
+    ],
+    "bytes": 89578,
+    "luma": {
+     "max": 0.685,
+     "p99": 0.315,
+     "p50_visible": 0.102,
+     "mean": 0.0256
+    },
+    "coverage": {
+     "alpha_max": 0.855,
+     "alpha_mean": 0.0288,
+     "covered": 0.226
+    }
+   },
+   {
+    "file": "bg/bg_15.png",
+    "v": 2,
+    "kind": "interacting pair",
+    "blend": "additive",
+    "alpha": "straight",
+    "px": [
+     512,
+     512
+    ],
+    "bytes": 110710,
+    "luma": {
+     "max": 0.667,
+     "p99": 0.275,
+     "p50_visible": 0.067,
+     "mean": 0.0233
+    },
+    "coverage": {
+     "alpha_max": 0.816,
+     "alpha_mean": 0.0271,
+     "covered": 0.269
+    }
+   },
+   {
+    "file": "bg/bg_16.png",
+    "v": 2,
+    "kind": "interacting pair",
+    "blend": "additive",
+    "alpha": "straight",
+    "px": [
+     512,
+     512
+    ],
+    "bytes": 143348,
+    "luma": {
+     "max": 0.625,
+     "p99": 0.26,
+     "p50_visible": 0.057,
+     "mean": 0.0246
+    },
+    "coverage": {
+     "alpha_max": 0.878,
+     "alpha_mean": 0.0331,
+     "covered": 0.333
+    }
+   }
+  ]
+ },
+ "glows": {
+  "corona_v2": {
+   "v": 2,
+   "limb": 0.25,
+   "blend": "additive",
+   "alpha": "straight",
+   "colour": "5600 K warm white baked in; tint by multiplying",
+   "use": "three sprites on ONE quad centred on the star: quad width = 2 r / limb (8 r). core = the photosphere (limb-darkened, granulated, premultiplied peak 0.92): skip it where the page draws the star as a lit sphere. halo = the corona: starts AT the limb (about 10 % inside it, never a flat disc), peak 0.45 just outside, ~(limb/r)^2.3 with soft streamers, zero before the sprite edge. flare = 6 thin diffraction spikes + 2 faint horizontal ones, nothing inside the limb, peak 0.60; camera-fixed (billboard, rotation 0). core + halo stays below the core's centre value at the limb.",
+   "core": {
+    "file": "psf/corona_core.png",
+    "v": 2,
+    "px": [
+     1024,
+     1024
+    ],
+    "bytes": 81270,
+    "luma": {
+     "max": 0.852,
+     "p99": 0.749,
+     "p50_visible": 0.071,
+     "mean": 0.0428
+    },
+    "coverage": {
+     "alpha_max": 0.922,
+     "alpha_mean": 0.0487,
+     "covered": 0.219
+    }
+   },
+   "halo": {
+    "file": "psf/corona_halo.png",
+    "v": 2,
+    "px": [
+     1024,
+     1024
+    ],
+    "bytes": 76379,
+    "luma": {
+     "max": 0.405,
+     "p99": 0.365,
+     "p50_visible": 0.052,
+     "mean": 0.0411
+    },
+    "coverage": {
+     "alpha_max": 0.435,
+     "alpha_mean": 0.044,
+     "covered": 0.482
+    }
+   },
+   "flare": {
+    "file": "psf/corona_flare.png",
+    "v": 2,
+    "px": [
+     1024,
+     1024
+    ],
+    "bytes": 62807,
+    "luma": {
+     "max": 0.523,
+     "p99": 0.106,
+     "p50_visible": 0.048,
+     "mean": 0.0032
+    },
+    "coverage": {
+     "alpha_max": 0.6,
+     "alpha_mean": 0.0037,
+     "covered": 0.042
+    }
+   }
+  }
+ },
+ "nebulae": {
+  "v2": {
+   "em_r": {
+    "file": "nebulae/neb_em_r_v2.png",
+    "v": 2,
+    "kind": "H-alpha emission complex with an OIII heart",
+    "blend": "additive",
+    "alpha": "straight",
+    "px": [
+     2048,
+     2048
+    ],
+    "bytes": 689829,
+    "luma": {
+     "max": 0.184,
+     "p99": 0.124,
+     "p50_visible": 0.053,
+     "mean": 0.0171
+    },
+    "coverage": {
+     "alpha_max": 0.329,
+     "alpha_mean": 0.0346,
+     "covered": 0.363
+    }
+   },
+   "ref_b": {
+    "file": "nebulae/neb_ref_b_v2.png",
+    "v": 2,
+    "kind": "blue reflection nebula round two hot stars",
+    "blend": "additive",
+    "alpha": "straight",
+    "px": [
+     2048,
+     2048
+    ],
+    "bytes": 490414,
+    "luma": {
+     "max": 0.208,
+     "p99": 0.129,
+     "p50_visible": 0.026,
+     "mean": 0.0115
+    },
+    "coverage": {
+     "alpha_max": 0.298,
+     "alpha_mean": 0.019,
+     "covered": 0.375
+    }
+   },
+   "dust": {
+    "file": "nebulae/neb_dust_v2.png",
+    "v": 2,
+    "kind": "dark dust lane",
+    "blend": "normal",
+    "alpha": "straight",
+    "encoding": "DENSITY plate, not a = max: alpha = column density (peak 0.35), rgb = the faint warm colour of the dust. Draw with NORMAL blending so it dims what is behind it; it is not additive light",
+    "px": [
+     2048,
+     2048
+    ],
+    "bytes": 851608,
+    "luma": {
+     "max": 0.108,
+     "p99": 0.077,
+     "p50_visible": 0.031,
+     "mean": 0.0071
+    },
+    "coverage": {
+     "alpha_max": 0.349,
+     "alpha_mean": 0.0296,
+     "covered": 0.349
+    }
+   },
+   "cirrus": {
+    "file": "nebulae/neb_cirrus_v2.png",
+    "v": 2,
+    "kind": "faint galactic cirrus",
+    "blend": "additive",
+    "alpha": "straight",
+    "px": [
+     2048,
+     2048
+    ],
+    "bytes": 334726,
+    "luma": {
+     "max": 0.115,
+     "p99": 0.089,
+     "p50_visible": 0.033,
+     "mean": 0.011
+    },
+    "coverage": {
+     "alpha_max": 0.122,
+     "alpha_mean": 0.0117,
+     "covered": 0.308
+    }
+   }
+  }
+ },
+ "celestial": {
+  "surfaces": {
+   "rock_basalt_v2": {
+    "file": "celestial/surfaces/rock_basalt_v2.jpg",
+    "v": 2,
+    "kind": "rocky",
+    "tintable": true,
+    "projection": "equirect",
+    "colour": "sRGB-encoded albedo (like the v1 celestial set), star-lit in the shader",
+    "px": [
+     1024,
+     512
+    ],
+    "bytes": 57925,
+    "luma": 0.3931,
+    "normal": "celestial/surfaces/rock_basalt_v2_n.png",
+    "normal_bytes": 245728
+   },
+   "rock_ochre_v2": {
+    "file": "celestial/surfaces/rock_ochre_v2.jpg",
+    "v": 2,
+    "kind": "rocky",
+    "tintable": true,
+    "projection": "equirect",
+    "colour": "sRGB-encoded albedo (like the v1 celestial set), star-lit in the shader",
+    "px": [
+     1024,
+     512
+    ],
+    "bytes": 45870,
+    "luma": 0.4516,
+    "normal": "celestial/surfaces/rock_ochre_v2_n.png",
+    "normal_bytes": 212378
+   },
+   "ice_rime_v2": {
+    "file": "celestial/surfaces/ice_rime_v2.jpg",
+    "v": 2,
+    "kind": "ice",
+    "tintable": true,
+    "projection": "equirect",
+    "colour": "sRGB-encoded albedo (like the v1 celestial set), star-lit in the shader",
+    "px": [
+     1024,
+     512
+    ],
+    "bytes": 41448,
+    "luma": 0.7856,
+    "normal": "celestial/surfaces/ice_rime_v2_n.png",
+    "normal_bytes": 207642
+   },
+   "ice_fracture_v2": {
+    "file": "celestial/surfaces/ice_fracture_v2.jpg",
+    "v": 2,
+    "kind": "ice",
+    "tintable": true,
+    "projection": "equirect",
+    "colour": "sRGB-encoded albedo (like the v1 celestial set), star-lit in the shader",
+    "px": [
+     1024,
+     512
+    ],
+    "bytes": 53140,
+    "luma": 0.8326,
+    "normal": "celestial/surfaces/ice_fracture_v2_n.png",
+    "normal_bytes": 153428
+   },
+   "gas_banded_v2": {
+    "file": "celestial/surfaces/gas_banded_v2.jpg",
+    "v": 2,
+    "kind": "gas",
+    "tintable": true,
+    "projection": "equirect",
+    "colour": "sRGB-encoded albedo (like the v1 celestial set), star-lit in the shader",
+    "px": [
+     1024,
+     512
+    ],
+    "bytes": 48462,
+    "luma": 0.6687
+   },
+   "ocean_v2": {
+    "file": "celestial/surfaces/ocean_v2.jpg",
+    "v": 2,
+    "kind": "ocean",
+    "tintable": false,
+    "projection": "equirect",
+    "colour": "sRGB-encoded albedo (like the v1 celestial set), star-lit in the shader",
+    "px": [
+     1024,
+     512
+    ],
+    "bytes": 122648,
+    "luma": 0.3594
+   },
+   "lava_dim_v2": {
+    "file": "celestial/surfaces/lava_dim_v2.jpg",
+    "v": 2,
+    "kind": "lava",
+    "tintable": false,
+    "projection": "equirect",
+    "colour": "sRGB-encoded albedo (like the v1 celestial set), star-lit in the shader",
+    "px": [
+     1024,
+     512
+    ],
+    "bytes": 33696,
+    "luma": 0.1269,
+    "normal": "celestial/surfaces/lava_dim_v2_n.png",
+    "normal_bytes": 191442
+   },
+   "metal_v2": {
+    "file": "celestial/surfaces/metal_v2.jpg",
+    "v": 2,
+    "kind": "metal",
+    "tintable": true,
+    "projection": "equirect",
+    "colour": "sRGB-encoded albedo (like the v1 celestial set), star-lit in the shader",
+    "px": [
+     1024,
+     512
+    ],
+    "bytes": 44772,
+    "luma": 0.6073,
+    "normal": "celestial/surfaces/metal_v2_n.png",
+    "normal_bytes": 200220
+   }
+  },
+  "atmos": {
+   "rim_lut": {
+    "file": "celestial/atmos/rim_lut.png",
+    "v": 2,
+    "format": "single-channel L, 256 x 4, sample LINEAR, clamp",
+    "u_coord": "rows 0, 2, 3: u = (r / R_planet - 0.80) / 0.40, so u 0 = 0.80 R, u 0.5 = the limb, u 1 = 1.20 R; row 1: u = 0.5 + 0.5 * dot(N, L)",
+    "v_coord": "row k is image row k from the TOP: v = (k + 0.5) / 4 unflipped, 1 - (k + 0.5) / 4 with three.js' default flipY",
+    "rows": {
+     "0": "lit-side atmosphere rim: rises from 0.80 R, peaks AT the limb (u 0.5), fades outward over ~6 % of the radius, zero by 1.16 R",
+     "1": "terminator ramp: day/night factor against N.L (soft twilight, 3 % night floor)",
+     "2": "night-side rim (forward scatter): thinner, peak 0.45 at the limb",
+     "3": "interior haze toward the limb (0 at 0.80 R, 1 at the limb, 0 outside)"
+    },
+    "px": [
+     256,
+     4
+    ],
+    "bytes": 275
+   }
+  },
+  "rings": {
+   "ring_ice_v2": {
+    "file": "celestial/rings/ring_ice_v2.png",
+    "v": 2,
+    "inner": 1.25,
+    "outer": 2.3,
+    "alpha": "straight",
+    "encoding": "NOT a = max: rgb = ring colour, alpha = opacity; u = radius (inner -> outer), v = 64 rows of azimuthal variation; normal blending",
+    "px": [
+     1024,
+     64
+    ],
+    "bytes": 97430,
+    "luma": {
+     "max": 0.873,
+     "p99": 0.826,
+     "p50_visible": 0.451,
+     "mean": 0.3834
+    },
+    "coverage": {
+     "alpha_max": 1.0,
+     "alpha_mean": 0.5044,
+     "covered": 0.95
+    }
+   },
+   "ring_dust_v2": {
+    "file": "celestial/rings/ring_dust_v2.png",
+    "v": 2,
+    "inner": 1.4,
+    "outer": 2.6,
+    "alpha": "straight",
+    "encoding": "NOT a = max: rgb = ring colour, alpha = opacity; u = radius (inner -> outer), v = 64 rows of azimuthal variation; normal blending",
+    "px": [
+     1024,
+     64
+    ],
+    "bytes": 83682,
+    "luma": {
+     "max": 0.233,
+     "p99": 0.197,
+     "p50_visible": 0.12,
+     "mean": 0.1012
+    },
+    "coverage": {
+     "alpha_max": 0.392,
+     "alpha_mean": 0.1861,
+     "covered": 0.953
+    }
+   }
+  }
+ },
+ "fx": {
+  "stream_v2": {
+   "file": "fx/stream_v2.png",
+   "v": 2,
+   "blend": "additive",
+   "alpha": "straight",
+   "tile": "repeat along U, clamp along V",
+   "note": "soft volumetric streak with dust motes; zero at both V edges; premultiplied peak 0.92",
+   "px": [
+    512,
+    64
+   ],
+   "bytes": 17217,
+   "luma": {
+    "max": 0.86,
+    "p99": 0.615,
+    "p50_visible": 0.124,
+    "mean": 0.1448
+   },
+   "coverage": {
+    "alpha_max": 0.922,
+    "alpha_mean": 0.1551,
+    "covered": 0.886
+   }
+  },
+  "grain": {
+   "v": 2,
+   "files": [
+    "fx/grain_0.png",
+    "fx/grain_1.png",
+    "fx/grain_2.png"
+   ],
+   "px": [
+    256,
+    256
+   ],
+   "bytes": 111037,
+   "format": "single-channel L, mean 128, RMS 4/255, tileable both ways",
+   "use": "c += (grain - 128/255) * k * weight(luma); cycle the 3 frames"
+  }
+ },
+ "v2": {
+  "v": 2,
+  "date": "2026-11",
+  "spec": "additive v2 asset set (both screens)",
+  "generator": "numpy, seeded (galaxies, nebulae, sky, point spreads, corona, streak) and Blender Cycles (planet surfaces, rings)",
+  "rule": "additive: every v1 key and value is unchanged; a consumer that does not find a v2 key keeps its v1 behaviour. Paths are relative to this manifest.",
+  "keys": [
+   "galaxies.gold_v2",
+   "galaxies.blue_v2",
+   "discs.node:1.v2",
+   "discs.node:0.v2",
+   "variants.gold_edgeon.v2",
+   "bg.v2[16]",
+   "glows.corona_v2 {limb, core, halo, flare}",
+   "nebulae.v2.em_r",
+   "nebulae.v2.ref_b",
+   "nebulae.v2.dust",
+   "nebulae.v2.cirrus",
+   "sky.v2",
+   "celestial.surfaces.<name>_v2 (8)",
+   "celestial.atmos.rim_lut",
+   "celestial.rings.ring_ice_v2",
+   "celestial.rings.ring_dust_v2",
+   "fx.stream_v2",
+   "fx.grain {files[3]}",
+   "psf.v2.m1",
+   "psf.v2.m2",
+   "psf.v2.m3",
+   "v2 (summary: generator, keys, files, bytes, missing)"
+  ],
+  "files": 45,
+  "bytes": 10438254,
+  "mb": 10.44,
+  "budget_mb": 14.0,
+  "largest": [
+   [
+    1975001,
+    "galaxies/galaxy_blue_v2.png"
+   ],
+   [
+    1830865,
+    "galaxies/galaxy_gold_v2.png"
+   ],
+   [
+    1512925,
+    "sky/deep_sky_v2.jpg"
+   ],
+   [
+    851608,
+    "nebulae/neb_dust_v2.png"
+   ],
+   [
+    689829,
+    "nebulae/neb_em_r_v2.png"
+   ]
+  ],
+  "missing": []
  }
 }

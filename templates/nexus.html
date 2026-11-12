@@ -42,7 +42,7 @@
   .lbl.gal b,.lbl.planet b{font-size:var(--fs-m);font-weight:600}
   .lbl.planet.home b{font-weight:500;color:var(--ink)}
   .lbl.sun b,.lbl.bridge b{font-weight:500}
-  .lbl.grp b{font-weight:600;color:var(--ink2);text-transform:uppercase;letter-spacing:.04em}
+  .lbl.grp b{font-weight:600;color:var(--ink2)}
   .lbl.down b,.lbl.guest.down b,.lbl.guest.far.down b{color:#e5848a}
   /* lab gear: a small outlined tag after the name - a role, not a status, so no colour */
   .lbl.lab b::after{content:'LAB';display:inline-block;margin-left:5px;padding:0 3px;font-size:9px;line-height:11px;font-weight:600;
@@ -103,6 +103,13 @@
   #card-r{right:24px;top:50%;transform:translateY(-50%)}
   /* caption: the current view, plain; the dot is the wall-sync state (filled = following the wall) */
   #caption{bottom:30px;left:0;right:0;text-align:center}
+  /* the wall's story line (lightstate v13 `story`, final text, <= 64 chars) - ONE centred line above the
+     caption, 18 px / 500, at most 600 px wide so a 9:16 centre crop of this 1920 CSS frame holds it, never an ellipsis
+     (the wall truncates at source), dark halo for legibility (not a glow), cross-faded 380 ms like the caption.
+     Absent / stale / free roam = hidden (no layout jump: it keeps its line box). */
+  #story{display:block;max-width:600px;margin:0 auto 8px;font-size:var(--fs-l);font-weight:500;line-height:24px;height:24px;color:var(--ink);
+    white-space:nowrap;overflow:visible;text-shadow:0 1px 2px rgba(0,0,0,.9),0 0 6px rgba(0,0,0,.6);opacity:0;transition:opacity .38s var(--ease)}
+  #story.on{opacity:1}
   #cap{display:inline-flex;align-items:center;gap:8px;font-size:var(--fs-l);font-weight:600;color:var(--ink);white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.9),0 0 6px rgba(0,0,0,.6);transition:opacity .34s var(--ease)}
   #capsub{font-size:var(--fs-s);color:var(--ink2);margin-top:3px;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.95),0 0 4px rgba(0,0,0,.85);transition:opacity .34s var(--ease)}
   /* aspect card: the caption's second line becomes one row of up to 4 facts - key small grey, value tabular, unit small */
@@ -177,7 +184,7 @@
 <div id="status" class="panel"><div class="ph"><b>Estate</b><em id="status-m">—</em></div><div class="rows" id="status-rows"></div></div>
 <div id="card-l" class="panel"></div>
 <div id="card-r" class="panel"></div>
-<div id="caption" class="hud"><div id="cap"><i id="sync" class="off"><span>free roam</span></i><span id="captxt">Overview</span></div><div id="capsub">—</div></div>
+<div id="caption" class="hud"><div id="story"></div><div id="cap"><i id="sync" class="off"><span>free roam</span></i><span id="captxt">Overview</span></div><div id="capsub">—</div></div>
 <!-- filled from CONFIG.categories + CONFIG.palette below; the traffic rows by nexus.js -->
 <div id="legend" class="hud">
   <div class="lg" id="legend-g"><em>Guests</em></div>
@@ -229,12 +236,12 @@ window.NB_PULSE_SHARED=true;</script>
     document.body.classList.toggle('no-cameras', !C.features.cameras);
     document.body.classList.toggle('no-audience', !C.features.audience);
     window.loadScripts([
-      '/static/universe_layout.js?v=2',
-      '/static/motion.js?v=2',
-      '/static/bodies3d.js?v=5',
-      '/static/nexus.js?v=60',
-      '/static/lightsync.js?v=16',
-      '/static/showtime.js?v=8'
+      '/static/universe_layout.js?v=4',
+      '/static/motion.js?v=3',
+      '/static/bodies3d.js?v=6',
+      '/static/nexus.js?v=61',
+      '/static/lightsync.js?v=17',
+      '/static/showtime.js?v=9'
     ]);
   });
 })();

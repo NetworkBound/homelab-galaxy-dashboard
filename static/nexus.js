@@ -99,6 +99,11 @@
   var THREAT_COL = { 0: '#37f5a0', 1: '#ffb347', 2: '#ff5a6a', 3: '#ff2d55' };
   // QA bisect switches (localStorage.nxflags = 'nosky,nodisc,notex,norocket,nothreat'); none set in production
   var NXF = {}; try { String(window.NX_FLAGS || localStorage.getItem('nxflags') || '').split(',').forEach(function (f) { if (f) NXF[f.trim()] = 1; }); } catch (e) { }
+  /* LITE: TV browsers (a smart TV's own web engine) and phones have a fraction of a desktop GPU. They
+     get the 8-bit chain (no half-float scene buffer), fewer haze sprites and a lower render-scale ladder; ?lite=1 or
+     nxflags `lite` forces it on any device, ?lite=0 forces it off. */
+  var LITE = /[?&]lite=0/.test(location.search) ? false : !!(NXF.lite || /[?&]lite=1/.test(location.search) || /Tizen|SMART-TV|SmartTV|Web0S|webOS|CrKey|Android TV|AFT[A-Z]|Mobi/i.test(navigator.userAgent));
+  if (LITE) { NXF.ldr = 1; NXF.nohaze = 1; }
   var $ = function (id) { return document.getElementById(id); };
   var U_TIME = { value: 0 };
   /* HUD keep-out (2026-10-04 review): long comet streams and route/link lines crossed the header text, the node cards
@@ -110,6 +115,25 @@
      two 280 px node cards at mid-height and a two-line caption at the bottom. HUDZ is the ONE description of those
      keep-out zones (fractions of the CSS viewport); labelsTick, hudFadeAt() and HUD_GLSL below all read it. */
   var HUDZ = { top: 0.075, bot: 0.885, cardX: 0.165, cardY0: 0.40, cardY1: 0.60, statX: 0.835, statY: 0.17, capX: 0.26 };
+  /* the chrome's REAL boxes (Estate panel, the two node cards, the caption block with the story line), measured
+     once a second (hudRects, from hudSecond) and padded 6 px: every label branch tests its box against them, so a landmark name
+     can no longer sit over the Estate panel ("Cloudflare edge" over its viewer row) and the caption band follows the story
+     line. HUDZ above stays as the coarse fallback before the first measurement / for a hidden panel. */
+  var HUDR = { status: null, l: null, r: null, cap: null, n: 0 };
+  function hudRects() {
+    function rc(id) {
+      var e = document.getElementById(id); if (!e) return null;
+      var cs = getComputedStyle(e); if (cs.display === 'none' || +cs.opacity < 0.05) return null;
+      var r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 ? { x1: r.left - 6, y1: r.top - 6, x2: r.right + 6, y2: r.bottom + 6 } : null;
+    }
+    HUDR.status = rc('status'); HUDR.l = rc('card-l'); HUDR.r = rc('card-r'); HUDR.cap = rc('caption'); HUDR.n++;
+  }
+  function hudHit(b1, b2, b3, b4) {
+    var R = HUDR.status; if (R && b1 < R.x2 && b3 > R.x1 && b2 < R.y2 && b4 > R.y1) return R;
+    R = HUDR.l; if (R && b1 < R.x2 && b3 > R.x1 && b2 < R.y2 && b4 > R.y1) return R;
+    R = HUDR.r; if (R && b1 < R.x2 && b3 > R.x1 && b2 < R.y2 && b4 > R.y1) return R;
+    return null;
+  }
   var HUD_GLSL = [
     'uniform float uHud;',
     'float hudFade(vec2 n){ if (uHud < 0.5) return 1.0;',
@@ -219,7 +243,7 @@
   var RS = { s: 1, sMax: 1, lock: 0 };
   (function () { var m = /(?:^|,)rs=([0-9.]+)/.exec(String(window.NX_FLAGS || (function () { try { return localStorage.getItem('nxflags'); } catch (e) { return ''; } })() || '')); if (m) RS.lock = clamp(+m[1], 0.25, 1); })();
   function rsMaxFor(w, h) { var px = w * h * BASE_PR * BASE_PR; return px > 0 ? clamp(Math.sqrt(RS_MAX_PIX / px), 0.25, 1) : 1; }
-  RS.sMax = rsMaxFor(innerWidth, innerHeight); RS.s = RS.lock || RS.sMax;
+  RS.sMax = rsMaxFor(innerWidth, innerHeight); RS.s = RS.lock || RS.sMax * (LITE ? 0.72 : 1);
   rndr.setSize(innerWidth, innerHeight);
   rndr.setPixelRatio(BASE_PR * RS.s);
   U_PR.value = BASE_PR * RS.s; U_CAPK.value = RS.s; U_LINEK.value = RS.s;
@@ -354,6 +378,11 @@
       '  float l = dot(c, vec3(0.2126, 0.7152, 0.0722)); c = mix(vec3(l), c, uSat);',
       // mid-tone S (pivot ~0.4): arms and haze gain contrast, black and white points stay put
       '  c = clamp(c, 0.0, 1.0); c = mix(c, c * c * (3.0 - 2.0 * c), uCon);',
+      // shoulder: the brightest channel eases from 0.5 up to 0.91 (232/255) at full scale, hue kept - a sun or
+      // a core stays under 235 on an 8-bit panel / a phone. A parabola, not an asymptote: it still climbs at 0.64 of the input's
+      // slope at the very top, so the structure inside a core (nucleus, bulge, the lanes across it) survives the roll-off -
+      // the first cut approached 0.905 exponentially (slope 0.19 at the top) and flattened a galaxy's core into one patch.
+      '  float mx = max(c.r, max(c.g, c.b)); if (mx > 0.5) { float sx = mx - 0.5; c *= (mx - 0.36 * sx * sx) / mx; }',
       '  vec2 q = vUv - 0.5; float v = 1.0 - uVig * smoothstep(0.16, 0.5, dot(q, q));',
       '  c *= v;',
       '  float n = h12(gl_FragCoord.xy + fract(uT * 7.31) * 113.0) + h12(gl_FragCoord.yx * 1.37 + fract(uT * 3.17) * 71.0) - 1.0;',
@@ -430,13 +459,14 @@
      level. FILLERS: where a wide shot would still show a void, the shared nebula fillers (galaxy2/nebulae: cirrus, H-alpha
      shock filaments, the OIII veil) are painted INTO the plate once at boot (skyFill: no per-frame cost), aimed at the
      void cells of those two frames only and kept subordinate (SKY.fill). Tunable with nxflags: sky=<file under
-     /static/assets/>  skyclose=  skywide=  skyrot=ry:rx:rz  skyfill= (0 = plate only); live: NEXUS.skyTune({ ... }). */
+     /static/assets/>  skyclose=  skywide=  skyrot=ry:rx:rz  skyfill= (0 = plate only)  skystops= (1 = fill the stop frames too; off); live: NEXUS.skyTune({ ... }). */
   function nxv(name, def) {
     var m = new RegExp('(?:^|,)\\s*' + name + '=([^,]+)').exec(String(window.NX_FLAGS || (function () { try { return localStorage.getItem('nxflags'); } catch (e) { return ''; } })() || ''));
     return m ? (isNaN(+m[1]) ? m[1].trim() : +m[1]) : def;
   }
   var SKY = { file: String(nxv('sky', 'galaxy2/sky/deep_sky.jpg')), close: nxv('skyclose', 0.35), wide: nxv('skywide', 0.42),
-              rot: String(nxv('skyrot', '0.79:0.3:0.6')).split(':').map(Number), fill: nxv('skyfill', 1.0), wideK: 0, src: null, voids: null, fillers: 0, bakeMs: 0 };
+              rot: String(nxv('skyrot', '0.79:0.3:0.6')).split(':').map(Number), fill: nxv('skyfill', 1.0), wideK: 0, src: null, voids: null, fillers: 0, bakeMs: 0,
+              stops: [], stopFill: nxv('skystops', 0), floor: nxv('skyfloor', 13), over: 1.5, step: 8, rounds: 6, maxFill: 1400, allow: nxv('skyallow', 1), allowCut: 3, patch: 0.82, dark: 0, stopFillers: 0, stopsShort: 0, sig: '', pend: '', wait: 0, t: 0, busy: false };
   var sky = new THREE.Mesh(new THREE.SphereGeometry(5000, 48, 24), new THREE.MeshBasicMaterial({ map: null, color: 0x000000, side: THREE.BackSide, depthWrite: false, depthTest: false, fog: false }));
   sky.renderOrder = -100; sky.frustumCulled = false; sky.visible = false; scene.add(sky);
   // turned so the band and the landmark objects sit at the edges of both wide shots and their middles stay dark (skyfit.py)
@@ -477,6 +507,23 @@
     var k = D.stopKey, wide = !TC.on && !SC.active && !!k && (/^over/.test(k) || k === 'wan');
     SKY.wideK += ((wide ? 1 : 0) - SKY.wideK) * Math.min(1, dt / 0.6);
     sky.material.color.setScalar(lerp(SKY.close, SKY.wide, SKY.wideK) * (1.45 / GRADE.exp) * smooth(skyF));
+    if ((SKY.t += dt) >= 1) { SKY.t = 0; skyStopsCheck(); }
+  }
+  /* once the wall's stop list, the universe and the aspect anchors are known (and again only if one of them changes),
+     the plate is re-painted with the stop frames included. The same answer has to stand for three checks (>= 2 s) first. */
+  /* BLACK SKY WINS: off unless skystops=1. Around one hero galaxy the stop fillers read as a fault on video -
+     flat grey cloud with hard-edged dark holes where the mask cut it - and the plain black of the plate looked better. So
+     a host or category stop gets the plate as the two wide frames left it: stars, far galaxies, the nebula colour, and
+     black. The count of dark cells in a frame is no longer a criterion. */
+  function skyStopsCheck() {
+    if (!(SKY.stopFill > 0) || !(SKY.fill > 0) || !SKY.src || SKY.busy || !FILL.ready || !DEEP.ready || !WALL.stops.length) return;
+    var keys = WALL.stops.map(function (s) { return String(s.key || ''); });
+    var sig = keys.join('|') + '#' + (UNI.on ? 1 : 0) + '#' + (TOUR.ok ? Object.keys(TOUR.aspects).length : 'x') + '#' + NODES.filter(function (n) { return !n.gone; }).length + '#' + SKY.close + '#' + SKY.floor;
+    if (sig === SKY.sig) return;
+    if (sig !== SKY.pend) { SKY.pend = sig; SKY.wait = 0; return; }
+    if (++SKY.wait < 2) return;
+    SKY.sig = sig; SKY.stops = skyStopFrames(keys); SKY.busy = true;
+    skyFill(SKY.src.img, !SKY.src.flipY, function (img) { SKY.busy = false; if (img) skyBaked(img, SKY.src.flipY); });
   }
 
   /* ============================== textures ============================== */
@@ -597,6 +644,22 @@
                      { file: G2B + 'galaxies/galaxy_gold.png', rot: 1.553, edgeon: G2B + 'galaxies/galaxy_gold_edgeon.png' }],
               edge: { file: G2B + 'galaxies/galaxy_edge.png', rot: 1.292 },
               pve: [{ file: G2B + 'galaxies/galaxy_pve_a.png', rot: 4.922 }, { file: G2B + 'galaxies/galaxy_pve_b.png', rot: 4.136 }] };
+  /* the galaxy2 manifest, fetched once (the sun's corona set and the v2 plates both read it). V2 PLATES: a plate whose
+     manifest entry carries a v2 (discs["node:<i>"].v2.file) wears that file instead - the same galaxy, arm for arm
+     (same rot, same size), with a core that no longer clips (peak ~0.91 where the v1 core is ~1.0 by design), so the
+     bulge keeps its structure and the 8-bit LITE target is not saturated across the whole core. A v1 manifest, a
+     missing key or a v2 file that fails to load keeps the v1 plate. */
+  var G2MAN = G2 && typeof fetch === 'function' ? fetch('/static/assets/galaxy2/manifest.json', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }) : null;
+  var G2V2 = { map: null, used: [] };
+  function plateV2(m) {
+    if (G2V2.map) return G2V2.map;
+    var out = {}, dm = m && m.discs;
+    if (dm && !NXF.noplatev2) Object.keys(dm).forEach(function (k) {
+      var d = dm[k], v = d && typeof d === 'object' ? d.v2 : null;
+      if (v && typeof v.file === 'string' && typeof d.file === 'string') out[G2B + d.file.replace(/^\.\.\//, '')] = G2B + v.file.replace(/^\.\.\//, '');
+    });
+    return (G2V2.map = out);
+  }
   // a lone node wears the golden plate (the edge-on variant included)
   if (G2) NODES.forEach(function (nd, i) { var p = G2P.node[N_NODES === 1 ? 1 : i]; if (!p) return; nd.disc = p.file; nd.discRot = p.rot; nd.discFlip = false; nd.raw = true; nd.rot = 1; nd.edgeon = p.edgeon || null; });
   // the shared PSFs for the glare stars (mkGlare, below): materials made before they decode are pointed at them on arrival
@@ -608,7 +671,29 @@
   });
   // the nebula fillers, as images: they are only ever painted into the sky plate (skyFill). The cirrus is a seamless
   // tile: three soft-edged patches are cut from it (different crops, so neighbouring patches differ)
-  var FILL = { ha: null, o3: null, ci: [], ready: false };
+  var FILL = { ha: null, o3: null, ci: [], mask: null, ready: false };
+  /* the cloud structure a stop's sky fillers are seen through (skyFill): the cirrus tile's luminance as a soft 0..1 mask -
+     full where the tile has cloud, zero in its gaps (about a third of it), the edges blurred. Wherever the fillers land,
+     the gaps keep the plate's own black. It is laid as a lattice turned by atan(1/2), so its repeats run along no row or
+     column of a frame (SKY_MASK). k = 1 / the mask's mean: what a filler is drawn stronger by, for the same cell mean. */
+  function fillMask(im) {
+    var n = 128, cv = document.createElement('canvas'); cv.width = cv.height = n;
+    var x = cv.getContext('2d'); x.fillStyle = '#000'; x.fillRect(0, 0, n, n); x.imageSmoothingQuality = 'high'; x.drawImage(im, 0, 0, n, n);
+    var id = x.getImageData(0, 0, n, n), px = id.data, m = new Float32Array(n * n), b = new Float32Array(n * n), i, j, k, sum = 0, r = 5;
+    for (i = 0; i < n * n; i++) m[i] = 0.2126 * px[i * 4] + 0.7152 * px[i * 4 + 1] + 0.0722 * px[i * 4 + 2];
+    var ref = Array.prototype.slice.call(m).sort(function (p, q) { return p - q; })[Math.floor(n * n * 0.6)] || 1;
+    for (i = 0; i < n * n; i++) m[i] = clamp(m[i] / ref, 0, 1);
+    for (var pass = 0; pass < 2; pass++) {                    // a wrapped box blur, twice each way
+      for (j = 0; j < n; j++) for (i = 0; i < n; i++) { var a = 0; for (k = -r; k <= r; k++) a += m[j * n + ((i + k + n) % n)]; b[j * n + i] = a / (2 * r + 1); }
+      for (j = 0; j < n; j++) for (i = 0; i < n; i++) { var c = 0; for (k = -r; k <= r; k++) c += b[((j + k + n) % n) * n + i]; m[j * n + i] = c / (2 * r + 1); }
+    }
+    for (i = 0; i < n * n; i++) { m[i] = clamp((m[i] - 0.12) / 0.76, 0, 1); sum += m[i]; var g = Math.round(255 * m[i]); px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = g; px[i * 4 + 3] = 255; }
+    x.putImageData(id, 0, 0);
+    if (!(sum > 0)) return null;
+    x.createPattern(cv, 'repeat').setTransform(new DOMMatrix().rotate(26.565).scale(1.3));      // throws where a pattern cannot be turned: no mask there
+    return { n: n, m: m, k: n * n / sum, cv: cv,
+             at: function (a, b) { a -= Math.floor(a); b -= Math.floor(b); return m[Math.min(n - 1, Math.floor(b * n)) * n + Math.min(n - 1, Math.floor(a * n))]; } };
+  }
   (function () {
     var left = 3;
     function done() { if (--left === 0) FILL.ready = true; }
@@ -616,6 +701,7 @@
     img('neb_ha.png', function (im) { FILL.ha = im; });
     img('neb_o3.png', function (im) { FILL.o3 = im; });
     img('neb_cirrus_tile.png', function (im) {
+      try { if (SKY.stopFill > 0 && !NXF.noskymask) FILL.mask = fillMask(im); } catch (e) { FILL.mask = null; }
       [[0, 0], [0.37, 0.61], [0.71, 0.23]].forEach(function (o) {
         var S = 512, cv = document.createElement('canvas'); cv.width = cv.height = S; var x = cv.getContext('2d'), W = im.width, H = im.height;
         var ox = Math.round(o[0] * W), oy = Math.round(o[1] * H);
@@ -833,7 +919,12 @@
     };
     return mat;
   }
-  var RAW_GAIN = 1.45 / GRADE.exp;
+  /* a shared plate's gain. LITE wears it a sixth darker: its 8-bit scene buffer stops at 1.0, which the grade
+     puts at 210/255, and everything above 0.72 blooms at full strength - at full gain the middle of a plate plus that
+     bloom sat on the stop over a quarter of the core crop at the host stops (one flat patch); at 1.2 the plate's own
+     nucleus, bar and inner lanes stay under it (9-16 %, gradient as on the HDR chain) and the frame's mean lands on the
+     HDR chain's. HDR is as it was. */
+  var RAW_GAIN = (HDR ? 1.45 : 1.2) / GRADE.exp;
   function setGalaxyTint(gal, hex) {
     if (!gal.nd.raw) { gal.discMat.color.copy(armTint(hex)); if (gal.discMat.userData.uCore) gal.discMat.userData.uCore.value.copy(bulgeTint(hex)); }
     gal.halo.material.color.copy(bulgeTint(hex).lerp(new THREE.Color(hex), 0.45));
@@ -897,6 +988,19 @@
     e = DISC_TEX[file] = { t: null, w: [cb] };
     loadTex(file, function (t) { e.t = t; e.w.forEach(function (f) { f(t); }); e.w = null; });
   }
+  // a raw plate through the manifest: its v2 when one is listed (G2V2), the file itself otherwise or when the v2 will not load
+  function plateTex(file, cb) {
+    if (!G2MAN) return discTex(file, cb);
+    G2MAN.then(function (m) {
+      var v2 = plateV2(m)[file]; if (!v2) return discTex(file, cb);
+      var e = DISC_TEX[v2];
+      if (e) { if (e.t) cb(e.t); else e.w.push(cb); return; }
+      e = DISC_TEX[v2] = { t: null, w: [cb] };
+      TEXL.load('/static/assets/' + v2, function (t) { t.anisotropy = MAX_ANISO; e.t = t; G2V2.used.push(v2); e.w.forEach(function (f) { f(t); }); e.w = null; }, undefined, function () {
+        console.warn('nexus: v2 plate failed, keeping v1', v2); var w = e.w; delete DISC_TEX[v2]; w.forEach(function (f) { discTex(file, f); });
+      });
+    });
+  }
   // the lane absorption covers only the inner 0.82 of the plate (the lanes never reach the rim): a circle, uv in plate units
   var LANE_GEO = (function () {
     var g = new THREE.CircleGeometry(300 * 0.82, 56), uv = g.attributes.uv;
@@ -921,7 +1025,7 @@
     if (nd.discFlip) disc.scale.x = -1;
     // the dust lanes' absorption (laneMat): the same plane, drawn after the galaxy's own light, before its guest stars
     var lmat = laneMat(), lanes = new THREE.Mesh(LANE_GEO, lmat); lanes.rotation.copy(disc.rotation); lanes.scale.copy(disc.scale); lanes.renderOrder = 1; lanes.visible = false; G.add(lanes);
-    if (nd.disc && !NXF.nodisc) discTex(nd.disc, function (t) { discMat.map = t; discMat.needsUpdate = true; lmat.uniforms.map.value = laneMask(t); lanes.visible = !NXF.nolanes; });
+    if (nd.disc && !NXF.nodisc) (nd.raw ? plateTex : discTex)(nd.disc, function (t) { discMat.map = t; discMat.needsUpdate = true; lmat.uniforms.map.value = laneMask(t); lanes.visible = !NXF.nolanes; });
     /* stellar populations (2026-10-08b; the 2026-10-07 "cooler, quieter dust" undone): the A/C arm stars (accent toward
        white with radius) plus what a deep exposure of a spiral shows - a warm, dense bulge population, pink HII knots and
        blue-white young clusters strung along the arms, and globular clusters scattered in a round halo above and below the
@@ -983,10 +1087,15 @@
     // core reads orange against the violet arms rather than as another white-hot dot
     var c1 = nd.hot ? new THREE.Color(nd.hot).lerp(new THREE.Color(0xffffff), 0.3) : coreC1(nd.accent);
     var coreMat;
-    if (HDR) {   // the luminous bulge (bulgeFS): white-hot centre, golden body, no edge
+    /* LITE over a photographed plate takes the bulge too, at a ninth of the gain: its solid core sphere sat
+       on the plate's nucleus as a flat disc (half of the core crop at one value at the host stops) and hid the plate's own
+       bulge and inner arms; with no headroom above 1.0 the bulge there is only a small warm lift on the nucleus (0.42
+       still clipped a third of the crop). THE EDGE keeps its orange sphere there. */
+    var bulge = HDR || (!!nd.raw && !nd.hot && !NXF.nolitebulge);
+    if (bulge) {   // the luminous bulge (bulgeFS): white-hot centre, golden body, no edge
       c1 = nd.hot ? new THREE.Color(nd.hot).lerp(WHITE, 0.4) : new THREE.Color(1.0, 0.95, 0.86);
       // (over a shared plate, whose own core is white-hot by design, the bulge is a soft volume: gain 0.9, not 2.4)
-      coreMat = new THREE.ShaderMaterial({ uniforms: coreUniforms(c1, nd.hot ? new THREE.Color(nd.hot) : new THREE.Color(1.0, 0.72, 0.4).lerp(acc, 0.3), 0.22, nd.raw ? 0.9 : 2.4, 0), vertexShader: coreVS, fragmentShader: bulgeFS,
+      coreMat = new THREE.ShaderMaterial({ uniforms: coreUniforms(c1, nd.hot ? new THREE.Color(nd.hot) : new THREE.Color(1.0, 0.72, 0.4).lerp(acc, 0.3), 0.22, nd.raw ? (HDR ? 0.9 : 0.1) : 2.4, 0), vertexShader: coreVS, fragmentShader: bulgeFS,
                                            transparent: true, depthWrite: false, blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor, blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor });
     } else coreMat = new THREE.ShaderMaterial({ uniforms: coreUniforms(c1, acc.clone(), nd.hot ? 0.6 : 0.22, 1.6, 0), vertexShader: coreVS, fragmentShader: coreFS, transparent: true });
     var core = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 4), coreMat); G.add(core);
@@ -1016,7 +1125,7 @@
     if (HDR) guests.material.uniforms.uNF.value.set(30, 120);       // a star the camera flies past fades instead of filling the frame   // same zero-sphere trap as the comet pool; after the lane absorption (data stays bright)
     return { nd: nd, O: O, G: G, dust: dust, disc: disc, discMat: discMat, lanes: lanes, laneMat: lmat, core: core, coreMat: coreMat, halo: halo, light: light, ring: ring, ringT: 9, ringRed: 0, guests: guests, gg: gg,
              gp: gp, gc: gc, gs: gs, gcat: gcat, ggl: ggl, list: [], spin: 0.02, coreR: 22, world: O.position.clone(),
-             bulgeC2: nd.hot ? new THREE.Color(nd.hot) : new THREE.Color(1.0, 0.72, 0.4).lerp(acc, 0.3), hazeOut: hazeOut, eo: eo, eoK: 1, haloK: nd.raw ? 0.5 : 1 };
+             bulgeC2: nd.hot ? new THREE.Color(nd.hot) : new THREE.Color(1.0, 0.72, 0.4).lerp(acc, 0.3), hazeOut: hazeOut, eo: eo, eoK: 1, haloK: nd.raw ? 0.5 : 1, bulge: bulge };
   }
   NODES.forEach(function (nd, i) { galaxies[nd.id] = buildGalaxy(nd); galaxies[nd.id].obIdx = i; });
   // discF: a disc whose texture lands after the reveal fades in over ~1 s instead of popping
@@ -1202,86 +1311,243 @@
      mostly the neutral cirrus, an H-alpha or OIII filler in a few - at a subordinate level. Equirect mapping of
      SphereGeometry (u = atan2(z, -x) / 2pi, row = polar angle) in the sphere's own (rotated) frame; the decoded plate is
      already flipped for upload (flipY false), so canvas rows count from the SOUTH pole. 'lighter' = additive. */
-  function skyVoids(bmp, flipped) {
-    var w = 512, h = 256, cv = document.createElement('canvas'); cv.width = w; cv.height = h;
-    var x = cv.getContext('2d'); x.drawImage(bmp, 0, 0, w, h);
-    var px = x.getImageData(0, 0, w, h).data, qi = sky.quaternion.clone().invert(), d = new THREE.Vector3(), out = []; SKY.cells = [];
-    var gain = SKY.wide * 1.45;                    // plate value -> pre-ACES radiance at the wide shots (exposure folded in)
-    // what the screen shows at (sx, sy) for that sky: the grade (ACES, mid-tone S, vignette) and the page's CSS vignette
-    // (#vig: the top and bottom bands under the HUD, the corner ellipse), so the test matches the QA grid on the frame
-    function lum(dir, sx, sy) {
+  /* the frames the plate is tested in. The two wide shots as before; with skystops=1 (off by default, see
+     skyStopsCheck) also the frame of every tour stop
+     (SKY.stops, built by skyStopFrames() from the wall's stop list once it is known): a close stop no longer hangs its
+     subject on empty black (13 of 26 holds had 4-9 void cells of 24). Each stop frame is tested after the ones before it
+     were painted, so stops that share a piece of sky share its fillers. */
+  function skyFrame(pos, look, gain, key) {
+    var tV = Math.tan((cam.fov * Math.PI / 180) / 2), tH = tV * (innerWidth / Math.max(1, innerHeight));
+    var F = look.clone().sub(pos).normalize(), Rt = new THREE.Vector3().crossVectors(F, new THREE.Vector3(0, 1, 0));
+    if (Rt.lengthSq() < 1e-6) Rt.set(1, 0, 0); Rt.normalize();
+    return { pos: pos.clone(), F: F, R: Rt, U: new THREE.Vector3().crossVectors(Rt, F), tH: tH, tV: tV, gain: gain, key: key || '' };
+  }
+  /* the plate's poles. A filler stamped on the equirect plate near a pole is pinched into a starburst on the sphere (seen
+     at 8 of 26 holds once every stop frame was filled), so a filler within SKY_CAP.th of a pole is stamped on that pole's own
+     cap instead - an azimuthal-equidistant canvas out to SKY_CAP.ext, where a stamp keeps its shape - and each cap is
+     resampled onto the plate's rows once, at the end of the bake. The test reads the caps through the same mapping. */
+  var SKY_CAP = { th: 0.8, ext: 1.2, n: 1024, ns: 256, w: 2048, fade: 0.08 };
+  /* the cloud mask's lattice: a tile is 1 / (k * sqrt 5) of the plate's width (14.6 degrees), turned by atan(1/2) - the
+     turned lattice still closes round the plate (2 tiles along and 1 across per k) - and 1 / (cap * sqrt 5) of a pole
+     cap's. first: how much of the mask-compensated level a filler's first pass gets (the toe of the grade favours
+     concentrated light: the rounds add the rest). top: the most the layer may hold (plate value, 0..255) - a cell that sits
+     on a gap of the mask would otherwise have the cloud round it driven up to a fog bank (45-55/255 on screen, measured)
+     to make its mean; at the top the cloud shows at about 33/255 and such a cell is left a little under the floor. */
+  var SKY_MASK = { k: 11, cap: 4.2, first: nxv('skymaskk', 0.4), top: nxv('skytop', 60) };
+  // what the screen shows at (sx, sy) for a sky direction: the plate at that frame's level through the grade (ACES, mid-tone
+  // S, vignette) and the page's CSS vignette (#vig: the top and bottom bands under the HUD, the corner ellipse), so the
+  // test matches the QA grid on the frame
+  function skySampler(ctx, w, h, flipped, caps, lay) {
+    var px = ctx.getImageData(0, 0, w, h).data, qi = sky.quaternion.clone().invert(), d = new THREE.Vector3(), ns = SKY_CAP.ns, cp = [null, null];
+    var M = FILL.mask, pl = lay && M ? lay.getImageData(0, 0, w, h).data : null;          // the stop fillers' layer, seen through the cloud mask
+    if (caps) for (var ci0 = 0; ci0 < 2; ci0++) if (caps[ci0] && caps[ci0].used) cp[ci0] = caps[ci0].sx.getImageData(0, 0, ns, ns).data;
+    return function (dir, sx, sy, gain) {
       d.copy(dir).applyQuaternion(qi);
       var th = Math.acos(clamp(d.y, -1, 1)), ph = Math.atan2(d.z, -d.x); if (ph < 0) ph += TAU;
       var ix = Math.min(w - 1, Math.floor(ph / TAU * w)), iy = Math.min(h - 1, Math.floor((flipped ? 1 - th / Math.PI : th / Math.PI) * h)), o = (iy * w + ix) * 4;
-      var v = (0.2126 * px[o] + 0.7152 * px[o + 1] + 0.0722 * px[o + 2]) / 255 * gain;
+      var r = px[o], g = px[o + 1], b = px[o + 2], ci = th < SKY_CAP.ext ? 0 : th > Math.PI - SKY_CAP.ext ? 1 : -1;
+      if (pl) { var mxn = (ix + 0.5) / w, myn = (iy + 0.5) / h, mk = M.at(SKY_MASK.k * (2 * mxn + 0.5 * myn), SKY_MASK.k * (myn - mxn)); var tp = SKY_MASK.top; r = Math.min(255, r + Math.min(tp, pl[o]) * mk); g = Math.min(255, g + Math.min(tp, pl[o + 1]) * mk); b = Math.min(255, b + Math.min(tp, pl[o + 2]) * mk); }
+      if (ci >= 0 && cp[ci]) {
+        var tc = ci ? Math.PI - th : th, rho = tc / SKY_CAP.ext * ns / 2, fd = clamp((SKY_CAP.ext - tc) / SKY_CAP.fade, 0, 1);
+        var cxi = clamp(Math.floor(ns / 2 + rho * Math.cos(ph)), 0, ns - 1), cyi = clamp(Math.floor(ns / 2 + rho * Math.sin(ph)), 0, ns - 1), co = (cyi * ns + cxi) * 4;
+        if (M) { var cxn = (cxi + 0.5) / ns, cyn = (cyi + 0.5) / ns; fd *= M.at(SKY_MASK.cap * (2 * cxn + cyn), SKY_MASK.cap * (2 * cyn - cxn)); }
+        var ct = M ? SKY_MASK.top : 255;
+        r = Math.min(255, r + Math.min(ct, cp[ci][co]) * fd); g = Math.min(255, g + Math.min(ct, cp[ci][co + 1]) * fd); b = Math.min(255, b + Math.min(ct, cp[ci][co + 2]) * fd);
+      }
+      var v = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 * gain;      // plate value -> pre-ACES radiance (exposure folded in)
       var c = clamp((v * (2.51 * v + 0.03)) / (v * (2.43 * v + 0.59) + 0.14), 0, 1); c += (c * c * (3 - 2 * c) - c) * GRADE.con;
       var qx = sx * 0.5, qy = sy * 0.5, yt = (1 - sy) / 2, re = Math.sqrt(sx * sx + sy * sy) / Math.SQRT2;
       c *= 1 - GRADE.vig * clamp((qx * qx + qy * qy - 0.16) / 0.34, 0, 1);
       c *= (1 - 0.45 * clamp(1 - yt / 0.09, 0, 1)) * (1 - 0.5 * clamp(1 - (1 - yt) / 0.12, 0, 1)) * (1 - 0.2 * clamp((re - 0.62) / 0.38, 0, 1));
       return 255 * c;
-    }
-    // a cell a galaxy's disc fills is not a void: its centre ray hits the disc plane inside 0.85 of the disc's radius
-    var gals = NODES.map(function (n) { return galaxies[n.id]; }).concat([EDGE]).map(function (g) { g.O.updateMatrixWorld(true); return { c: g.world, n: new THREE.Vector3(0, 1, 0).applyQuaternion(g.O.quaternion), r: 0.85 * 300 * (g.nd.scale || 1) }; });
-    function onDisc(g, pos, dir) { var dn = dir.dot(g.n); if (Math.abs(dn) < 1e-4) return false; var t = g.c.clone().sub(pos).dot(g.n) / dn; return t > 0 && pos.clone().addScaledVector(dir, t).distanceTo(g.c) < g.r; }
-    DEEP.wide.forEach(function (fr, fi) {
-      for (var j = 0; j < 4; j++) for (var i = 0; i < 6; i++) {
-        var sx0 = -1 + (i + 0.5) / 3, sy0 = 1 - (j + 0.5) / 2, sum = 0, n = 0, bright = 0, filled = false;
-        var cdir = fr.F.clone().addScaledVector(fr.R, sx0 * fr.tH).addScaledVector(fr.U, sy0 * fr.tV).normalize();
-        gals.forEach(function (g) { if (onDisc(g, fr.pos, cdir)) filled = true; });
-        if (filled) continue;
-        for (var b = 0; b < 6; b++) for (var a = 0; a < 8; a++) {
-          var sx = -1 + (i + (a + 0.5) / 8) / 3, sy = 1 - (j + (b + 0.5) / 6) / 2;
-          var L = lum(fr.F.clone().addScaledVector(fr.R, sx * fr.tH).addScaledVector(fr.U, sy * fr.tV).normalize(), sx, sy); sum += L; n++; if (L > 24) bright++;
-        }
-        var mean = sum / n, cont = bright / n;
-        SKY.cells.push([fi, i, j, +mean.toFixed(1), +(100 * cont).toFixed(1)]);
-        if (mean < 12 && cont < 0.06) out.push({ dir: cdir, frame: fi, i: i, j: j, mean: mean, edge: Math.max(Math.abs(sx0) / 0.84, Math.abs(sy0) / 0.75) });
+    };
+  }
+  // a cell a galaxy's disc fills is not a void: its centre ray hits the disc plane inside 0.85 of the disc's radius
+  function skyDiscs() {
+    var gs = [EDGE]; NODES.forEach(function (n) { if (!n.gone && galaxies[n.id]) gs.push(galaxies[n.id]); });
+    return gs.map(function (g) { g.O.updateMatrixWorld(true); return { c: g.world, n: new THREE.Vector3(0, 1, 0).applyQuaternion(g.O.quaternion), r: 0.85 * 300 * (g.nd.scale || 1) }; });
+  }
+  function skyOnDisc(g, pos, dir) { var dn = dir.dot(g.n); if (Math.abs(dn) < 1e-4) return false; var t = g.c.clone().sub(pos).dot(g.n) / dn; return t > 0 && pos.clone().addScaledVector(dir, t).distanceTo(g.c) < g.r; }
+  /* the void cells of one frame. A wide frame keeps its own test (dark AND featureless); a stop frame is a void below
+     SKY.floor (the QA grid counts a cell under 12/255: the floor leaves room for the HUD cards the model does not know). */
+  function skyVoids(lum, fr, fi, discs, wide) {
+    var out = [];
+    for (var j = 0; j < 4; j++) for (var i = 0; i < 6; i++) {
+      var sx0 = -1 + (i + 0.5) / 3, sy0 = 1 - (j + 0.5) / 2, sum = 0, n = 0, bright = 0, filled = false;
+      var cdir = fr.F.clone().addScaledVector(fr.R, sx0 * fr.tH).addScaledVector(fr.U, sy0 * fr.tV).normalize();
+      for (var gi = 0; gi < discs.length; gi++) if (skyOnDisc(discs[gi], fr.pos, cdir)) { filled = true; break; }
+      if (filled) continue;
+      for (var b = 0; b < 6; b++) for (var a = 0; a < 8; a++) {
+        var sx = -1 + (i + (a + 0.5) / 8) / 3, sy = 1 - (j + (b + 0.5) / 6) / 2;
+        var L = lum(fr.F.clone().addScaledVector(fr.R, sx * fr.tH).addScaledVector(fr.U, sy * fr.tV).normalize(), sx, sy, fr.gain); sum += L; n++; if (L > 24) bright++;
       }
-    });
+      var mean = sum / n, cont = bright / n;
+      if (wide) SKY.cells.push([fi, i, j, +mean.toFixed(1), +(100 * cont).toFixed(1)]);
+      if (wide ? (mean < 12 && cont < 0.06) : mean < SKY.floor) out.push({ dir: cdir, fr: fr, i: i, j: j, mean: mean, edge: Math.max(Math.abs(sx0) / 0.84, Math.abs(sy0) / 0.75) });
+    }
     return out;
   }
   function skyFill(bmp, flipped, done) {
     try {
-      var t0 = performance.now(), W = bmp.width, H = bmp.height, voids = skyVoids(bmp, flipped); SKY.voids = voids;
-      if (!voids.length || !FILL.ready) { SKY.fillers = 0; return done(null); }
+      var t0 = performance.now(), W = bmp.width, H = bmp.height;
+      if (!FILL.ready) { SKY.fillers = 0; return done(null); }
       var cv = document.createElement('canvas'); cv.width = W; cv.height = H;
       var x = cv.getContext('2d'); x.drawImage(bmp, 0, 0); x.globalCompositeOperation = 'lighter';
-      var qi = sky.quaternion.clone().invert(), d = new THREE.Vector3(), R = rng(9113), cellA = 2 * Math.atan(DEEP.wide[0].tH) / 6, nHa = 0, nO3 = 0;
+      // a small copy of the plate takes every filler too: it is what the next frame is tested against
+      var sw = 512, sh = 256, sc = document.createElement('canvas'); sc.width = sw; sc.height = sh;
+      var sx2 = sc.getContext('2d', { willReadFrequently: true }); sx2.drawImage(bmp, 0, 0, sw, sh); sx2.globalCompositeOperation = 'lighter';
+      var qi = sky.quaternion.clone().invert(), d = new THREE.Vector3(), R = rng(9113), cellA = 2 * Math.atan(DEEP.wide[0].tH) / 6, nHa = 0, nO3 = 0, total = 0, discs = skyDiscs();
+      var caps = [null, null];                     // the pole caps (SKY_CAP), made when the first filler lands on one
+      /* ONE CLOUD LAYER. The stops' fillers go to a layer of their own, and the layer reaches the plate through
+         the cloud mask (FILL.mask). Stamped straight onto the plate, patch over patch at every angle from 130 frames, they
+         had averaged into an even veil with no black left in it. Through the mask they only decide how bright one fixed
+         cloud structure is where a stop looks: the gaps of that structure keep the plate's own black. The two wide frames'
+         fillers stay on the plate as before. */
+      var M = FILL.mask, lcv = null, lx = null, ls = null;
+      function layer() {
+        if (lx) return;
+        lcv = document.createElement('canvas'); lcv.width = W; lcv.height = H; lx = lcv.getContext('2d'); lx.fillStyle = '#000'; lx.fillRect(0, 0, W, H); lx.globalCompositeOperation = 'lighter';
+        var c2 = document.createElement('canvas'); c2.width = sw; c2.height = sh; ls = c2.getContext('2d', { willReadFrequently: true }); ls.fillStyle = '#000'; ls.fillRect(0, 0, sw, sh); ls.globalCompositeOperation = 'lighter';
+      }
+      function maskOn(c2, cw, tile, y0, y1) {
+        var pat = c2.createPattern(M.cv, 'repeat'); pat.setTransform(new DOMMatrix().rotate(Math.atan(0.5) * 180 / Math.PI).scale(tile / M.n));
+        var tp = Math.round(SKY_MASK.top);
+        c2.save(); c2.globalAlpha = 1;
+        c2.globalCompositeOperation = 'darken'; c2.fillStyle = 'rgb(' + tp + ',' + tp + ',' + tp + ')'; c2.fillRect(0, y0, cw, y1 - y0);      // the layer's top
+        c2.globalCompositeOperation = 'multiply'; c2.fillStyle = pat; c2.fillRect(0, y0, cw, y1 - y0); c2.restore();
+      }
+      function cap(ci) {
+        if (caps[ci]) return caps[ci];
+        function mk(n, o) { var c = document.createElement('canvas'); c.width = c.height = n; var cx = c.getContext('2d', o); cx.fillStyle = '#000'; cx.fillRect(0, 0, n, n); cx.globalCompositeOperation = 'lighter'; return cx; }
+        return (caps[ci] = { x: mk(SKY_CAP.n), sx: mk(SKY_CAP.ns, { willReadFrequently: true }), used: false });
+      }
       function at(dir, ang) {
         d.copy(dir).applyQuaternion(qi);
         var th = Math.acos(clamp(d.y, -1, 1)), ph = Math.atan2(d.z, -d.x); if (ph < 0) ph += TAU;
-        return { cx: ph / TAU * W, cy: (flipped ? 1 - th / Math.PI : th / Math.PI) * H, rh: ang / Math.PI * H, rw: ang / TAU * W / Math.max(0.25, Math.sin(th)) };
+        return { th: th, ph: ph, ang: ang, u: ph / TAU, v: flipped ? 1 - th / Math.PI : th / Math.PI, rv: ang / Math.PI, ru: ang / TAU / Math.max(0.25, Math.sin(th)) };
       }
-      function paint(q, img, a, rot, flip) {
-        [-W, 0, W].forEach(function (wrap) {
-          if (q.cx + wrap + q.rw < 0 || q.cx + wrap - q.rw > W) return;
-          // canvas alpha tops out at 1: a level above it is drawn in passes ('lighter' adds them up)
-          for (var left = a; left > 0.004; left -= 1) {
-            x.save(); x.translate(q.cx + wrap, q.cy); x.rotate(rot); x.scale(flip ? -1 : 1, 1); x.globalAlpha = Math.min(1, left);
-            x.drawImage(img, -q.rw, -q.rh, q.rw * 2, q.rh * 2); x.restore();
-          }
+      // canvas alpha tops out at 1: a level above it is drawn in passes ('lighter' adds them up)
+      function stamp(c2, cx, cy, rw, rh, img, a, rot, flip) {
+        for (var left = a; left > 0.004; left -= 1) {
+          c2.save(); c2.translate(cx, cy); c2.rotate(rot); c2.scale(flip ? -1 : 1, 1); c2.globalAlpha = Math.min(1, left);
+          c2.drawImage(img, -rw, -rh, rw * 2, rh * 2); c2.restore();
+        }
+      }
+      function paintOn(c2, cw, ch, q, img, a, rot, flip) {
+        var cx = q.u * cw, cy = q.v * ch, rw = q.ru * cw, rh = q.rv * ch;
+        [-cw, 0, cw].forEach(function (wrap) { if (cx + wrap + rw >= 0 && cx + wrap - rw <= cw) stamp(c2, cx + wrap, cy, rw, rh, img, a, rot, flip); });
+      }
+      function paint(q, img, a, rot, flip, lay) {
+        var ci = q.th < SKY_CAP.th ? 0 : q.th > Math.PI - SKY_CAP.th ? 1 : -1;
+        if (M && lay) a *= M.k * SKY_MASK.first; else if (M && ci >= 0) a *= M.k;       // a cap is all cloud layer
+        if (ci < 0 && M && lay) { layer(); paintOn(lx, W, H, q, img, a, rot, flip); paintOn(ls, sw, sh, q, img, a, rot, flip); return; }
+        if (ci < 0) { paintOn(x, W, H, q, img, a, rot, flip); paintOn(sx2, sw, sh, q, img, a, rot, flip); return; }
+        var c = cap(ci), tc = ci ? Math.PI - q.th : q.th, cs = Math.cos(q.ph), sn = Math.sin(q.ph);
+        [[c.x, SKY_CAP.n], [c.sx, SKY_CAP.ns]].forEach(function (t) {
+          var k = t[1] / 2 / SKY_CAP.ext, hw = q.ang * k;
+          stamp(t[0], t[1] / 2 + tc * k * cs, t[1] / 2 + tc * k * sn, hw, hw, img, a, rot, flip);
         });
+        c.used = true;
       }
-      // the level is display-equivalent: a filler at opacity op on the asset owner's chain = op / SKY.wide in the plate
+      // the level is display-equivalent: a filler at opacity op on the asset owner's chain = op / (the frame's sky level) in the plate
       /* the cirrus carries the most light per area of the three (mean luma 0.019 against 0.007 for the H-alpha filaments and
          0.004 for the OIII veil), so it is what fills: the darkest voids (corners under the vignettes) get two cirrus patches,
-         a little stronger; the H-alpha and OIII fillers are colour accents in the other outer voids (two of each at most).
-         The bottom row (the band under the caption and legend may stay dark) comes last. */
-      voids.slice().sort(function (a, b) { return (a.mean + (a.j === 3 ? 100 : 0)) - (b.mean + (b.j === 3 ? 100 : 0)); }).forEach(function (v, vi) {
-        var dark = v.mean < 9.5, layers = dark ? 2 : 1;
-        for (var li = 0; li < layers; li++) {
-          var kind = 'ci';
-          if (!dark && li === 0 && v.edge > 0.8) { if (nHa < 2 && R() < 0.5) { kind = 'ha'; nHa++; } else if (nO3 < 2 && R() < 0.5) { kind = 'o3'; nO3++; } }
-          var img = kind === 'ha' ? FILL.ha : kind === 'o3' ? FILL.o3 : FILL.ci[(vi + li) % Math.max(1, FILL.ci.length)];
-          if (!img) continue;
-          var op = (kind === 'ha' ? 0.45 : kind === 'o3' ? 0.6 : 0.55) * SKY.fill * (dark ? clamp(11 / Math.max(4, v.mean), 1, 1.6) : 1);
-          var ang = cellA * (kind === 'ci' ? 0.85 + 0.25 * R() : 1.0 + 0.3 * R());
-          var dir = v.dir.clone().addScaledVector(DEEP.wide[v.frame].R, (R() - 0.5) * 0.05).addScaledVector(DEEP.wide[v.frame].U, (R() - 0.5) * 0.05).normalize();
-          paint(at(dir, ang), img, op / SKY.wide, R() * TAU, R() < 0.5);
-        }
-      });
-      SKY.fillers = voids.length; SKY.bakeMs = Math.round(performance.now() - t0);
-      if (typeof createImageBitmap === 'function') createImageBitmap(cv).then(done, function () { done(cv); }); else done(cv);
+         a little stronger; the H-alpha and OIII fillers are colour accents in the other outer voids (two of each at most
+         over the two wide frames, one more of either per stop frame at most). The bottom row (the band under the caption
+         and legend may stay dark) comes last.
+         A stop frame is filled gently instead: one patch per void cell and round, its level set by how far the cell still is
+         under the floor, and the frame is tested again after every round - so the sky ends just over the floor where a stop
+         looks and not a grey veil (filled like a wide frame, the sky cells of the stops came out at 25-50/255).
+         BLACK IS KEPT: a frame may keep SKY.allow void cells (the acceptance is <= 3 of 24; a crane frame keeps
+         SKY.allowCut) - its darkest ones stay untouched and only the cells nearest the floor are lifted. Filling every cell
+         of every frame to 14-16 had left no black anywhere: the 5th percentile of a host stop went from 3 to 12-14/255 and
+         the lowest cell of any stop measured 15-22, a veil over the whole sphere. */
+      function fill(voids, accent) {
+        voids.slice().sort(function (a, b) { return (a.mean + (a.j === 3 ? 100 : 0)) - (b.mean + (b.j === 3 ? 100 : 0)); }).forEach(function (v, vi) {
+          var dark = v.mean < 9.5, layers = accent ? 1 : dark ? 2 : 1;
+          for (var li = 0; li < layers; li++) {
+            var kind = 'ci';
+            if (!dark && li === 0 && v.edge > 0.8) {
+              if (accent) { if (accent.n < 1 && R() < 0.3) { kind = R() < 0.5 ? 'ha' : 'o3'; accent.n++; } }
+              else if (nHa < 2 && R() < 0.5) { kind = 'ha'; nHa++; } else if (nO3 < 2 && R() < 0.5) { kind = 'o3'; nO3++; }
+            }
+            var img = kind === 'ha' ? FILL.ha : kind === 'o3' ? FILL.o3 : FILL.ci[(vi + li + total) % Math.max(1, FILL.ci.length)];
+            if (!img) continue;
+            var lv = accent ? clamp((SKY.floor + SKY.over - v.mean) / SKY.step, 0.15, 1.3) : dark ? clamp(11 / Math.max(4, v.mean), 1, 1.6) : 1;
+            var op = (kind === 'ha' ? 0.45 : kind === 'o3' ? 0.6 : 0.55) * SKY.fill * lv;
+            // a stop's patch is kept to its own cell (SKY.patch): what it spills on the neighbours is light nobody asked for
+            var ang = cellA * (kind === 'ci' ? 0.85 + 0.25 * R() : 1.0 + 0.3 * R()) * (accent ? SKY.patch : 1);
+            var dir = v.dir.clone().addScaledVector(v.fr.R, (R() - 0.5) * 0.05).addScaledVector(v.fr.U, (R() - 0.5) * 0.05).normalize();
+            paint(at(dir, ang), img, op / (v.fr.gain / 1.45), R() * TAU, R() < 0.5, !!accent);
+          }
+        });
+        total += voids.length;
+      }
+      // the two wide shots: both tested on the plain plate, as before
+      SKY.cells = []; var lum0 = skySampler(sx2, sw, sh, flipped, null), wv = [];
+      DEEP.wide.forEach(function (fr, fi) { fr.gain = SKY.wide * 1.45; wv = wv.concat(skyVoids(lum0, fr, fi, discs, true)); });
+      SKY.voids = wv; fill(wv, null);
+      /* then every tour stop's frame in turn (a cell still under the floor gets another round, SKY.rounds at most), then the
+         caps onto the plate - all in slices of a few ms, so a re-paint while the tour runs never holds a frame */
+      var stops = (SKY.stops || []).slice(), si = 0, nStop = 0, left = 0, short = [], work = 0, job = null, kept = 0, post = null;
+      function capJob(ci) {
+        var n = SKY_CAP.n, src = caps[ci].x.getImageData(0, 0, n, n).data, w2 = Math.min(W, SKY_CAP.w), h2 = Math.round(w2 * H / W), rows = Math.ceil(SKY_CAP.ext / Math.PI * h2);
+        var st = document.createElement('canvas'); st.width = w2; st.height = rows;
+        var sx3 = st.getContext('2d'), im = sx3.createImageData(w2, rows), o = im.data, cs = new Float32Array(w2), sn = new Float32Array(w2), i;
+        for (i = 0; i < w2; i++) { cs[i] = Math.cos((i + 0.5) / w2 * TAU); sn[i] = Math.sin((i + 0.5) / w2 * TAU); }
+        return { r: 0, rows: rows, run: function (tEnd) {
+          for (; this.r < rows && performance.now() < tEnd; this.r++) {
+            var tc = (this.r + 0.5) / h2 * Math.PI, rho = tc / SKY_CAP.ext * n / 2, fd = clamp((SKY_CAP.ext - tc) / SKY_CAP.fade, 0, 1), q = this.r * w2 * 4;
+            for (i = 0; i < w2; i++, q += 4) {
+              var fx = clamp(n / 2 + rho * cs[i] - 0.5, 0, n - 1.001), fy = clamp(n / 2 + rho * sn[i] - 0.5, 0, n - 1.001), x0 = fx | 0, y0 = fy | 0, ax = fx - x0, ay = fy - y0;
+              var p = (y0 * n + x0) * 4, p2 = p + n * 4, w00 = (1 - ax) * (1 - ay) * fd, w10 = ax * (1 - ay) * fd, w01 = (1 - ax) * ay * fd, w11 = ax * ay * fd;
+              o[q] = src[p] * w00 + src[p + 4] * w10 + src[p2] * w01 + src[p2 + 4] * w11;
+              o[q + 1] = src[p + 1] * w00 + src[p + 5] * w10 + src[p2 + 1] * w01 + src[p2 + 5] * w11;
+              o[q + 2] = src[p + 2] * w00 + src[p + 6] * w10 + src[p2 + 2] * w01 + src[p2 + 6] * w11;
+              o[q + 3] = 255;
+            }
+          }
+          if (this.r < rows) return false;
+          sx3.putImageData(im, 0, 0);
+          var rh = rows / h2 * H;
+          if ((ci === 0) !== flipped) x.drawImage(st, 0, 0, W, rh);          // this pole is the plate's top rows
+          else { x.save(); x.translate(0, H); x.scale(1, -1); x.drawImage(st, 0, 0, W, rh); x.restore(); }
+          return true;
+        } };
+      }
+      (function step() {
+        try {
+          var tS = performance.now(), tEnd = tS + 6;
+          for (; si < stops.length && performance.now() < tEnd; si++) {
+            var accent = { n: 0 }, v = [];
+            var keep = /~$/.test(stops[si].key) ? SKY.allowCut : SKY.allow;
+            for (var round = 0; round < SKY.rounds && total < SKY.maxFill; round++) {
+              v = skyVoids(skySampler(sx2, sw, sh, flipped, caps, ls), stops[si], -1, discs, false);
+              if (v.length <= keep) { kept += v.length; v = []; break; }
+              v.sort(function (a, b) { return b.mean - a.mean; }); v.length -= keep;          // the darkest `keep` cells stay black
+              fill(v, accent); nStop += v.length;
+            }
+            if (v.length) { left++; short.push(stops[si].key + ':' + v.length); }
+          }
+          if (si >= stops.length && !post) {          // the layer through the mask onto the plate (a sixth of it a slice), the caps through theirs
+            post = [];
+            if (lx) { for (var mj = 0; mj < 6; mj++) post.push((function (j) { return function () { maskOn(lx, W, W / (SKY_MASK.k * Math.sqrt(5)), Math.round(j * H / 6), Math.round((j + 1) * H / 6)); }; })(mj)); post.push(function () { x.drawImage(lcv, 0, 0); lcv.width = lcv.height = 1; lx = null; }); }
+            if (M) caps.forEach(function (c) { if (c && c.used) post.push(function () { maskOn(c.x, SKY_CAP.n, SKY_CAP.n / (SKY_MASK.cap * Math.sqrt(5)), 0, SKY_CAP.n); }); });
+          }
+          while (post && post.length && performance.now() < tEnd) post.shift()();
+          if (si >= stops.length && !post.length) for (var ci = 0; ci < 2 && performance.now() < tEnd; ci++) {
+            if (!caps[ci] || !caps[ci].used || caps[ci].done) continue;
+            if (!job) job = capJob(ci);
+            if (!job.run(tEnd)) break;
+            caps[ci].done = true; job = null;
+          }
+          work += performance.now() - tS;
+          if (si < stops.length || (post && post.length) || job || (caps[0] && caps[0].used && !caps[0].done) || (caps[1] && caps[1].used && !caps[1].done)) return setTimeout(step, 0);
+          SKY.fillers = total; SKY.stopFillers = nStop; SKY.mask = !!M; SKY.dark = kept; SKY.stopsShort = left; SKY.shortKeys = short; SKY.bakeMs = Math.round(performance.now() - t0); SKY.bakeWork = Math.round(work);
+          if (!total) return done(null);
+          if (typeof createImageBitmap === 'function') createImageBitmap(cv).then(done, function () { done(cv); }); else done(cv);
+        } catch (e) { console.warn('nexus: sky fill', e); done(null); }
+      })();
     } catch (e) { console.warn('nexus: sky fill', e); done(null); }
   }
   function deepTick() { }
@@ -1405,11 +1671,36 @@
       S.psf.visible = unres > 0.01 && !wait; S.psf.position.copy(_sg); S.psf.scale.set(w * k2, w * k2, 1); S.psf.material.opacity = lv * hud * (o.a || 1) * unres;
       // the limb glare of a resolved star: TEX_CORONA's limb (0.2 of the sprite radius) on the projected limb
       var wc = rad * 2 / 0.2 * 1.04; S.cor.visible = unres < 0.99; S.cor.position.copy(_sg); S.cor.scale.set(wc, wc, 1); S.cor.material.opacity = lv * hud * (1 - unres) * (o.corA || 0.8);
-      if (S.spk) { var ws = w * (o.spikeK || 1.7); S.spk.visible = true; S.spk.position.copy(_sg); S.spk.scale.set(ws, ws, 1); S.spk.material.opacity = lv * hud * (o.spikeA || 0.5); }
+      if (S.spk) { var ws = o.spkW ? o.spkW() : w * (o.spikeK || 1.7); S.spk.visible = true; S.spk.position.copy(_sg); S.spk.scale.set(ws, ws, 1); S.spk.material.opacity = lv * hud * (o.spikeA || 0.5); }
     }
   }
   // the internet sun: the brightest thing in the sky (spikes); trimmed near it like its halo (the fabric stops sit ~500 away)
   var SUN_GLARE = HDR ? mkGlare({ pos: SUN, r: function () { return sunMesh.scale.x * SUN_R; }, k: 10500, min: 40, max: 520, color: new THREE.Color(2.4, 2.05, 1.6), spike: true, spikeK: 1.9, spikeA: 0.55 }) : null;
+  /* the sun as the subject. From the frames that face it (the Internet / Security holds, the WAN stop: inside
+     SUN_HERO.d0 units, eased out by d1) the photosphere's gain, the halo sprite over the disc and the glare ease down, so the
+     disc reads as a star - a warm-white centre, limb darkening to orange, granulation - and not as a flat white coin with the
+     halo and spikes summed on top; the grade's shoulder then holds the centre under 235/255. Tunable live: NEXUS.SUN_HERO. */
+  var SUN_HERO = { halo: 0.78, gain: 0.56, gainL: 0.24, glare: 0.45, d0: 1300, d1: 2100, v2: null };
+  /* the baked star corona set (manifest key glows.corona_v2: psf/corona_{core,halo,flare}.png, already
+     warm white, the limb at `limb` (0.25) of the sprite's half-width) replaces the sun's procedural halo and spikes when the
+     manifest has the key; a v1 manifest or a missing key keeps today's textures (and no request is made for the files).
+     corona_core is the photosphere itself, which this page draws as the lit sphere. */
+  (function () {
+    if (G2MAN) G2MAN.then(function (m) {
+      var g = m && m.glows && m.glows.corona_v2; if (!g) return;
+      function file(k) {
+        var f = typeof g === 'object' ? (g[k] || (g.files && g.files[k])) : null; if (f && typeof f === 'object') f = f.file;
+        f = String(f || 'psf/corona_' + k + '.png').replace(/^\/?static\/assets\//, '');
+        return f.indexOf(G2B) === 0 ? f : G2B + f;
+      }
+      var limb = typeof g === 'object' && +g.limb > 0 && +g.limb < 1 ? +g.limb : 0.25;
+      loadTex(file('halo'), function (t) { sunHalo.material.map = t; sunHalo.material.color.setRGB(1, 1, 1); sunHalo.material.needsUpdate = true; SUN_HERO.v2 = { limb: limb }; });
+      if (SUN_GLARE && SUN_GLARE.spk) loadTex(file('flare'), function (t) {
+        var mt = SUN_GLARE.spk.material; mt.map = t; mt.rotation = 0; mt.color.setRGB(1, 1, 1); mt.needsUpdate = true;
+        SUN_GLARE.o.spkW = function () { return sunMesh.scale.x * SUN_R * 2 / limb; }; SUN_GLARE.o.spikeA = 1;
+      });
+    }).catch(function () { });
+  })();
 
   /* ============================== fabric (solar system) ==============================
      gateway/switch/ap = three small planets strung out between the sun and the estate;
@@ -1992,7 +2283,9 @@
     // there to clash with — this was silently capping a small galaxy at 6 of its 8 guests labelled.
     // the showcase hides every bit of chrome but its letterbox bars (8.5vh); otherwise the bands are the production HUD's (HUDZ)
     var topBand = SC.active ? H * 0.085 : H * HUDZ.top, botBand = SC.active ? H * (1 - 0.085) - 44 : H * HUDZ.bot;
+    if (!SC.active && HUDR.cap) botBand = Math.min(botBand, HUDR.cap.y1);            // the caption block incl. the story line
     var cY0 = H * HUDZ.cardY0, cY1 = H * HUDZ.cardY1, cXL = W * HUDZ.cardX, cXR = W * (1 - HUDZ.cardX), sX = W * HUDZ.statX, sY = H * HUDZ.statY;
+    var hudBoxes = !SC.active && HUDR.n > 0;
     starsScreen(W, H);
     for (var i = 0; i < labels.length; i++) {
       var L = labels[i];
@@ -2035,6 +2328,7 @@
           if (b1 < 0 || b3 > W || b2 < topBand || b4 > botBand) continue;
           if (!SC.active && b4 > cY0 && b2 < cY1 && (b1 < cXL || b3 > cXR)) continue;   // node cards
           if (!SC.active && b3 > sX && b2 < sY) continue;                                 // estate status panel
+          if (hudBoxes && hudHit(b1, b2, b3, b4)) continue;                                // the measured chrome boxes
           var hitS = false;
           for (var pq = 0; pq < PLACED_N && !hitS; pq += 4) if (b1 < placed[pq + 2] && b3 > placed[pq] && b2 < placed[pq + 3] && b4 > placed[pq + 1]) hitS = true;
           if (!hitS && onStarGlare(b1, b2, b3, b4)) hitS = true;
@@ -2071,6 +2365,7 @@
           if (bx1 < 0 || bx2 > W || by1 < topBand || by2 > botBand) continue;                       // off-screen / into top or bottom HUD (or letterbox) bands
           if (!SC.active && bx2 > sX && by1 < sY) continue;                             // status block (big line + sub + THREAT chip) top-right: verified on the overview that station/guest labels parked under it read as clutter next to "1 HOST DOWN"
           if (!SC.active && by2 > cY0 && by1 < cY1 && (bx1 < cXL || bx2 > cXR)) continue;  // into the two node cards (hidden during showcase)
+          if (hudBoxes && hudHit(bx1, by1, bx2, by2)) continue;                             // the measured chrome boxes
           var onObstacle = false;
           for (var oi = 0; oi < OBSTACLES.length; oi++) { var ob = OBSTACLES[oi]; if (ob.active && circleRectOverlap(ob.x, ob.y, ob.r, bx1, by1, bx2, by2)) { onObstacle = true; break; } }
           if (!onObstacle && onStarGlare(bx1, by1, bx2, by2)) onObstacle = true;
@@ -2121,6 +2416,11 @@
             var lob = OBSTACLES[loi];
             if (lob.active && circleRectOverlap(lob.x, lob.y, lob.r, lb1, lb2, lb3, lb4)) { var ody = lob.y + lob.r + H * 0.008 - lb2; y += ody; lb2 += ody; lb4 += ody; }
           }
+          // the measured chrome boxes - the Estate panel pushes the name down under it, a node card pushes it sideways
+          if (hudBoxes) for (var hb = 0, HR; hb < 3 && (HR = hudHit(lb1, lb2, lb3, lb4)); hb++) {
+            if (HR === HUDR.status) { var hdy = HR.y2 - lb2 + H * 0.006; y += hdy; lb2 += hdy; lb4 += hdy; }
+            else { var hdx = HR === HUDR.l ? HR.x2 - lb1 + 4 : HR.x1 - lb3 - 4; x += hdx; lb1 += hdx; lb3 += hdx; }
+          }
           var lIter = 0, lMoved = true;
           while (lMoved && lIter < 8) {
             lMoved = false;
@@ -2131,7 +2431,7 @@
             }
             lIter++;
           }
-          okPlace = !(lb2 < topBand || lb4 > botBand) && !(L.maxPush && (y - yWant) > L.maxPush * H);
+          okPlace = !(lb2 < topBand || lb4 > botBand) && !(L.maxPush && (y - yWant) > L.maxPush * H) && !(hudBoxes && hudHit(lb1, lb2, lb3, lb4)) && lb1 >= 0 && lb3 <= W;
         }
         if (!okPlace) { hideLabel(L); continue; }
         placedPush(lb1, lb2, lb3, lb4);
@@ -2464,6 +2764,50 @@
   // intrusion burst (2026-09-19): a red shockwave annulus in the shield ring's own plane, fired by threatArrive()
   var thWave = ringPlane(TEX_RING, 0xff5a6a, 0); thWave.scale.setScalar(SUN_R * 2.1); cfPivot.add(thWave);
   var cfState = { up: false, rpm: 0 };
+  /* the blocked sources - this screen's own version of the wall's scene. A dim orbit round the sun
+     carries one beacon per country the edge has turned away (CrowdSec: by_country, else its top attackers grouped; the
+     8 largest), and each is ONE calm red point: a PSF whose size follows the count (well under 60 px at the Internet /
+     Security holds), a slow breath, never a ring or a torus. Shown from the frames that face the sun (the same distance
+     gate as its hero trim); the largest carries the one label. No feed, nothing blocked: the orbit is not drawn at all. */
+  var BLK = { n: 8, r: SUN_R * 3.3, min: 30, max: 62, a: 0.9, orbitA: 0.09, spin: 0.03, list: [], sig: '', t: 9, k: 0, top: null };
+  var blkPivot = new THREE.Group(); blkPivot.rotation.set(0.5, 0, -0.42); blkPivot.visible = false; sun.add(blkPivot);
+  var blkOrbit = ringPlane(ringTex(0.972, 1.0), 0xff7a66, 0); blkOrbit.scale.setScalar(BLK.r / 0.986); blkPivot.add(blkOrbit);
+  var blkSpr = [];
+  for (var bq = 0; bq < BLK.n; bq++) {
+    var bs = new THREE.Sprite(new THREE.SpriteMaterial({ map: TEX_PSF, color: HDR ? new THREE.Color(1.5, 0.3, 0.24) : new THREE.Color(1, 0.3, 0.26), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+    bs.visible = false; bs.renderOrder = 3; blkPivot.add(bs); blkSpr.push(bs);
+  }
+  var L_blk = mkLabel('station blk', '<b>Blocked</b><span></span>'); L_blk.poolItem = true; L_blk.on = false;
+  function blkRefresh() {
+    var cs = (S.edge && S.edge.crowdsec) || {}, by = {}, k;
+    if (cs.by_country && typeof cs.by_country === 'object') { for (k in cs.by_country) if (+cs.by_country[k] > 0) by[k] = +cs.by_country[k]; }
+    if (!Object.keys(by).length) (cs.top_attackers || []).forEach(function (a) { if (a && a.cn) by[a.cn] = (by[a.cn] || 0) + (+a.events || 1); });
+    var list = Object.keys(by).map(function (cc) { return { cc: String(cc).slice(0, 3), n: by[cc] }; }).sort(function (a, b) { return b.n - a.n || (a.cc < b.cc ? -1 : 1); }).slice(0, BLK.n);
+    var sig = list.map(function (b) { return b.cc + b.n; }).join(',');
+    if (sig === BLK.sig) return;
+    BLK.sig = sig; BLK.list = list; BLK.top = list[0] || null;
+    var mx = list.length ? list[0].n : 1, ph = list.length ? hash(list.map(function (b) { return b.cc; }).sort().join('')) * TAU : 0;
+    // slots by country code (stable while the same countries are blocked), spread evenly round the orbit
+    var order = list.slice().sort(function (a, b) { return a.cc < b.cc ? -1 : 1; });
+    blkSpr.forEach(function (sp, i) {
+      var b = order[i]; sp.visible = !!b; if (!b) return;
+      var a = ph + i * TAU / order.length, w = lerp(BLK.min, BLK.max, Math.sqrt(b.n / mx));
+      sp.position.set(Math.cos(a) * BLK.r, 0, Math.sin(a) * BLK.r); sp.scale.set(w, w, 1); sp.userData.ph = hash(b.cc) * TAU; b.spr = sp;
+    });
+    if (BLK.top) setLabelText(L_blk, 'Blocked · ' + BLK.top.cc + ' · ' + BLK.top.n, '');
+  }
+  function blkTick(dt, t, hero) {
+    if ((BLK.t += dt) >= 2) { BLK.t = 0; blkRefresh(); }
+    var night = document.body.classList.contains('st-night'), want = BLK.list.length && !SC.active ? hero * (night ? 0.5 : 1) : 0;
+    BLK.k += (want - BLK.k) * Math.min(1, dt / 0.5);
+    var on = BLK.k > 0.01; blkPivot.visible = on; L_blk.on = false;
+    if (!on) return;
+    blkPivot.rotation.y += dt * BLK.spin;
+    blkOrbit.material.opacity = BLK.orbitA * BLK.k;
+    for (var i = 0; i < blkSpr.length; i++) { var sp = blkSpr[i]; if (sp.visible) sp.material.opacity = BLK.a * BLK.k * (0.86 + 0.14 * Math.sin(t * 0.9 + sp.userData.ph)); }
+    var mode = LABEL.mode;
+    if (BLK.top && BLK.top.spr && BLK.k > 0.6 && !night && (mode === 'wan' || mode === 'edge' || mode === 'threat')) { BLK.top.spr.getWorldPosition(L_blk.pos); L_blk.on = true; }
+  }
   function exoTick(dt, t, sunNear) {
     var cf = S.edge && S.edge.cloudflare, night = document.body.classList.contains('st-night');
     cfState.up = !!(cf && cf.up); cfState.rpm = cfState.up ? (+cf.req_per_min || 0) : 0;
@@ -4182,7 +4526,7 @@
     var cl = categoryCluster(node, cat); if (!cl) return hostShot(node);
     // universe mode: whole galaxy + category focus dim (see galaxyFaceShot), each category from its own bearing (+-20 deg)
     // and a little closer than the host shot, so host <-> category legs are real orbits around the galaxy, not a pause
-    if (UNI.on) return galaxyFaceShot(node, (Math.max(0, CATS.indexOf(cat)) - 2.5) * 0.14 * (galaxies[node].world.x > 0 ? 1 : -1), 0.9);
+    if (UNI.on) return blkWedgeShot(node, cat) || galaxyFaceShot(node, (Math.max(0, CATS.indexOf(cat)) - 2.5) * 0.14 * (galaxies[node].world.x > 0 ? 1 : -1), 0.9);
     var gal = galaxies[node], dir = cl.c.clone().sub(gal.world), distFromCore = dir.length();
     if (distFromCore < 1) dir.set(1, 0.3, 0); else dir.normalize();
     // when the cluster centroid sits close to the core (small distFromCore relative to the
@@ -4196,6 +4540,41 @@
     var approach = dir.clone().multiplyScalar(1 - 0.7 * nearness).add(perp.multiplyScalar(0.7 * nearness));
     if (approach.lengthSq() < 1e-6) approach.copy(dir); else approach.normalize();
     return { pos: cl.c.clone().add(approach.multiplyScalar(cl.r * 2.4 + 25)).add(new THREE.Vector3(0, cl.r * 0.65 + 22, 0)), look: cl.c.clone(), track: { obj: gal.G, local: cl.loc } };
+  }
+  /* a category stop frames the CATEGORY's part of the disc, not the whole galaxy (6 of 26 stops were
+     the same face-on frame). The camera orbits to the wedge where that category's stars sit - the layout's shared wedge
+     math (UNIVERSE_LAYOUT.wedgeOf(points, hub), when this build of the layout has it) over the members' own positions in the
+     galaxy frame, else the same circular mean here - stays within 35 deg of face-on, keeps the core off-centre and alternates
+     its tilt, its side and its orbit swing between consecutive category stops of one host (their order in the wall's stop
+     list), so three stops read as three places. The shot rides the galaxy's spin (track). Fewer than 2 members: the plain
+     face shot as before. `phi` turns the wedge round the disc (the sky test: where the spin may have carried it). */
+  var BLK_SHOT = { tilt: [0.42, 0.3, 0.52, 0.36], swing: 0.55, lean: 0.5, dist: 470, rMin: 70, rMax: 230 };
+  function blkOrder(node, cat) {
+    var k = 0, pre = 'blk:pve:' + node + ':', pre2 = 'blk:' + node + ':', st = WALL.stops || [];
+    for (var i = 0; i < st.length; i++) { var key = String(st[i].key || ''); if (key.indexOf(pre) === 0 || key.indexOf(pre2) === 0) { if (key.slice(key.lastIndexOf(':') + 1) === cat) return k; k++; } }
+    return Math.max(0, CATS.indexOf(cat));
+  }
+  var _bwL = new THREE.Vector3(), _bwW = new THREE.Vector3();
+  function blkWedge(gal, cat) {
+    var pts = gal.list.filter(function (g) { return g.cat === cat && g._pos; }); if (pts.length < 2) return null;
+    var W = null;
+    try { if (UL && typeof UL.wedgeOf === 'function') W = UL.wedgeOf(pts.map(function (g) { return [g._pos[0], g._pos[1], g._pos[2]]; }), [0, 0, 0]); } catch (e) { W = null; }
+    if (W && isFinite(W.theta) && isFinite(W.r)) return { ang: +W.theta, r: +W.r };
+    var sx = 0, sz = 0, rs = 0;
+    pts.forEach(function (g) { var x = g._pos[0], z = g._pos[2], r = Math.hypot(x, z) || 1; sx += x / r; sz += z / r; rs += r; });
+    // members spread evenly round the disc (no wedge to speak of): a fixed bearing per category keeps the stops distinct
+    return { ang: Math.hypot(sx, sz) < 0.2 * pts.length ? Math.max(0, CATS.indexOf(cat)) * 1.05 : Math.atan2(sz, sx), r: rs / pts.length };
+  }
+  function blkWedgeShot(node, cat, phi) {
+    var gal = galaxies[node]; if (!gal) return null;
+    var W = blkWedge(gal, cat); if (!W) return null;
+    var ord = blkOrder(node, cat), rm = clamp(W.r, BLK_SHOT.rMin, BLK_SHOT.rMax), ang = W.ang + (phi || 0);
+    _bwL.set(Math.cos(ang) * rm, 0, Math.sin(ang) * rm);                    // the wedge's centre, in the spinning galaxy frame
+    _bwW.copy(_bwL); gal.G.localToWorld(_bwW);
+    var sh = plateShot(gal, _bwW, { tilt: BLK_SHOT.tilt[ord % BLK_SHOT.tilt.length], side: ord % 2 ? -1 : 1, swing: ((ord >> 1) % 2 ? -1 : 1) * BLK_SHOT.swing,
+                                    lean: BLK_SHOT.lean, d: BLK_SHOT.dist * (gal.nd.scale || 1) });
+    sh.track = { obj: gal.G, local: gal.G.worldToLocal(sh.look.clone()) };
+    return sh;
   }
   function planetShotFor(kind) {
     var f = fab[kind]; if (!f) return SHOTS_STATIC.fabric;
@@ -4247,8 +4626,17 @@
     if (F.kind === 'galaxy') return hostShot(F.sys._node);
     if (F.kind === 'network' && UNI.on) return coreShot();
     if (F.kind === 'network' || F.kind === 'clients') return netShot();
-    return fitShot(F.center, F.rOut + 30, new THREE.Vector3(0.12, 0.62, 0.78).normalize(), 1.3);   // centred, from the estate camera's side
+    /* a small system (a remote site) is seen from its FAR side, looking back at the estate, so the
+       galaxies fill the frame behind it. It used to be seen from the estate camera's side, i.e. against the empty sky
+       beyond it: the TV's darkest hold (mean 18/255, 9 void cells of 24). */
+    var est = new THREE.Vector3(), ng = 0; NODES.forEach(function (n) { if (!n.gone && galaxies[n.id]) { est.add(galaxies[n.id].world); ng++; } });
+    if (ng) est.multiplyScalar(1 / ng);
+    var back = F.center.clone().sub(est);
+    if (back.lengthSq() < 100) return fitShot(F.center, F.rOut + 30, new THREE.Vector3(0.12, 0.62, 0.78).normalize(), 1.3);
+    back.normalize(); back.y = clamp(back.y, -0.5, 0.5); back.normalize();
+    return fitShot(F.center, F.rOut + 30, back, SYS_SHOT.k);
   }
+  var SYS_SHOT = { k: 1.2 };
   var _trk = new THREE.Vector3(), _trk2 = new THREE.Vector3();
   function trackShot(sh) {
     if (sh && sh.follow) {                                    // an aspect shot rides its body (galaxy spin, orbits), like an event cut
@@ -4351,6 +4739,7 @@
     }
     if (R && R.role === 'core' && R.F && R.F.gal) return galaxyFaceShot(R.F.gal.nd.id, ASP_SHOT.coreAz * (R.F.gal.world.x > 0 ? 1 : -1), ASP_SHOT.coreK);
     var p = new THREE.Vector3();
+    if (R && R.role === 'guest' && R.F && R.F.gal && evcWorld(R, p)) return guestPlateShot(R, p);
     if (R && evcWorld(R, p)) {
       var C = R.role === 'guest' && R.F && R.F.gal ? R.F.gal.world : isNetF(R.F) ? NET_C : (R.F && R.F.center && R.F.center.lengthSq() > 0 ? R.F.center : null);
       // the camera stands OUTSIDE the body, on its own radial from the system centre, high: the body sits in front of its star
@@ -4366,6 +4755,113 @@
     return af ? shotFor(af) : overviewShot();
   }
   var ASP_SHOT = { sun: 1100, coreAz: 0.35, coreK: 0.62, lift: 0.45, lean: 0.35, rk: 0.7, secLean: 0.3, secD: 650, secH: 190 };   // tunable live via NEXUS.ASP_SHOT
+  /* a guest anchor (asp:cameras, asp:media, asp:web ...) is framed from the LIT side of its galaxy's plate. The old
+     fit-from-outside pose stood on the body's own radial, 0.45 up, i.e. in the plate's plane for a tilted galaxy: asp:cameras and
+     asp:media landed edge-on on black (TV 8 % lit, 13/24 voids) while the wall showed the bright galaxy behind them. Now the camera sits
+     on the plate's normal (the face the overview sees), tilted ASP_PLATE.tilt rad toward the body's bearing (<= 35 deg: never
+     edge-on), the look point between the body and the core (the body on one third, the core toward the other) and the distance
+     set from the plate itself (ASP_PLATE.dist x the galaxy's scale: the disc covers the frame height and ~60 % of its width,
+     over the 45 % floor - plateCover() measures it). Rides the spin (follow). The wall's `shot` family (lightstate v13)
+     tightens a `planet` shot a little; without the field the plain distance. */
+  var ASP_PLATE = { tilt: 0.5, lean: 0.45, dist: 620, planetK: 0.86 };
+  var _apN = new THREE.Vector3(), _apT = new THREE.Vector3(), _apD = new THREE.Vector3(), _apS = new THREE.Vector3(), _apQ = new THREE.Vector3();
+  function plateNormal(gal, out) {
+    out.set(0, 1, 0).applyQuaternion(gal.O.quaternion);
+    if (out.dot(_ovDir) < 0) out.negate();                    // the face the overview (and the wall) looks at
+    return out;
+  }
+  /* the shared plate pose: the camera on the lit-side normal, tilted o.tilt toward the subject's in-plane bearing from the
+     core (o.side -1: away from it; o.swing: that bearing turned round the normal), looking at the point o.lean of the way
+     from the subject to the core, from o.d. o.phi turns the subject round the core first. */
+  function plateShot(gal, subW, o) {
+    var C = gal.world, n = plateNormal(gal, _apN);
+    var t = _apT.subVectors(subW, C); t.addScaledVector(n, -t.dot(n));
+    var rm = t.length();
+    if (rm > 1) t.multiplyScalar(1 / rm); else { t.set(1, 0, 0); t.addScaledVector(n, -t.dot(n)).normalize(); rm = 0; }
+    if (o.phi) t.applyAxisAngle(n, o.phi);
+    var look = _apS.copy(C).addScaledVector(t, rm).clone().lerp(C, o.lean);
+    if (o.swing) t.applyAxisAngle(n, o.swing);
+    var dir = _apD.copy(n).multiplyScalar(Math.cos(o.tilt)).addScaledVector(t, (o.side || 1) * Math.sin(o.tilt)).normalize();
+    return { pos: look.clone().addScaledVector(dir, o.d), look: look };
+  }
+  // the share of the 6 x 4 frame cells whose centre ray lands on the galaxy's plate (0.85 of the disc radius)
+  function plateCover(gal, sh) {
+    var fr = skyFrame(sh.pos, sh.look, 1), n = plateNormal(gal, _apQ).clone(), r = 0.85 * 300 * (gal.nd.scale || 1), hit = 0, c = new THREE.Vector3(), q = new THREE.Vector3();
+    for (var j = 0; j < 4; j++) for (var i = 0; i < 6; i++) {
+      c.copy(fr.F).addScaledVector(fr.R, (-1 + (i + 0.5) / 3) * fr.tH).addScaledVector(fr.U, (1 - (j + 0.5) / 2) * fr.tV).normalize();
+      var dn = c.dot(n); if (Math.abs(dn) < 1e-4) continue;
+      var tt = q.copy(gal.world).sub(fr.pos).dot(n) / dn;
+      if (tt > 0 && q.copy(fr.pos).addScaledVector(c, tt).distanceTo(gal.world) < r) hit++;
+    }
+    return hit / 24;
+  }
+  function guestPlateShot(R, p, phi) {
+    var gal = R.F.gal, d = ASP_PLATE.dist * (gal.nd.scale || 1) * (WALL.shot === 'planet' ? ASP_PLATE.planetK : 1), sh = null;
+    // the plate must cover at least 45 % of the frame: step in until it does (it already does at the default distance)
+    for (var it = 0; it < 6; it++) {
+      sh = plateShot(gal, p, { tilt: ASP_PLATE.tilt, lean: ASP_PLATE.lean, d: d, phi: phi });
+      if (plateCover(gal, sh) >= 0.45) break;
+      d *= 0.9;
+    }
+    sh.follow = R; return sh;
+  }
+  /* the frames of the wall's stops, for the sky test (skyFill). A plate shot's direction depends on where the galaxy's
+     spin has carried its subject, so it is taken at six bearings; a stream shot at its start, middle and end. */
+  function skyStopFrames(keys) {
+    var out = [], g = SKY.close * 1.45, p = new THREE.Vector3(), reps = [], cuts = [];
+    keys.forEach(function (key) {
+      var subj = parseStop(key), shots = [], k;
+      if (subj.kind === 'over' || subj.kind === 'wan') {                       // the two wide frames
+        try { k = shotFor(subj); if (k && k.pos && k.look) reps.push(k); } catch (e) { }
+        return;
+      }
+      try {
+        if (subj.kind === 'blk' && UNI.on && galaxies[subj.node]) { for (k = 0; k < 6; k++) shots.push(blkWedgeShot(subj.node, subj.cat, k * TAU / 6)); }
+        else if (subj.kind === 'asp') {
+          var R = aspRec(aspOf(subj.id));
+          if (R && R.role === 'guest' && R.F && R.F.gal && evcWorld(R, p)) { for (k = 0; k < 6; k++) shots.push(guestPlateShot(R, p, k * TAU / 6)); }
+        }
+        else if (subj.kind === 'stream') [0, 0.5, 1].forEach(function (e) { shots.push(streamShot(subj, e)); });
+        if (!shots.length || !shots[0]) shots = [shotFor(subj)];
+      } catch (e) { shots = []; }
+      shots.forEach(function (sh) { if (sh && sh.pos && sh.look) out.push(skyFrame(sh.pos, sh.look, g, key)); });
+      if (shots[0] && shots[0].pos && shots[0].look) reps.push(shots[0]);
+    });
+    // the cutaways live inside a hold and use the close level too: audience (far side of the edge disc), edge, threat
+    [['cut:audience', audienceShot], ['cut:edge', edgeShot], ['cut:threat', threatShot]].forEach(function (c) {
+      var sh = null;
+      try { sh = c[1](); } catch (e) { sh = null; }
+      if (sh && sh.pos && sh.look) { out.push(skyFrame(sh.pos, sh.look, g, c[0])); cuts.push({ key: c[0], sh: sh }); }
+    });
+    /* a cutaway is a crane from wherever the wall's stop left the camera, and the way home is the same sweep backwards:
+       the gaze turns through sky no stop looks at (measured: 10-12 void cells of 24 for 0.3-0.5 s of an audience cut).
+       So the sweep from every stop is tested too - one frame per SKY_SWEEP.step of turn, a direction an earlier frame
+       already looks along skipped. They come last: the stops keep first call on the filler budget. */
+    var seen = out.map(function (f) { return f.F; });
+    cuts.forEach(function (c) {
+      if (c.key === 'cut:edge') return;                                        // a tour shot, never cut to
+      reps.forEach(function (from) { skySweep(from, c.sh, c.key === 'cut:threat' ? 0.35 : 0.8, g, c.key + '~', seen, out); });
+    });
+    return out;
+  }
+  // the frames along beginCut()'s crane (legSetup's plain arc, no move) from one shot to another
+  var SKY_SWEEP = { n: 60, step: 0.35, near: 0.21 };
+  function skySweep(from, to, lift, gain, key, seen, out) {
+    var len = from.pos.distanceTo(to.pos), cp = from.pos.clone().add(to.pos).multiplyScalar(0.5), cl = from.look.clone().add(to.look).multiplyScalar(0.5);
+    cp.y += lift * Math.min(len * 0.28, 220); cl.y += lift * Math.min(len * 0.05, 36);
+    var P = new THREE.Vector3(), L = new THREE.Vector3(), F = new THREE.Vector3(), last = from.look.clone().sub(from.pos).normalize();
+    var cS = Math.cos(SKY_SWEEP.step), cN = Math.cos(SKY_SWEEP.near);
+    function near(f) { return f.dot(F) > cN; }
+    for (var i = 1; i < SKY_SWEEP.n; i++) {
+      var e = i / SKY_SWEEP.n, a = (1 - e) * (1 - e), b = 2 * (1 - e) * e, c = e * e;
+      P.copy(from.pos).multiplyScalar(a).addScaledVector(cp, b).addScaledVector(to.pos, c);
+      L.copy(from.look).multiplyScalar(a).addScaledVector(cl, b).addScaledVector(to.look, c);
+      F.subVectors(L, P); if (F.lengthSq() < 1) continue;
+      F.normalize(); if (F.dot(last) > cS) continue;
+      last.copy(F); if (seen.some(near)) continue;
+      var fr = skyFrame(P, L, gain, key); seen.push(fr.F); out.push(fr);
+    }
+  }
   // the label subject an aspect stands for: the anchor itself (+ a couple of neighbours), never a crowd
   function aspLabelSubj(key) {
     var a = aspOf(key), R = aspRec(a);
@@ -4841,11 +5337,30 @@
   /* wall sync v2: SSE stream of /api/lightstate (falls back to 1 Hz polling) drives the
      director in lockstep — travel legs ease with the wall's own prog, re-anchored on
      every update so motion stays smooth between the wall's ~5 Hz ticks. */
-  var WALL = { stops: [], lastKey: '', lastBeat: -1, lastTs: 0 };
+  var WALL = { stops: [], lastKey: '', lastBeat: -1, lastTs: 0, shot: '', story: '' };
+  /* the wall's `story` (final text, <= 64 chars) is mirrored as ONE centred line
+     above the caption, cross-faded 380 ms like the caption; `shot` (wide|core|planet|stream|edge) is the wall's shot family,
+     a hint for the aspect shots. Both optional: absent (an older wall / sanitizer) = no story line, unknown family. */
+  var SHOT_FAM = { wide: 1, core: 1, planet: 1, stream: 1, edge: 1 };
+  var STORY = { cur: '', t: null, shown: 0 };
+  function setStory(text) {
+    text = String(text || '').replace(/[\x00-\x1f\x7f]/g, '').trim().slice(0, 64);
+    if (text === STORY.cur) return;
+    STORY.cur = text; STORY.shown++;
+    var el = $('story'); if (!el) return;
+    if (STORY.t) { clearTimeout(STORY.t); STORY.t = null; }
+    if (!text) { el.classList.remove('on'); STORY.t = setTimeout(function () { STORY.t = null; el.textContent = ''; }, 380); return; }
+    if (!el.textContent) { el.textContent = text; el.classList.add('on'); return; }     // nothing on screen to fade out
+    el.classList.remove('on');
+    STORY.t = setTimeout(function () { STORY.t = null; el.textContent = text; el.classList.add('on'); }, 380);
+  }
   function applyWallState(s) {
     if (WALL.qaOnly && !(s && s.qa)) return;                // QA injection owns the director (NEXUS.wallState)
     var fresh = s && s.ts && (Date.now() / 1000 - s.ts) < 20;
     if (s && s.ts) WALL.lastTs = s.ts;
+    WALL.shot = fresh && typeof s.shot === 'string' && SHOT_FAM[s.shot] ? s.shot : '';
+    WALL.story = fresh && !s.manual && typeof s.story === 'string' ? s.story : '';
+    setStory(WALL.story);
     if (fresh && s.rgb) document.documentElement.style.setProperty('--wall', 'rgb(' + s.rgb.join(',') + ')');
     if (fresh && s.stops && s.stops.length) WALL.stops = s.stops;
     if (fresh && typeof s.beat === 'number') { if (WALL.lastBeat >= 0 && s.beat !== WALL.lastBeat) shockwave(); WALL.lastBeat = s.beat; }
@@ -4855,6 +5370,7 @@
     if (!fresh || s.manual || D.pinFree) {
       if (D.mode !== 'free') enterFreeRoam();
       chip.className = 'off'; chip.querySelector('span').textContent = (fresh && s.manual) ? 'wall manual' : 'free roam';
+      setStory('');
       return;
     }
     D.mode = 'sync'; D.stopKey = s.phase === 'travel' && s.to ? s.to : s.stop; if (s.hold_s) D.holdS = +s.hold_s;
@@ -4938,7 +5454,7 @@
          2 s and it is the only path back. */
       pollLightstate();
       if (age > 35 && D.mode === 'sync') {            // grace, so a brief hiccup does not flick the camera
-        enterFreeRoam();
+        enterFreeRoam(); setStory('');
         var c = $('sync');
         if (c) { c.className = 'off'; c.querySelector('span').textContent = 'wall silent'; }
       }
@@ -5454,6 +5970,7 @@
     var runs = S.backups && S.backups.runs; if (!runs || !runs.length) return null;
     var r = null; for (var i = 0; i < runs.length; i++) if (runs[i] && runs[i].node === id && (!r || (+runs[i].start || 0) > (+r.start || 0))) r = runs[i];
     if (!r) return null;
+    if (r.none) return hRow('Last backup', 'none', 'warn');      // a node with no vzdump run yet (a new node): never "— / — ok"
     if (r.running || r.state === 'running') { var rn = r.running || {}; return hRow('Last backup', 'Running' + (rn.done != null ? ' · ' + rn.done + unit(' done') : '')); }
     var t = r.start ? new Date(r.start * 1000) : null, hhmm = t ? ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2) : '—';
     var v = hhmm + ' · ' + (r.ok != null ? r.ok : '—') + ' / ' + (r.guests != null ? r.guests : '—') + unit(' ok');
@@ -5671,6 +6188,7 @@
   // once a second (animate's dataset tick): the stale marker, the backend's alert mode and the overview-only legend row
   var HUD1 = { st: null, upd: null, over: null };
   function hudSecond() {
+    hudRects();
     var age = S.lastAll ? (Date.now() - S.lastAll) / 1000 : 0, u = age > 30 ? 'Data ' + Math.round(age) + ' s old' : '';
     if (u !== HUD1.upd) { HUD1.upd = u; $('updated').textContent = u; }
     var st = document.body.classList.contains('st-alert'); if (st !== HUD1.st) { HUD1.st = st; alertRefresh(); }
@@ -5776,7 +6294,7 @@
       // cap tracks any FOV/aspect change too, not just a hand-tuned world-space constant.
       var r = Math.min(rDesired, camDistG * Math.tan(maxCoreAngle));
       // HDR bulge: a soft profile reads ~0.7 of its mesh radius, and a bulge is oblate (flattened along the disc normal = G's y)
-      if (HDR) g.core.scale.set(r * 1.35, r * 0.95, r * 1.35); else { g.core.scale.setScalar(r); g.core.rotation.y += dt * 0.25; g.core.rotation.x += dt * 0.07; }
+      if (g.bulge) g.core.scale.set(r * 1.35, r * 0.95, r * 1.35); else { g.core.scale.setScalar(r); g.core.rotation.y += dt * 0.25; g.core.rotation.x += dt * 0.07; }
       g.coreMat.uniforms.pulse.value = beat * (beatSev >= 3 ? 1 : 0.6);
       // halo size capped as a fraction of camera distance (not just its own near/far opacity
       // ramp) — a sprite with a fixed world-space scale reads fine from the distance it was
@@ -5800,7 +6318,7 @@
       for (var hzi = 0; hzi < g.hazeOut.length; hzi++) { var HZ = g.hazeOut[hzi]; HZ.material.opacity = HZ.userData.op * hzK; HZ.visible = hzK > 0.01; }
       if (g.list.length && (g.gF || 0) < 1) g.gF = Math.min(1, (g.gF || 0) + dt / 1.2);   // first guests fade in, never pop
       g.guests.material.uniforms.uAlpha.value = (night ? 0.7 : 1) * smooth(g.gF || 0);
-      if (HDR) { if (alert) g.coreMat.uniforms.c2.value.setHex(0xff5a6a); else g.coreMat.uniforms.c2.value.copy(g.bulgeC2); } else g.coreMat.uniforms.c2.value.setHex(alert ? 0xff5a6a : n.accent);
+      if (g.bulge) { if (alert) g.coreMat.uniforms.c2.value.setHex(0xff5a6a); else g.coreMat.uniforms.c2.value.copy(g.bulgeC2); } else g.coreMat.uniforms.c2.value.setHex(alert ? 0xff5a6a : n.accent);
       g.coreMat.uniforms.near.value = near;
       // register this core as a label obstacle (see OBSTACLES/projectObstacle up in the
       // labels section) using the SAME capped radius just applied to the mesh, so the clash
@@ -5849,8 +6367,18 @@
     // far trim: from the AUDIENCE frame (~3000 units) the sun is a small disc whose bloom still summed to a
     // white dot; ease the gain down beyond 2000 units so it stays an amber body at the bottom of that frame
     var sunFar = 1 - nearFactor(camDistSun, 2000, 3400);
-    sunMat.uniforms.gain.value = HDR ? 3.2 * (1 - 0.3 * sunNear) : 1.3 - 0.6 * sunNear - 0.4 * sunFar;
-    if (SUN_GLARE) SUN_GLARE.lvl = 1 - 0.75 * sunNear;
+    // framed as the subject (asp:internet / security / WAN: inside SUN_HERO.d0 units) the photosphere gain,
+    // the halo over the disc and the glare ease down, so the disc keeps a warm-white centre and an orange limb instead of a
+    // blown coin ~40 % of the frame height; the grade's shoulder then holds the centre under 235/255
+    var sunHero = nearFactor(camDistSun, SUN_HERO.d0, SUN_HERO.d1);
+    sunHalo.material.opacity *= 1 - SUN_HERO.halo * sunHero;
+    if (SUN_HERO.v2) {                                       // the baked corona: its limb on the star's limb, its own level
+      var hv = sunMesh.scale.x * SUN_R * 2 / SUN_HERO.v2.limb; sunHalo.scale.set(hv, hv, 1);
+      sunHalo.material.opacity = 1 - 0.5 * sunNear;
+    }
+    sunMat.uniforms.gain.value = HDR ? 3.2 * (1 - 0.3 * sunNear) * (1 - SUN_HERO.gain * sunHero) : (1.3 - 0.6 * sunNear - 0.4 * sunFar) * (1 - SUN_HERO.gainL * sunHero);
+    if (SUN_GLARE) SUN_GLARE.lvl = (1 - 0.75 * sunNear) * (1 - SUN_HERO.glare * sunHero);
+    blkTick(dt, t, sunHero);
     // fabric planets: pulse with the beat, switch rings red while down
     FABKIND.forEach(function (k, ki) {
       var f = fab[k], camDistF = cam.position.distanceTo(f.pos);
@@ -5982,6 +6510,9 @@
   enterFreeRoam();
   (function () {
     if (typeof EventSource !== 'function') return;
+    /* the presence pause is for the screen in the room the sensor watches: a LITE device (a TV or a phone
+       elsewhere) and ?awake=1 keep rendering whoever is in that room */
+    if (LITE || /[?&]awake=1/.test(location.search)) return;
     sse('/api/presence/stream', function (ev) {
       try {
         var d = JSON.parse(ev.data);
@@ -6008,7 +6539,8 @@
        - floor: RS_K's last step (0.7 x the cap = a 1920x1080 scene on the 4K panel).
      Without the extension it falls back to rAF intervals and only ever steps down (rAF can lie about frames, so
      it never raises the scale on that evidence). NEXUS.PERF.lock(s) / nxflags rs=0.7 pins a scale for A/B. */
-  var RS_K = [1, 0.88, 0.78, 0.7], RS_HI = 11.0;
+  // 0.6/0.5 rungs so a weak GPU can keep stepping down; LITE starts lower
+  var RS_K = LITE ? [0.72, 0.6, 0.5, 0.42] : [1, 0.88, 0.78, 0.7, 0.6, 0.5], RS_HI = 11.0;
   RS.idx = 0;
   var PERF = { ext: null, pool: [], live: [], cur: null, ms: new Float32Array(48), n: 0, w: 0, p75: 0, hot: 0, cool: 0, lastStep: 0, blockUp: 0, nextEval: 0,
                pauseTimer: false, steps: [], late: 0, frames: 0, lastRaf: 0, cpu: {}, blockDown: 0, preP: 0, verifyAt: 0 };
@@ -6031,6 +6563,8 @@
   }
   var _p75 = new Float32Array(48);
   function perfP75() { var n = PERF.n; if (!n) return 0; for (var i = 0; i < n; i++) _p75[i] = PERF.ms[i]; var a = _p75.subarray(0, n); a.sort(); return a[Math.min(n - 1, Math.floor(n * 0.75))]; }
+  // the last rung: the glow is the most expensive pass left once the scene is at the bottom of the ladder
+  function bloomOff(why) { if (!bloom.enabled) return; bloom.enabled = false; PERF.hot = 0; PERF.steps.push([Math.round(performance.now()), 'bloom off', why]); }
   function rsStep(d, why) {
     var idx = clamp(RS.idx + d, 0, RS_K.length - 1); if (idx === RS.idx) return;
     RS.idx = idx; RS.s = Math.max(0.25, RS.sMax * RS_K[idx]); RS.pending = true;
@@ -6056,13 +6590,14 @@
       PERF.hot = p > RS_HI ? PERF.hot + 1 : 0;
       // one step at a time: never step again before the last step has been verified (PERF.verifyAt)
       if (PERF.hot >= 3 && !PERF.verifyAt && nowMs - PERF.lastStep > 1500 && nowMs > PERF.blockDown && RS.idx < RS_K.length - 1) { PERF.preP = p; rsStep(1, 'gpu ' + p.toFixed(1) + 'ms'); return; }
+      if (PERF.hot >= 6 && RS.idx === RS_K.length - 1) bloomOff('gpu ' + p.toFixed(1) + 'ms');
       var k = RS.idx > 0 ? RS_K[RS.idx - 1] / RS_K[RS.idx] : 0;
       PERF.cool = (k && nowMs > PERF.blockUp && p * k * k < RS_HI * 0.6) ? PERF.cool + 1 : 0;
       if (PERF.cool >= 8 && nowMs - PERF.lastStep > 4000) rsStep(-1, 'gpu ' + p.toFixed(1) + 'ms');
     } else if (PERF.frames >= 50) {
       var lateK = PERF.late / PERF.frames; PERF.late = 0; PERF.frames = 0;
       PERF.hot = lateK > 0.25 ? PERF.hot + 1 : 0;
-      if (PERF.hot >= 2 && nowMs - PERF.lastStep > 3000) rsStep(1, 'late ' + Math.round(lateK * 100) + '%');
+      if (PERF.hot >= 2 && nowMs - PERF.lastStep > 3000) { if (RS.idx < RS_K.length - 1) rsStep(1, 'late ' + Math.round(lateK * 100) + '%'); else bloomOff('late ' + Math.round(lateK * 100) + '%'); }
     }
   }
   function cpuMark(name, t0) { var d = performance.now() - t0, c = PERF.cpu[name] || (PERF.cpu[name] = { last: 0, max: 0, n: 0 }); c.last = d; c.n++; if (d > c.max) c.max = d; }
@@ -6111,39 +6646,52 @@
      re-run into a W x H target (bilinear taps of the same picture), read back through a pixel-pack buffer + fence and
      handed over on a later frame, so nothing ever waits on the GPU. No WebGL2: NB_PIXELS stays unset and lightsync
      falls back to reading the canvas exactly as before. */
-  var LS = null;
+  /* one pixel-pack buffer per readback, never written twice. Chrome shadows a READ-usage buffer once it is
+     fenced and logs "written, then fenced, but written again before being read back" on the next readPixels into it -
+     256 times per page, then "too many errors" - even when the previous sample was already taken out. A sample is
+     128 x 72 RGBA twice a second, so a fresh buffer each time costs nothing. Up to three readbacks are in flight;
+     NB_PIXELS.ready() says whether a slot is free (lightsync skips the request otherwise), a readback whose fence has
+     not passed after 2 s is dropped. */
+  var LS = null, LS_MAX = 3;
   (function () {
     if (!rndr.capabilities.isWebGL2) return;
     try {
-      var gl = rndr.getContext();
-      LS = { rt: null, W: 0, H: 0, buf: null, sync: null, issued: 0, n: 0, want: null, ready: null, pbo: gl.createBuffer() };
-      window.NB_PIXELS = { request: function (W, H) { LS.want = [W | 0, H | 0]; var r = LS.ready; LS.ready = null; return r; } };
+      rndr.getContext();
+      LS = { rt: null, W: 0, H: 0, buf: null, fly: [], n: 0, dropped: 0, want: null, ready: null };
+      window.NB_PIXELS = {
+        request: function (W, H) { LS.want = [W | 0, H | 0]; var r = LS.ready; LS.ready = null; return r; },
+        ready: function () { return LS.fly.length < LS_MAX; }
+      };
     } catch (e) { LS = null; }
   })();
   function lsTick(nowMs) {
     if (!LS) return;
     var gl = rndr.getContext();
-    if (LS.sync) {
-      var st = gl.clientWaitSync(LS.sync, 0, 0);
-      if (st === gl.TIMEOUT_EXPIRED && nowMs - LS.issued < 2000) return;
-      gl.deleteSync(LS.sync); LS.sync = null;
-      if (st !== gl.ALREADY_SIGNALED && st !== gl.CONDITION_SATISFIED) return;
-      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, LS.pbo); gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, LS.buf); gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
-      LS.ready = LS.buf; LS.n++;
-      return;
+    // take out every finished readback, oldest first; the newest one wins
+    while (LS.fly.length) {
+      var f = LS.fly[0], st = gl.clientWaitSync(f.sync, 0, 0);
+      if (st === gl.TIMEOUT_EXPIRED && nowMs - f.at < 2000) break;
+      LS.fly.shift(); gl.deleteSync(f.sync);
+      if (st === gl.ALREADY_SIGNALED || st === gl.CONDITION_SATISFIED) {
+        if (!LS.buf || LS.buf.length !== f.W * f.H * 4) LS.buf = new Uint8Array(f.W * f.H * 4);
+        gl.bindBuffer(gl.PIXEL_PACK_BUFFER, f.pbo); gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, LS.buf); gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+        LS.ready = LS.buf; LS.n++;
+      } else LS.dropped++;
+      gl.deleteBuffer(f.pbo);
     }
-    if (!LS.want || !gradePass.uniforms.tDiffuse.value) return;
+    if (!LS.want || LS.fly.length >= LS_MAX || !gradePass.uniforms.tDiffuse.value) return;
     var W = Math.max(1, Math.min(512, LS.want[0])), H = Math.max(1, Math.min(512, LS.want[1])); LS.want = null;
     if (W !== LS.W || H !== LS.H) {
-      LS.W = W; LS.H = H; LS.buf = new Uint8Array(W * H * 4);
+      LS.W = W; LS.H = H;
       if (LS.rt) LS.rt.dispose();
       LS.rt = new THREE.WebGLRenderTarget(W, H, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat, depthBuffer: false, stencilBuffer: false });
-      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, LS.pbo); gl.bufferData(gl.PIXEL_PACK_BUFFER, W * H * 4, gl.STREAM_READ); gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
     }
     var prev = rndr.getRenderTarget();
     rndr.setRenderTarget(LS.rt); gradePass.fsQuad.render(rndr);
-    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, LS.pbo); gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, 0); gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
-    LS.sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0); LS.issued = nowMs; gl.flush();
+    var pbo = gl.createBuffer();
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo); gl.bufferData(gl.PIXEL_PACK_BUFFER, W * H * 4, gl.STREAM_READ);
+    gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, 0); gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    LS.fly.push({ pbo: pbo, sync: gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0), at: nowMs, W: W, H: H }); gl.flush();
     rndr.setRenderTarget(prev);
   }
 
@@ -6218,7 +6766,7 @@
                    sim: simSteps, motionAudit: motionAudit, SIM: function () { return SIM_T; },
                    // ---- performance QA (2026-10-05) ----
                    hold: function (v) { QA_HOLD = !!v; }, scene: scene, cam: cam, rndr: rndr, gradePass: gradePass, bloom: bloom,
-                   PERF: PERF, RS: RS, BOOT: BOOT, READY: BOOT, LS: function () { return LS && { n: LS.n, W: LS.W, H: LS.H }; },
+                   PERF: PERF, RS: RS, BOOT: BOOT, READY: BOOT, LS: function () { return LS && { n: LS.n, W: LS.W, H: LS.H, fly: LS.fly.length, dropped: LS.dropped }; },
                    // pin the render scale (0 = adaptive again); returns the scale in effect
                    lockScale: function (sc) { RS.lock = sc ? clamp(+sc, 0.25, 1) : 0; RS.s = RS.lock || Math.max(0.25, RS.sMax * RS_K[RS.idx]); RS.pending = true; return RS.s; },
                    perfSnapshot: function () { return { s: RS.s, sMax: RS.sMax, idx: RS.idx, lock: RS.lock, p75: PERF.p75, ext: !!PERF.ext, steps: PERF.steps.slice(), cpu: JSON.parse(JSON.stringify(PERF.cpu)),
@@ -6231,6 +6779,8 @@
   window.NEXUS.TOUR = TOUR; window.NEXUS.ASP_SHOT = ASP_SHOT; window.NEXUS.probList = probList; window.NEXUS.pollTour = pollTour;
   window.NEXUS.testAspect = function (key, name) { D.mode = 'free'; D.pinStop = true; D.pinFree = true; freeGoto(key, name || ''); return aspOf(key) ? 'aspect ' + key : 'unknown ' + key + ' (fallback)'; };
   window.NEXUS.TVL = TVL;
+  window.NEXUS.WALL = WALL; window.NEXUS.HUDR = HUDR; window.NEXUS.G2V2 = G2V2; window.NEXUS.ASP_PLATE = ASP_PLATE; window.NEXUS.BLK_SHOT = BLK_SHOT; window.NEXUS.SUN_HERO = SUN_HERO; window.NEXUS.BLK = BLK; window.NEXUS.plateCover = function (node) { var sh = D.toShot, g = galaxies[node]; return sh && g ? plateCover(g, sh) : null; };
+  window.NEXUS.story = function () { var el = $('story'); return { cur: STORY.cur, dom: el ? el.textContent : '', on: !!(el && el.classList.contains('on')), n: STORY.shown }; };
   function homeWorld(id, settled) {
     var R = UNI.recs[id]; if (!R || !R.F || !R.p) return null;
     var F = R.F, keep = F.Lmax; if (settled) F.Lmax = F.LmaxT;

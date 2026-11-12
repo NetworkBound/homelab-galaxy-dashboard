@@ -355,6 +355,204 @@ class Problems(unittest.TestCase):
         self.assertTrue(p[0]["lab"])
 
 
+def story_rows(res):
+    """Every story candidate in a /api/tour body, with where it came from."""
+    out = []
+    for a in res.get("aspects", []):
+        out += [(a["key"], c) for c in a.get("story", [])]
+    for sy in res.get("systems", []):
+        out += [(sy["id"], c) for c in sy.get("story", [])]
+        for cat, cs in (sy.get("cats") or {}).items():
+            out += [("%s/%s" % (sy["id"], cat), c) for c in cs]
+    for ln in res.get("links", []):
+        out += [("%s>%s" % (ln["a"], ln["b"]), c) for c in ln.get("story", [])]
+    out += [("estate", c) for c in (res.get("estate") or {}).get("story", [])]
+    return out
+
+
+def story_uni():
+    """UNI plus what a live registry carries: system kinds/shorts (one long enough that the
+    long forms of its lines do not fit), gone + lab + offline bodies, a guest named after
+    someone's business, measured traffic."""
+    u = copy.deepcopy(UNI)
+    meta = {"sys:core": ("network", "CORE"), "sys:pve2": ("pvehost", "PRIMARY CLUSTER"),
+            "sys:pve1": ("pvehost", "MINI"), "sys:home": ("clients", "HOME")}
+    for sy in u["systems"]:
+        sy["kind"], sy["short"] = meta[sy["id"]]
+    u["systems"].append({"id": "sys:branch", "kind": "site", "short": "BRANCH", "anchor": "ext:nvr"})
+    for b in u["bodies"]:
+        if b["class"].startswith("guest_"):
+            b["cat"] = {"vm:pve1:111": "ai"}.get(b["id"], "infra")
+            if b["status"] == "up":
+                b["m"].update(rx_bps=400000.0, tx_bps=200000.0)
+    u["bodies"] += [
+        body("vm:pve2:301", "acme-plumbing", "guest_lxc", "sys:pve2", cat="web"),
+        body("vm:pve2:302", "old-guest", "guest_lxc", "sys:pve2", status="down", down_why="gone"),
+        body("mac:aa:aa:aa:aa:aa:01", "old switch", "switch", "sys:core", status="down", down_why="gone"),
+        body("mac:aa:aa:aa:aa:aa:02", "Deco", "network_device", "sys:core", status="down", down_why="offline"),
+        body("mac:aa:aa:aa:aa:aa:03", "laptop", "computer", "sys:home", status="down", down_why="offline",
+             m={"offline_h": 1.0}),
+        body("mac:aa:aa:aa:aa:aa:04", "tv", "tv_av", "sys:home"),
+        body("ext:nvr", "Camera NVR", "storage", "sys:branch", m={"rtt_ms": 156.0}),
+        body("cam:1", "front door", "camera", "sys:branch"), body("cam:2", "driveway", "camera", "sys:branch"),
+    ]
+    u["traffic"] = {"ts": NOW - 5, "window_s": 30, "pairs": [
+        {"a": "sys:core", "b": "sys:pve1", "bps": 30282280.5, "a_to_b_bps": 12686249.6, "b_to_a_bps": 17596030.8},
+        {"a": "sys:core", "b": "sys:pve2", "bps": 23960000.0, "a_to_b_bps": 22500000.0, "b_to_a_bps": 1460000.0},
+        {"a": "sys:core", "b": "sys:home", "bps": 14700000.0},
+        {"a": "sys:core", "b": "sys:nowhere", "bps": 9e9},
+        {"a": "sys:pve1", "b": "sys:pve2", "bps": 20.0}]}
+    return u
+
+
+NUM_END = re.compile(r"\d\s*$")
+
+
+class Story(unittest.TestCase):
+    """Candidates for the wall's story line (/api/tour aspects[].story, systems, links, estate)."""
+
+    def setUp(self):
+        self.uni = story_uni()
+        self.res = T.build(copy.deepcopy(DATA), copy.deepcopy(self.uni), copy.deepcopy(SHOW), now=NOW)
+        self.sys = {s["id"]: s for s in self.res.get("systems", [])}
+
+    def texts(self, sid):
+        return [c["text"] for c in self.sys[sid]["story"]]
+
+    def test_every_candidate_keeps_the_rule(self):
+        rows = story_rows(self.res)
+        self.assertGreater(len(rows), 30)
+        for src, c in rows:
+            t = c["text"]
+            self.assertEqual(set(c), {"text", "kind", "prio"}, src)
+            self.assertIn(c["kind"], ("status", "rate", "count", "age"), src)
+            self.assertIsInstance(c["prio"], int)
+            self.assertLessEqual(len(t), 48, (src, t))
+            self.assertLessEqual(T.story_px(t), 556, (src, t))
+            self.assertEqual(t, t.strip())
+            self.assertIsNone(T._STORY_BAD.search(t), (src, t))
+            self.assertIsNone(IP.search(t), (src, t))
+            self.assertIsNone(NUM_END.search(t), "a number without a unit or a noun: %r" % t)
+            self.assertFalse(any(ord(ch) < 32 for ch in t))
+            if c["kind"] != "status":
+                self.assertRegex(t, r"\d", (src, t))
+            self.assertTrue(t[0].isupper() or t[0].isdigit() or t[0] == "$", (src, t))
+            self.assertNotEqual(t, t.upper(), (src, t))
+
+    def test_aspect_has_a_story_when_its_feed_is_up_and_none_when_down(self):
+        for a in self.res["aspects"]:
+            if a["status"] == "unknown":
+                self.assertNotIn("story", a, a["key"])
+            else:
+                self.assertTrue(1 <= len(a["story"]) <= 3, a["key"])
+        empty = T.build({}, None, None, now=NOW)
+        self.assertEqual(story_rows(empty), [])
+        for k in ("systems", "links", "estate"):
+            self.assertNotIn(k, empty)
+
+    def test_rank_is_status_rate_count_age(self):
+        order = {"status": 0, "rate": 1, "count": 2, "age": 3}
+        for a in self.res["aspects"]:
+            ks = [(order[c["kind"]], c["prio"]) for c in a.get("story", [])]
+            self.assertEqual(ks, sorted(ks), a["key"])
+        d = copy.deepcopy(DATA)
+        d["unifi"]["wan_up"] = "error"
+        st = by_key(T.build(d, self.uni, copy.deepcopy(SHOW), now=NOW))["asp:internet"]["story"]
+        self.assertEqual(st[0], {"text": "Internet link is down", "kind": "status", "prio": 1})
+
+    def test_expected_lines(self):
+        a = by_key(self.res)
+        self.assertEqual(a["asp:internet"]["story"][0]["text"], "15.0 Mb/s down \u00b7 1.1 Mb/s up right now")
+        self.assertEqual(a["asp:cameras"]["story"][0]["text"], "5 cameras recording \u00b7 last car 1.6 h ago")
+        self.assertIn("103 of 103 guests backed up overnight", [c["text"] for c in a["asp:storage"]["story"]])
+        self.assertEqual(self.texts("sys:pve2"), ["5 containers and 1 VM on Primary cluster"])     # the long form is 619 px
+        self.assertEqual(self.texts("sys:pve1"), ["3 containers running on Mini"])
+        self.assertEqual(self.texts("sys:core")[0], "68.9 Mb/s crossing the core right now")
+        self.assertEqual(self.texts("sys:home")[0], "14.7 Mb/s between Home and Core")
+        self.assertEqual(self.sys["sys:pve2"]["cats"]["infra"][0]["text"],
+                         "Infra on Primary cluster moving 3.0 Mb/s")
+        self.assertEqual(self.sys["sys:pve2"]["cats"]["infra"][1]["text"],
+                         "5 of 6 infra guests up on Primary cluster")
+        self.assertNotIn("web", self.sys["sys:pve2"]["cats"])        # < 3 guests: no blk stop
+        ln = self.res["links"]
+        self.assertEqual([(x["a"], x["b"]) for x in ln], [("sys:core", "sys:pve1"), ("sys:core", "sys:pve2"),
+                                                         ("sys:core", "sys:home")])
+        self.assertEqual([c["text"] for c in ln[0]["story"]],
+                         ["30.3 Mb/s between Core and Mini right now", "12.7 Mb/s Core to Mini \u00b7 17.6 Mb/s back"])
+        self.assertEqual([c["text"] for c in self.res["estate"]["story"]],
+                         ["68.9 Mb/s across the estate right now", "8 containers and 1 VM running on 2 hosts"])
+
+    def test_gone_and_lab_bodies_are_not_in_any_total(self):
+        self.assertIn("3 of 4 network devices up", self.texts("sys:core"))   # not the gone switch, not the lab Juniper
+        blob = json.dumps(self.res.get("systems")) + json.dumps(self.res.get("estate"))
+        self.assertNotIn("acme", blob)                                      # a guest's name never reaches a story
+        self.assertNotIn("Deco", blob)
+
+    def test_status_is_only_recent_infrastructure(self):
+        for sid in self.sys:
+            self.assertFalse([c for c in self.sys[sid]["story"] if c["kind"] == "status"], sid)
+        u = copy.deepcopy(self.uni)
+        for b in u["bodies"]:
+            if b["id"] == "mac:0c:5e:11:37:78:83":
+                b.update(status="down", down_why="offline", m={"offline_h": 0.4})
+            if b["id"] == "mac:00:5e:07:b3:68:3f":          # bench gear going dark is never news
+                b.update(status="down", down_why="offline", m={"offline_h": 0.4})
+            if b["id"] == "vm:pve1:112":                    # offline since yesterday: old news
+                b.update(status="down", down_why="offline", m={"offline_h": 30.0})
+        r = {s["id"]: s for s in T.build(copy.deepcopy(DATA), u, copy.deepcopy(SHOW), now=NOW)["systems"]}
+        self.assertEqual(r["sys:core"]["story"][0], {"text": "1 device offline at Core", "kind": "status", "prio": 1})
+        self.assertFalse([c for c in r["sys:pve1"]["story"] if c["kind"] == "status"])
+
+    def test_stale_traffic_makes_no_rate(self):
+        u = copy.deepcopy(self.uni)
+        u["traffic"]["ts"] = NOW - 3600
+        r = T.build(copy.deepcopy(DATA), u, copy.deepcopy(SHOW), now=NOW)
+        self.assertNotIn("links", r)
+        self.assertFalse([c for s in r["systems"] for c in s["story"] if "Mb/s" in c["text"]])
+        self.assertFalse([c for c in r["estate"]["story"] if c["kind"] == "rate"])
+
+    def test_system_names(self):
+        for short, want in (("PRIMARY CLUSTER", "Primary cluster"), ("GPU", "GPU"), ("PVE1", "PVE1"), ("CORE", "Core"),
+                            ("Lab 2", "Lab 2"), ("BRANCH", "Branch"), ("HOME", "Home"), ("pbs", "PBS"),
+                            ("SD-WAN", "SD-WAN")):
+            self.assertEqual(T._sys_name({"short": short}), want)
+        self.assertEqual(T._sys_name({"id": "sys:office"}), "Office")
+        self.assertEqual(T._sys_name({}), "system")
+
+    def test_story_rule(self):
+        for bad in ("Did you know the lab has 3 hosts", "Seen from orbit: 3 hosts", "How many hosts?",
+                    "3 hosts up!", "Gateway at 10.0.0.1 is up", "Now showing 3 hosts", "x" * 49, ""):
+            self.assertFalse(T.story_ok(bad), bad)
+        # one line of the wall's 560 px box at 26 px: characters alone do not decide it
+        self.assertAlmostEqual(T.story_px("0123456789"), 10 * 0.65 * 26, places=3)      # tabular figures
+        self.assertGreater(T.story_px("75 containers and 15 VMs running on Primary cluster"), 560)
+        self.assertFalse(T.story_ok("75 containers and 15 VMs running on Primary cluster"))
+        self.assertTrue(T.story_ok("90 guests running on Primary cluster"))
+        self.assertEqual(T._guests_text(75, 15, "on Primary cluster")["text"], "90 guests running on Primary cluster")
+        self.assertEqual(T._guests_text(15, 4, "on Mini")["text"], "15 containers and 4 VMs running on Mini")
+        self.assertIsNone(T._story("Everything is fine", "count"))           # a non-status line needs a number
+        self.assertIsNone(T._story("3 hosts up", "slogan"))
+        self.assertEqual(T._story("  3  hosts up ", "count", 1), {"text": "3 hosts up", "kind": "count", "prio": 1})
+        self.assertEqual(len(T._stories([T._story("%d hosts up" % i, "count", i) for i in range(1, 6)] * 2)), 3)
+
+    def test_cluster_pods_are_pods_not_host_guests(self):
+        u = copy.deepcopy(self.uni)
+        u["systems"].append({"id": "sys:k8s-lab", "kind": "k8s", "short": "LAB-K3S"})
+        u["bodies"] += [body("k8s:lab:node:a", "node-a", "server", "sys:k8s-lab"),
+                        body("k8s:lab:node:b", "node-b", "server", "sys:k8s-lab", status="down", down_why="offline")]
+        u["bodies"] += [body("k8s:lab:pod:%d" % i, "web-%d" % i, "guest_lxc", "sys:k8s-lab",
+                             status="up" if i < 4 else "down", m={"kind": "pod"}) for i in range(5)]
+        r = T.build(copy.deepcopy(DATA), u, copy.deepcopy(SHOW), now=NOW)
+        k8s = {s["id"]: s for s in r["systems"]}["sys:k8s-lab"]
+        self.assertEqual([c["text"] for c in k8s["story"]], ["1 of 2 nodes ready", "4 of 5 pods running on Lab-k3s"])
+        # the estate line counts the Proxmox hosts' guests only, not the cluster's pods
+        self.assertIn("8 containers and 1 VM running on 2 hosts", [c["text"] for c in r["estate"]["story"]])
+
+    def test_security_finding_problem_text(self):
+        self.assertEqual(T.problem_text("active CRITICAL security finding", "security-mon")[0], "critical finding")
+        self.assertEqual(T.problem_text("Alcatel Timetra TiMOS: Link down", "x")[0], "link down")
+
+
 class Install(unittest.TestCase):
     def test_route_and_cache(self):
         fake = types.ModuleType("flask")

@@ -137,6 +137,21 @@ class DemoSmokeTest(unittest.TestCase):
         _, ls = self.get("/api/lightstate")
         self.assertEqual(ls["rgb"], [10, 20, 30])
         self.assertEqual(ls["mode"], "threat")
+        self.assertNotIn("story", ls)
+        # v13: the story line and its shot family round-trip; anything else is dropped
+        post = {"rgb": [10, 20, 30], "beat": 8, "bpm": 150, "story": "  12 guests\trunning \x00 ",
+                "shot": " Core ", "story_html": "<b>x</b>", "evil": 1}
+        status, r = self.get("/api/lightstate", method="POST", body=json.dumps(post).encode())
+        self.assertEqual((status, r["ok"]), (200, True))
+        _, ls = self.get("/api/lightstate")
+        self.assertEqual((ls["story"], ls["shot"], ls["bpm"]), ("12 guests running", "core", 150.0))
+        self.assertNotIn("story_html", ls)
+        self.assertNotIn("evil", ls)
+        post.update({"story": ["not", "text"], "shot": "close-up", "bpm": 900})
+        self.get("/api/lightstate", method="POST", body=json.dumps(post).encode())
+        _, ls = self.get("/api/lightstate")
+        for key in ("story", "shot", "bpm"):
+            self.assertNotIn(key, ls)
         _, mode = self.get("/api/mode")
         self.assertIn(mode["mode"], mode["modes"])
         _, pres = self.get("/api/presence")

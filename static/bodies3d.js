@@ -1395,7 +1395,16 @@
       if (PHOTO && info.star && o.temp) { u.uTemp.value.fromArray(o.temp); u.uHasTex.value = 0; mat.userData.b3dOwnTemp = true; }
       mat.userData.b3dClass = cls;
       S.hubMats.push(mat);
-      mat.addEventListener('dispose', function () { var k = S.hubMats.indexOf(mat); if (k >= 0) S.hubMats.splice(k, 1); });
+      /* the hub's glow sprites leave S.glows with it: every caller drops a hub by disposing its
+         material (netscene's disposeDeep after a graph rebuild, the TV's NETD hubs), but only hubMats
+         was told. S.glows kept every dropped hub's sprites, and through sprite.parent the whole dropped
+         graph (geometry, labels, canvases): the wall's heap grew 14-25 MB an hour until the tab ran
+         out of memory after days. */
+      mat.addEventListener('dispose', function () {
+        var k = S.hubMats.indexOf(mat); if (k >= 0) S.hubMats.splice(k, 1);
+        S.glows = S.glows.filter(function (g) { return g.userData.b3dHubMat !== mat; });
+      });
+      function addGlow(sp) { sp.userData.b3dHubMat = mat; S.glows.push(sp); }
       var m = new THREE.Mesh(geoFor(cls + '_hub'), mat);
       m.userData.b3d = cls + '_hub';
       if (PHOTO && info.star) {
@@ -1411,7 +1420,7 @@
                                 return 2 * 0.9 / lb * (cls === 'pve_host' ? 0.95 : 0.7); };
         var spc = new THREE.Sprite(smc); spc.scale.setScalar(csz()); spc.renderOrder = 1; spc.userData.sizeFor = csz;
         spc.userData.b3dCorona = gk; spc.userData.glowKind = 'corona'; spc.raycast = function () { };
-        m.add(spc); m.userData.corona = spc; S.glows.push(spc);
+        m.add(spc); m.userData.corona = spc; addGlow(spc);
         var sk = pv('spikes', 0.55) * (cls === 'pve_host' ? 1.2 : 1);
         /* depth-tested (2026-10-08): a planet in front of the star hides its
            spikes, as it would in a photograph; the star's own disc covers their root */
@@ -1438,7 +1447,7 @@
         sp.userData.b3dCorona = info.glowK; sp.userData.glowKind = info.glow; sp.raycast = function () { };
         if (pul) { sm.rotation = (o.seed || 0.7) * 2.3; sp.userData.spin = 0.16; }
         m.add(sp); m.userData.corona = sp;
-        S.glows.push(sp);
+        addGlow(sp);
         if (pul) {
           /* a pulsar also gets a soft corona so it still reads as a star end-on */
           var sm2 = new THREE.SpriteMaterial({ map: celGlowTex('corona'), color: new THREE.Color().fromArray(info.rgb), transparent: true, opacity: info.glowK * 0.8,
@@ -1446,7 +1455,7 @@
           var csize = function () { return CT.glow.corona && CT.glow.corona.limb ? 2 * 0.9 / CT.glow.corona.limb * 0.55 : 3.4; };
           var cl = csize();
           var sp2 = new THREE.Sprite(sm2); sp2.scale.set(cl, cl, 1); sp2.userData.sizeFor = csize; sp2.renderOrder = 1; sp2.userData.b3dCorona = info.glowK * 0.8; sp2.userData.glowKind = 'corona'; sp2.raycast = function () { };
-          m.add(sp2); m.userData.corona2 = sp2; S.glows.push(sp2);
+          m.add(sp2); m.userData.corona2 = sp2; addGlow(sp2);
         }
       }
       return m;

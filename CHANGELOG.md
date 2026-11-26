@@ -45,6 +45,11 @@ stranger would repeat.
 
 ### Fixed
 
+- The wall no longer leaks memory on every graph rebuild. A star's glow sprites
+  stayed in `bodies3d.js`'s glow list after the star was disposed, and through
+  them the whole old graph stayed alive: the wall's JS heap grew 14-25 MB an hour,
+  asleep or awake, until the tab ran out of memory after days. The glows now
+  leave the list with their star.
 - The wall's pixel readback no longer re-writes a buffer that is still being read
   back (Chrome logged 256 performance warnings per page).
 
